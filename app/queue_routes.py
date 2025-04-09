@@ -163,3 +163,32 @@ def init_queue_routes(app):
             QueueService.send_notification(ticket.user_id, f"Sua senha #{ticket.ticket_number} foi chamada!")
         db.session.commit()
         return jsonify({'message': f'Senha #{queue.current_ticket} chamada', 'remaining': queue.active_tickets})
+
+    # Novo endpoint: Listar tickets do usuário
+    @app.route('/api/tickets', methods=['GET'])
+    @require_auth
+    def list_user_tickets():
+        tickets = Ticket.query.filter_by(user_id=request.user_id).all()  # Inclui todos os status
+        return jsonify([{
+            'id': t.id,
+            'service': t.queue.service,
+            'number': t.ticket_number,
+            'status': t.status,
+            'position': max(0, t.ticket_number - t.queue.current_ticket) if t.status == 'pending' else 0,
+            'wait_time': f'{QueueService.calculate_wait_time(t.queue.id, t.ticket_number)} minutos' if t.status == 'pending' else 'N/A',
+            'qr_code': t.qr_code,
+            'trade_available': t.trade_available
+        } for t in tickets])
+
+    # Novo endpoint: Listar tickets disponíveis para troca
+    @app.route('/api/tickets/trade_available', methods=['GET'])
+    @require_auth
+    def list_trade_available_tickets():
+        tickets = Ticket.query.filter_by(trade_available=True, status='pending').all()
+        return jsonify([{
+            'id': t.id,
+            'service': t.queue.service,
+            'number': t.ticket_number,
+            'position': max(0, t.ticket_number - t.queue.current_ticket),
+            'user_id': t.user_id  # Inclui o user_id para referência, mas pode ser removido por segurança
+        } for t in tickets])
