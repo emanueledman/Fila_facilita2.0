@@ -1,3 +1,4 @@
+# app/config.py
 import os
 from datetime import timedelta
 
@@ -8,16 +9,10 @@ class Config:
     
     # Configuração do banco de dados
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    
-    # Se estiver no Render.com, use o DATABASE_URL fornecido
-    if 'RENDER' in os.environ:
-        SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', '').replace(
-            'postgres://', 'postgresql://')
-    else:
-        SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', 'sqlite:///queue.db')
+    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', 'sqlite:///queue.db').replace('postgres://', 'postgresql://')
     
     # Configuração JWT
-    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', '00974655')
+    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', '974655')  # Pega do .env ou usa valor padrão
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=1)  # Token válido por 1 hora
     
     # Configuração CORS
@@ -25,10 +20,11 @@ class Config:
 
 class DevelopmentConfig(Config):
     DEBUG = True
+    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', 'sqlite:///queue.db').replace('postgres://', 'postgresql://')
 
 class ProductionConfig(Config):
     # Configurações específicas para produção
-    pass
+    SQLALCHEMY_ECHO = False  # Desativa logs SQL em produção
 
 class TestingConfig(Config):
     TESTING = True
@@ -42,5 +38,5 @@ config_by_name = {
 }
 
 def get_config():
-    env = os.environ.get('FLASK_ENV', 'dev')
+    env = os.getenv('FLASK_ENV', 'dev')
     return config_by_name[env]

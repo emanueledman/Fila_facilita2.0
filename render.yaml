@@ -11,5 +11,7 @@ services:
         value: 3.11.0
       - key: FLASK_ENV
         value: production
-
-        
+      - key: DATABASE_URL
+        value: postgresql://emanueledman:wwt4ykZKu99j21QptPwLZf65kaao3QTl@dpg-cvr2dm95pdvs73e8sph0-a.frankfurt-postgres.render.com/fila_online_g9tm
+      - key: JWT_SECRET_KEY
+        value: 974655  # Substitua por uma chave mais segura
