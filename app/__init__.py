@@ -4,6 +4,9 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 import os
 from dotenv import load_dotenv
+from threading import Thread
+import time
+from .services import QueueService
 
 load_dotenv()
 db = SQLAlchemy()
@@ -33,5 +36,20 @@ def create_app():
     from .queue_routes import init_queue_routes
     init_routes(app)
     init_queue_routes(app)
+    
+    # Tarefa periódica para notificações proativas
+    def run_proactive_notifications():
+        while True:
+            with app.app_context():
+                try:
+                    QueueService.check_proactive_notifications()
+                except Exception as e:
+                    app.logger.error(f"Erro ao verificar notificações proativas: {e}")
+            time.sleep(60)  # Executa a cada 60 segundos
+    
+    # Inicia a tarefa em uma thread separada
+    notification_thread = Thread(target=run_proactive_notifications)
+    notification_thread.daemon = True
+    notification_thread.start()
     
     return app
