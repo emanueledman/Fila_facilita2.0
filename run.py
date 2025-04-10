@@ -1,5 +1,5 @@
 # run.py
-from app import create_app, db
+from app import create_app, db, socketio  # Adicionado socketio
 from app.models import Institution, Queue
 from datetime import time
 import uuid
@@ -102,7 +102,7 @@ def populate_initial_data():
                     prefix=q['prefix'],
                     sector=q['sector'],
                     department=q['department'],
-                    institution_name=inst['name'],  # Mantido para compatibilidade
+                    institution_name=inst['name'],
                     open_time=q['open_time'],
                     daily_limit=q['daily_limit'],
                     num_counters=q['num_counters']
@@ -116,4 +116,4 @@ with app.app_context():
     populate_initial_data()
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000)  # Alterado para socketio.run
