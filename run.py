@@ -12,7 +12,7 @@ app = create_app()
 def populate_initial_data():
     with app.app_context():
         # Não apagar as tabelas existentes
-        # db.drop_all()
+        db.drop_all()
         # Criar tabelas apenas se não existirem
         db.create_all()
         
