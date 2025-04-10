@@ -3,14 +3,12 @@ import logging
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO
-from flask_migrate import Migrate  # Adicionado
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 db = SQLAlchemy()
 socketio = SocketIO()
-migrate = Migrate()  # Adicionado
 
 def create_app():
     app = Flask(__name__)
@@ -27,14 +25,17 @@ def create_app():
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     # Configuração de logging
-    logging.basicConfig(level=logging.INFO)
-    app.logger.setLevel(logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)  # Alterado para DEBUG
+    app.logger.setLevel(logging.DEBUG)  # Alterado para DEBUG
     app.logger.info(f"Iniciando com banco de dados: {app.config['SQLALCHEMY_DATABASE_URI']}")
+    
+    # Configurações adicionais para o SocketIO
+    app.config['SOCKETIO_LOGGER'] = True
+    app.config['SOCKETIO_ENGINEIO_LOGGER'] = True
     
     # Inicializa extensões
     db.init_app(app)
-    socketio.init_app(app, cors_allowed_origins="*")
-    migrate.init_app(app, db)  # Adicionado
+    socketio.init_app(app, cors_allowed_origins="*", async_mode='eventlet', logger=True, engineio_logger=True)
     
     # Registra rotas
     from .routes import init_routes

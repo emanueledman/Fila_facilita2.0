@@ -1,7 +1,6 @@
 # app/services.py
 import logging
 import uuid
-import requests
 import numpy as np
 import math
 from datetime import datetime, timedelta
@@ -9,6 +8,9 @@ from flask_socketio import emit
 from . import db, socketio
 from .models import Queue, Ticket
 from .utils.pdf_generator import generate_ticket_pdf  # Novo import
+import firebase_admin
+from firebase_admin import credentials, messaging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +28,28 @@ def setup_logging():
 
 setup_logging()
 
+# Inicializar o Firebase Admin
+try:
+    if not firebase_admin._apps:
+        cred = credentials.Certificate({
+            "type": "service_account",
+            "project_id": os.getenv("FIREBASE_PROJECT_ID"),
+            "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID"),
+            "private_key": os.getenv("FIREBASE_PRIVATE_KEY").replace("\\n", "\n"),
+            "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
+            "client_id": os.getenv("FIREBASE_CLIENT_ID"),
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_X509_CERT_URL"),
+            "universe_domain": "googleapis.com"
+        })
+        firebase_admin.initialize_app(cred)
+    logger.info("Firebase Admin inicializado com sucesso")
+except Exception as e:
+    logger.error(f"Erro ao inicializar o Firebase Admin: {e}")
+
 class QueueService:
-    FCM_API_URL = "https://fcm.googleapis.com/fcm/send"
-    FCM_API_KEY = "sua_chave_fcm"
     DEFAULT_EXPIRATION_MINUTES = 30
 
     @staticmethod
@@ -108,25 +129,29 @@ class QueueService:
     @staticmethod
     def send_notification(user_id, message, ticket_id=None, via_websocket=False):
         logger.info(f"Notificação para user_id {user_id}: {message}")
-        headers = {"Authorization": f"key={QueueService.FCM_API_KEY}", "Content-Type": "application/json"}
-        payload = {
-            "to": user_id,
-            "notification": {"title": "Facilita 2.0", "body": message},
-            "data": {"ticket_id": ticket_id or ""}
-        }
+        
+        # Enviar notificação via FCM usando firebase-admin
         try:
-            response = requests.post(QueueService.FCM_API_URL, json=payload, headers=headers)
-            if response.status_code != 200:
-                logger.error(f"Erro FCM: {response.text}")
+            fcm_message = messaging.Message(
+                notification=messaging.Notification(
+                    title="Facilita 2.0",
+                    body=message
+                ),
+                data={"ticket_id": ticket_id or ""},
+                token=user_id
+            )
+            response = messaging.send(fcm_message)
+            logger.info(f"Notificação FCM enviada para {user_id}: {response}")
         except Exception as e:
-            logger.error(f"Erro ao enviar FCM: {e}")
+            logger.error(f"Erro ao enviar notificação FCM: {e}")
 
+        # Enviar via WebSocket, se solicitado
         if via_websocket and socketio:
             try:
                 emit('notification', {'user_id': user_id, 'message': message}, namespace='/', broadcast=True)
                 logger.debug(f"Notificação WebSocket enviada para {user_id}")
             except Exception as e:
-                logger.error(f"Erro WebSocket: {e}")
+                logger.error(f"Erro ao enviar notificação via WebSocket: {e}")
 
     @staticmethod
     def add_to_queue(service, user_id, priority=0, is_physical=False):
