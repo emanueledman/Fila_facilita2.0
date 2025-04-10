@@ -4,10 +4,8 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO
 import os
 from dotenv import load_dotenv
-import firebase_admin
-from firebase_admin import credentials
 
-# Carregar variáveis de ambiente do arquivo .env
+# Carregar variáveis de ambiente do arquivo .env (apenas para desenvolvimento local)
 load_dotenv()
 
 # Inicializar extensões
@@ -41,28 +39,6 @@ def create_app():
     db.init_app(app)
     socketio.init_app(app, cors_allowed_origins="*", async_mode='eventlet', logger=True, engineio_logger=True)
     
-    # Inicializar o Firebase Admin
-    try:
-        if not firebase_admin._apps:
-            cred = credentials.Certificate({
-                "type": "service_account",
-                "project_id": os.getenv("FIREBASE_PROJECT_ID"),
-                "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID"),
-                "private_key": os.getenv("FIREBASE_PRIVATE_KEY").replace("\\n", "\n"),
-                "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
-                "client_id": os.getenv("FIREBASE_CLIENT_ID"),
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_X509_CERT_URL"),
-                "universe_domain": "googleapis.com"
-            })
-            firebase_admin.initialize_app(cred)
-            app.logger.info("Firebase Admin inicializado com sucesso")
-    except Exception as e:
-        app.logger.error(f"Erro ao inicializar o Firebase Admin: {e}")
-        raise e
-
     # Criar tabelas no banco de dados, se não existirem
     with app.app_context():
         from . import models
@@ -73,12 +49,12 @@ def create_app():
     from .routes import init_routes
     from .queue_routes import init_queue_routes
     from .user_routes import init_user_routes
-    from .admin_routes import init_admin_routes  # Adicionado
+    from .admin_routes import init_admin_routes
 
     init_routes(app)
     init_queue_routes(app)
     init_user_routes(app)
-    init_admin_routes(app)  # Adicionado
+    init_admin_routes(app)
 
     # Configuração adicional para produção
     if os.getenv('FLASK_ENV') == 'production':

@@ -12,24 +12,24 @@ from datetime import datetime, timedelta
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Carregar credenciais do Firebase a partir de uma variável de ambiente
+# Carregar e inicializar o Firebase Admin SDK
 firebase_creds_json = os.getenv('FIREBASE_CREDENTIALS')
-if firebase_creds_json:
-    try:
-        cred_dict = json.loads(firebase_creds_json)
-        cred = credentials.Certificate(cred_dict)
-        if not firebase_admin._apps:  # Verificar se o Firebase já foi inicializado
-            firebase_admin.initialize_app(cred)
-        logger.info("Firebase Admin SDK inicializado com sucesso")
-    except json.JSONDecodeError as e:
-        logger.error(f"Erro ao decodificar FIREBASE_CREDENTIALS: {e}")
-        raise ValueError("FIREBASE_CREDENTIALS inválido: formato JSON incorreto")
-    except Exception as e:
-        logger.error(f"Erro ao inicializar Firebase Admin SDK: {e}")
-        raise ValueError(f"Erro ao inicializar Firebase: {e}")
-else:
+if not firebase_creds_json:
     logger.error("Variável de ambiente FIREBASE_CREDENTIALS não encontrada")
     raise ValueError("Credenciais do Firebase não encontradas na variável de ambiente FIREBASE_CREDENTIALS")
+
+try:
+    cred_dict = json.loads(firebase_creds_json)
+    cred = credentials.Certificate(cred_dict)
+    if not firebase_admin._apps:  # Verificar se o Firebase já foi inicializado
+        firebase_admin.initialize_app(cred)
+    logger.info("Firebase Admin SDK inicializado com sucesso")
+except json.JSONDecodeError as e:
+    logger.error(f"Erro ao decodificar FIREBASE_CREDENTIALS: {e}")
+    raise ValueError("FIREBASE_CREDENTIALS inválido: formato JSON incorreto")
+except Exception as e:
+    logger.error(f"Erro ao inicializar Firebase Admin SDK: {e}")
+    raise ValueError(f"Erro ao inicializar Firebase: {e}")
 
 def require_auth(f):
     @wraps(f)
@@ -89,9 +89,7 @@ def init_auth_routes(app):
             return jsonify({'error': 'Credenciais inválidas'}), 401
 
         # Verificar se o usuário é um administrador
-        # Para simplificar, assumimos que usuários com email terminando em '@admin.com' são administradores
-        # Em produção, você deve ter um campo `is_admin` ou `user_tipo` no modelo User
-        if not email.endswith('@admin.com'):
+        if user.user_tipo != 'gestor':
             logger.warning(f"Tentativa de login de admin por usuário não administrador: {email}")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
 
