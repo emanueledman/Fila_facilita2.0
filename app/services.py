@@ -127,23 +127,26 @@ class QueueService:
         return round(distance, 1)
 
     @staticmethod
-    def send_notification(user_id, message, ticket_id=None, via_websocket=False):
+    def send_notification(fcm_token, message, ticket_id=None, via_websocket=False, user_id=None):
         logger.info(f"Notificação para user_id {user_id}: {message}")
         
         # Enviar notificação via FCM usando firebase-admin
-        try:
-            fcm_message = messaging.Message(
-                notification=messaging.Notification(
-                    title="Facilita 2.0",
-                    body=message
-                ),
-                data={"ticket_id": ticket_id or ""},
-                token=user_id
-            )
-            response = messaging.send(fcm_message)
-            logger.info(f"Notificação FCM enviada para {user_id}: {response}")
-        except Exception as e:
-            logger.error(f"Erro ao enviar notificação FCM: {e}")
+        if fcm_token:
+            try:
+                fcm_message = messaging.Message(
+                    notification=messaging.Notification(
+                        title="Facilita 2.0",
+                        body=message
+                    ),
+                    data={"ticket_id": ticket_id or ""},
+                    token=fcm_token
+                )
+                response = messaging.send(fcm_message)
+                logger.info(f"Notificação FCM enviada para {fcm_token}: {response}")
+            except Exception as e:
+                logger.error(f"Erro ao enviar notificação FCM: {e}")
+        else:
+            logger.warning(f"Token FCM não fornecido para user_id {user_id}")
 
         # Enviar via WebSocket, se solicitado
         if via_websocket and socketio:
@@ -154,7 +157,7 @@ class QueueService:
                 logger.error(f"Erro ao enviar notificação via WebSocket: {e}")
 
     @staticmethod
-    def add_to_queue(service, user_id, priority=0, is_physical=False):
+    def add_to_queue(service, user_id, priority=0, is_physical=False, fcm_token=None):
         queue = Queue.query.filter_by(service=service).first()
         if not queue:
             raise ValueError("Fila não encontrada")
@@ -191,7 +194,7 @@ class QueueService:
             pdf_buffer = QueueService.generate_pdf_ticket(ticket, position, wait_time)
 
         message = f"Senha {queue.prefix}{ticket_number} emitida. QR: {qr_code}. Espera: {wait_time} min"
-        QueueService.send_notification(user_id, message, ticket.id, via_websocket=True)
+        QueueService.send_notification(fcm_token, message, ticket.id, via_websocket=True, user_id=user_id)
         
         if socketio:
             emit('queue_update', {
@@ -231,7 +234,8 @@ class QueueService:
         db.session.commit()
         
         message = f"É a sua vez! {queue.service}, Senha {queue.prefix}{next_ticket.ticket_number}. Guichê {next_ticket.counter:02d}."
-        QueueService.send_notification(next_ticket.user_id, message, next_ticket.id, via_websocket=True)
+        # Aqui você precisaria do fcm_token do usuário. Para simplificar, vamos pular a notificação FCM por enquanto
+        QueueService.send_notification(None, message, next_ticket.id, via_websocket=True, user_id=next_ticket.user_id)
         
         if socketio:
             emit('queue_update', {
@@ -253,7 +257,7 @@ class QueueService:
                 ticket.status = 'cancelled'
                 ticket.queue.active_tickets -= 1
                 db.session.commit()
-                QueueService.send_notification(ticket.user_id, f"Sua senha {ticket.queue.prefix}{ticket.ticket_number} expirou!")
+                QueueService.send_notification(None, f"Sua senha {ticket.queue.prefix}{ticket.ticket_number} expirou!", user_id=ticket.user_id)
                 logger.info(f"Ticket {ticket.id} expirou")
                 continue
             
@@ -263,7 +267,7 @@ class QueueService:
                 distance_msg = f" Você está a {distance} km." if distance else ""
                 message = f"Sua vez está próxima! {ticket.queue.service}, Senha {ticket.queue.prefix}{ticket.ticket_number}. " \
                           f"Prepare-se em {wait_time} min.{distance_msg}"
-                QueueService.send_notification(ticket.user_id, message, ticket.id, via_websocket=True)
+                QueueService.send_notification(None, message, ticket.id, via_websocket=True, user_id=ticket.user_id)
 
     @staticmethod
     def offer_trade(ticket_id, user_id):

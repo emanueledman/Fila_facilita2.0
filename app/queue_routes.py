@@ -113,11 +113,15 @@ def init_queue_routes(app):
     def get_ticket(service):
         data = request.get_json() or {}
         user_id = data.get('user_id', request.user_id)
+        fcm_token = data.get('fcm_token')  # Receber o token FCM do frontend
         priority = data.get('priority', 0)
         is_physical = data.get('is_physical', False)
         
+        if not fcm_token:
+            return jsonify({'error': 'FCM token é obrigatório'}), 400
+        
         try:
-            ticket, pdf_buffer = QueueService.add_to_queue(service, user_id, priority, is_physical)
+            ticket, pdf_buffer = QueueService.add_to_queue(service, user_id, priority, is_physical, fcm_token)
             emit_ticket_update(ticket)
             response = {
                 'message': 'Senha emitida',
