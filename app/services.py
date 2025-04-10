@@ -6,9 +6,9 @@ import numpy as np
 import math
 from datetime import datetime, timedelta
 from flask_socketio import emit
-from .. import db, socketio
-from ..models import Queue, Ticket
-from ..utils.pdf_generator import generate_ticket_pdf  # Novo import
+from . import db, socketio
+from .models import Queue, Ticket
+from .utils.pdf_generator import generate_ticket_pdf  # Novo import
 
 logger = logging.getLogger(__name__)
 
