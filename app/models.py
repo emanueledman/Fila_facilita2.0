@@ -34,7 +34,7 @@ class Ticket(db.Model):
     qr_code = db.Column(db.String(50), nullable=False)
     priority = db.Column(db.Integer, default=0)
     is_physical = db.Column(db.Boolean, default=False)
-    status = db.Column(db.String(20), default='pending')  # pending, called, attended, cancelled
+    status = db.Column(db.String(20), default='Pendente')  # pending, called, attended, cancelled
     issued_at = db.Column(db.DateTime, default=datetime.utcnow)
     expires_at = db.Column(db.DateTime)
     attended_at = db.Column(db.DateTime)
