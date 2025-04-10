@@ -166,7 +166,7 @@ class QueueService:
         if queue.active_tickets >= queue.daily_limit:
             logger.warning(f"Fila {service} está cheia: {queue.active_tickets}/{queue.daily_limit}")
             raise ValueError("Limite diário atingido")
-        if Ticket.query.filter_by(user_id=user_id, queue_id=queue.id, status='Aguardando').first():
+        if Ticket.query.filter_by(user_id=user_id, queue_id=queue.id, status='Pendente').first():
             logger.warning(f"Usuário {user_id} já possui uma senha ativa na fila {queue.id}")
             raise ValueError("Você já possui uma senha ativa")
 
@@ -226,7 +226,7 @@ class QueueService:
             logger.warning(f"Fila {service} está vazia ou não encontrada")
             raise ValueError("Fila vazia ou não encontrada")
         
-        next_ticket = Ticket.query.filter_by(queue_id=queue.id, status='Aguardando')\
+        next_ticket = Ticket.query.filter_by(queue_id=queue.id, status='Pendente')\
             .order_by(Ticket.priority.desc(), Ticket.ticket_number).first()
         if not next_ticket:
             logger.warning(f"Não há tickets pendentes na fila {queue.id}")
@@ -264,7 +264,7 @@ class QueueService:
     @staticmethod
     def check_proactive_notifications():
         now = datetime.utcnow()
-        tickets = Ticket.query.filter_by(status='Aguardando').all()
+        tickets = Ticket.query.filter_by(status='Pendente').all()
         for ticket in tickets:
             if ticket.expires_at and ticket.expires_at < now:
                 ticket.status = 'Cancelado'
@@ -285,7 +285,7 @@ class QueueService:
     @staticmethod
     def offer_trade(ticket_id, user_id):
         ticket = Ticket.query.get_or_404(ticket_id)
-        if ticket.user_id != user_id or ticket.status != 'Aguardando':
+        if ticket.user_id != user_id or ticket.status != 'Pendente':
             logger.warning(f"Tentativa inválida de oferecer ticket {ticket_id} por {user_id}")
             raise ValueError("Você não pode oferecer esta senha")
         ticket.trade_available = True
@@ -308,8 +308,8 @@ class QueueService:
         ticket_from = Ticket.query.get_or_404(ticket_from_id)
         ticket_to = Ticket.query.get_or_404(ticket_to_id)
         if ticket_from.user_id != user_from_id or not ticket_to.trade_available or \
-           ticket_from.queue_id != ticket_to.queue_id or ticket_from.status != 'Aguardando' or \
-           ticket_to.status != 'Aguardando':
+           ticket_from.queue_id != ticket_to.queue_id or ticket_from.status != 'Pendente' or \
+           ticket_to.status != 'Pendente':
             logger.warning(f"Tentativa inválida de troca entre {ticket_from_id} e {ticket_to_id}")
             raise ValueError("Troca inválida")
         
@@ -365,7 +365,7 @@ class QueueService:
         if ticket.user_id != user_id:
             logger.warning(f"Tentativa inválida de cancelar ticket {ticket_id} por {user_id}")
             raise ValueError("Você só pode cancelar sua própria senha")
-        if ticket.status not in ['Aguardando', 'Chamado']:
+        if ticket.status not in ['Pendente', 'Chamado']:
             raise ValueError("Esta senha não pode ser cancelada")
         
         ticket.status = 'Cancelado'

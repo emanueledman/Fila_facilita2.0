@@ -101,7 +101,7 @@ def init_queue_routes(app):
     @require_auth
     def delete_queue(id):
         queue = Queue.query.get_or_404(id)
-        if Ticket.query.filter_by(queue_id=id, status='pending').first():
+        if Ticket.query.filter_by(queue_id=id, status='Pendente').first():
             return jsonify({'error': 'Não é possível excluir: fila possui tickets pendentes'}), 400
         db.session.delete(queue)
         db.session.commit()
@@ -238,8 +238,8 @@ def init_queue_routes(app):
             'id': t.id, 'service': t.queue.service, 'institution': t.queue.institution_name,
             'number': f"{t.queue.prefix}{t.ticket_number}", 'status': t.status,
             'counter': f"{t.counter:02d}" if t.counter else None,
-            'position': max(0, t.ticket_number - t.queue.current_ticket) if t.status == 'pending' else 0,
-            'wait_time': f'{QueueService.calculate_wait_time(t.queue.id, t.ticket_number, t.priority)} minutos' if t.status == 'pending' else 'N/A',
+            'position': max(0, t.ticket_number - t.queue.current_ticket) if t.status == 'Pendente' else 0,
+            'wait_time': f'{QueueService.calculate_wait_time(t.queue.id, t.ticket_number, t.priority)} minutos' if t.status == 'Pendente' else 'N/A',
             'qr_code': t.qr_code, 'trade_available': t.trade_available
         } for t in tickets])
 
@@ -247,7 +247,7 @@ def init_queue_routes(app):
     @require_auth
     def list_trade_available_tickets():
         user_id = request.user_id
-        user_tickets = Ticket.query.filter_by(user_id=user_id, status='pending').all()
+        user_tickets = Ticket.query.filter_by(user_id=user_id, status='Pendente').all()
         user_queue_ids = {t.queue_id for t in user_tickets}
         
         if not user_queue_ids:
@@ -256,7 +256,7 @@ def init_queue_routes(app):
         tickets = Ticket.query.filter(
             Ticket.queue_id.in_(user_queue_ids),
             Ticket.trade_available == True,
-            Ticket.status == 'pending',
+            Ticket.status == 'Pendente',
             Ticket.user_id != user_id
         ).all()
         
@@ -288,8 +288,8 @@ def init_queue_routes(app):
             'id': t.id, 'service': t.queue.service, 'institution': t.queue.institution_name,
             'number': f"{t.queue.prefix}{t.ticket_number}", 'status': t.status,
             'counter': f"{t.counter:02d}" if t.counter else None,
-            'position': max(0, t.ticket_number - t.queue.current_ticket) if t.status == 'pending' else 0,
-            'wait_time': f'{QueueService.calculate_wait_time(t.queue.id, t.ticket_number, t.priority)} minutos' if t.status == 'pending' else 'N/A',
+            'position': max(0, t.ticket_number - t.queue.current_ticket) if t.status == 'Pendente' else 0,
+            'wait_time': f'{QueueService.calculate_wait_time(t.queue.id, t.ticket_number, t.priority)} minutos' if t.status == 'Pendente' else 'N/A',
             'qr_code': t.qr_code, 'trade_available': t.trade_available,
             'user_id': t.user_id
         } for t in tickets])
