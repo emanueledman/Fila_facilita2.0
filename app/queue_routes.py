@@ -1,4 +1,4 @@
-# app/queue_routes.py
+# app/queue_routes.py (atualizado)
 from flask import jsonify, request, send_file
 from . import db, socketio
 from .models import Institution, Queue, Ticket
@@ -9,6 +9,16 @@ from datetime import datetime
 import io
 
 def init_queue_routes(app):
+    # Função para emitir atualização de ticket para todos os clientes conectados
+    def emit_ticket_update(ticket):
+        socketio.emit('ticket_update', {
+            'ticket_id': ticket.id,
+            'status': ticket.status,
+            'counter': f"{ticket.counter:02d}" if ticket.counter else None,
+            'position': max(0, ticket.ticket_number - ticket.queue.current_ticket),
+            'wait_time': f'{QueueService.calculate_wait_time(ticket.queue.id, ticket.ticket_number, ticket.priority)} minutos',
+        }, namespace='/tickets')
+
     @app.route('/api/queues', methods=['GET'])
     def list_queues():
         institutions = Institution.query.all()
@@ -59,6 +69,37 @@ def init_queue_routes(app):
         db.session.commit()
         return jsonify({'message': f'Fila {data["service"]} criada', 'queue_id': queue.id}), 201
 
+    @app.route('/api/queue/<id>', methods=['PUT'])
+    @require_auth
+    def update_queue(id):
+        queue = Queue.query.get_or_404(id)
+        data = request.get_json()
+        queue.service = data.get('service', queue.service)
+        queue.prefix = data.get('prefix', queue.prefix)
+        queue.sector = data.get('sector', queue.sector)
+        queue.department = data.get('department', queue.department)
+        queue.institution_id = data.get('institution_id', queue.institution_id)
+        queue.institution_name = Institution.query.get(queue.institution_id).name
+        if 'open_time' in data:
+            try:
+                queue.open_time = datetime.strptime(data['open_time'], '%H:%M').time()
+            except ValueError:
+                return jsonify({'error': 'Formato de open_time inválido (HH:MM)'}), 400
+        queue.daily_limit = data.get('daily_limit', queue.daily_limit)
+        queue.num_counters = data.get('num_counters', queue.num_counters)
+        db.session.commit()
+        return jsonify({'message': 'Fila atualizada'})
+
+    @app.route('/api/queue/<id>', methods=['DELETE'])
+    @require_auth
+    def delete_queue(id):
+        queue = Queue.query.get_or_404(id)
+        if Ticket.query.filter_by(queue_id=id, status='pending').first():
+            return jsonify({'error': 'Não é possível excluir: fila possui tickets pendentes'}), 400
+        db.session.delete(queue)
+        db.session.commit()
+        return jsonify({'message': 'Fila excluída'})
+
     @app.route('/api/queue/<service>/ticket', methods=['POST'])
     @require_auth
     def get_ticket(service):
@@ -69,6 +110,7 @@ def init_queue_routes(app):
         
         try:
             ticket, pdf_buffer = QueueService.add_to_queue(service, user_id, priority, is_physical)
+            emit_ticket_update(ticket)  # Emite atualização via WebSocket
             response = {
                 'message': 'Senha emitida',
                 'ticket': {
@@ -113,6 +155,7 @@ def init_queue_routes(app):
     def call_next_ticket(service):
         try:
             ticket = QueueService.call_next(service)
+            emit_ticket_update(ticket)  # Emite atualização via WebSocket
             return jsonify({
                 'message': f'Senha {ticket.queue.prefix}{ticket.ticket_number} chamada',
                 'ticket_id': ticket.id, 'remaining': ticket.queue.active_tickets
@@ -125,6 +168,7 @@ def init_queue_routes(app):
     def offer_trade(ticket_id):
         try:
             ticket = QueueService.offer_trade(ticket_id, request.user_id)
+            emit_ticket_update(ticket)  # Emite atualização via WebSocket
             return jsonify({'message': 'Senha oferecida para troca', 'ticket_id': ticket.id})
         except ValueError as e:
             return jsonify({'error': str(e)}), 400
@@ -135,6 +179,8 @@ def init_queue_routes(app):
         ticket_from_id = request.json.get('ticket_from_id')
         try:
             result = QueueService.trade_tickets(ticket_from_id, ticket_to_id, request.user_id)
+            emit_ticket_update(result['ticket_from'])  # Emite atualização via WebSocket
+            emit_ticket_update(result['ticket_to'])  # Emite atualização via WebSocket
             return jsonify({'message': 'Troca realizada', 'tickets': {
                 'from': {'id': result['ticket_from'].id, 'number': f"{result['ticket_from'].queue.prefix}{result['ticket_from'].ticket_number}"},
                 'to': {'id': result['ticket_to'].id, 'number': f"{result['ticket_to'].queue.prefix}{result['ticket_to'].ticket_number}"}
@@ -148,6 +194,7 @@ def init_queue_routes(app):
         qr_code = request.json.get('qr_code')
         try:
             ticket = QueueService.validate_presence(qr_code)
+            emit_ticket_update(ticket)  # Emite atualização via WebSocket
             return jsonify({'message': 'Presença validada', 'ticket_id': ticket.id})
         except ValueError as e:
             return jsonify({'error': str(e)}), 400
@@ -194,6 +241,24 @@ def init_queue_routes(app):
     def cancel_ticket(ticket_id):
         try:
             ticket = QueueService.cancel_ticket(ticket_id, request.user_id)
+            emit_ticket_update(ticket)  # Emite atualização via WebSocket
             return jsonify({'message': f'Senha {ticket.queue.prefix}{ticket.ticket_number} cancelada', 'ticket_id': ticket.id})
         except ValueError as e:
             return jsonify({'error': str(e)}), 400
+
+    @app.route('/api/tickets/admin', methods=['GET'])
+    @require_auth
+    def list_all_tickets():
+        if request.user_tipo != 'gestor':
+            return jsonify({'error': 'Acesso restrito a administradores'}), 403
+        
+        tickets = Ticket.query.all()
+        return jsonify([{
+            'id': t.id, 'service': t.queue.service, 'institution': t.queue.institution_name,
+            'number': f"{t.queue.prefix}{t.ticket_number}", 'status': t.status,
+            'counter': f"{t.counter:02d}" if t.counter else None,
+            'position': max(0, t.ticket_number - t.queue.current_ticket) if t.status == 'pending' else 0,
+            'wait_time': f'{QueueService.calculate_wait_time(t.queue.id, t.ticket_number, t.priority)} minutos' if t.status == 'pending' else 'N/A',
+            'qr_code': t.qr_code, 'trade_available': t.trade_available,
+            'user_id': t.user_id
+        } for t in tickets])
