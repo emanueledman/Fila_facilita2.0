@@ -50,6 +50,10 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     fcm_token = db.Column(db.String(255))
     user_tipo = db.Column(db.String(20), default='user')  # 'user' ou 'gestor'
+    institution_id = db.Column(db.String(36), db.ForeignKey('institution.id'), nullable=True)
+    department = db.Column(db.String(50), nullable=True)  # Departamento que o gestor atende
+
+    institution = db.relationship('Institution', backref=db.backref('users', lazy=True))
 
     def __repr__(self):
         return f'<User {self.email}>'

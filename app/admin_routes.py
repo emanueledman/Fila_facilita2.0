@@ -16,7 +16,18 @@ def init_admin_routes(app):
             logger.warning(f"Tentativa de acesso a /api/admin/queues por usuário não administrador: {request.user_id}")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
 
-        queues = Queue.query.all()
+        # Buscar o usuário para obter institution_id e department
+        user = User.query.get(request.user_id)
+        if not user or not user.institution_id or not user.department:
+            logger.warning(f"Gestor {request.user_id} não está vinculado a uma instituição ou departamento")
+            return jsonify({'error': 'Gestor não vinculado a uma instituição ou departamento'}), 403
+
+        # Filtrar filas pela instituição e departamento do gestor
+        queues = Queue.query.filter_by(
+            institution_id=user.institution_id,
+            department=user.department
+        ).all()
+
         return jsonify([{
             'id': q.id,
             'service': q.service,
@@ -33,6 +44,22 @@ def init_admin_routes(app):
         if request.user_tipo != 'gestor':
             logger.warning(f"Tentativa de acesso a /api/admin/queue/{queue_id}/call por usuário não administrador: {request.user_id}")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
+
+        # Buscar o usuário para verificar institution_id e department
+        user = User.query.get(request.user_id)
+        if not user or not user.institution_id or not user.department:
+            logger.warning(f"Gestor {request.user_id} não está vinculado a uma instituição ou departamento")
+            return jsonify({'error': 'Gestor não vinculado a uma instituição ou departamento'}), 403
+
+        # Verificar se a fila pertence à instituição e departamento do gestor
+        queue = Queue.query.get(queue_id)
+        if not queue:
+            logger.warning(f"Fila {queue_id} não encontrada")
+            return jsonify({'error': 'Fila não encontrada'}), 404
+
+        if queue.institution_id != user.institution_id or queue.department != user.department:
+            logger.warning(f"Gestor {request.user_id} tentou acessar uma fila fora de sua instituição ou departamento")
+            return jsonify({'error': 'Acesso negado: fila não pertence à sua instituição ou departamento'}), 403
 
         from .services import QueueService
         try:

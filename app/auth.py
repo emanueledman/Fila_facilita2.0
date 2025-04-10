@@ -103,5 +103,7 @@ def init_auth_routes(app):
         return jsonify({
             'token': token,
             'user_id': user.id,
-            'user_tipo': 'gestor'
+            'user_tipo': 'gestor',
+            'institution_id': user.institution_id,
+            'department': user.department
         }), 200
