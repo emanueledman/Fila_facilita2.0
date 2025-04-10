@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def init_user_routes(app):
-    @app.route('/api/update_fcm_token', methods=['POST'])
+    @app.route('/api/update_fcm_token', methods=['POST'], endpoint='update_fcm_token_user')
     @require_auth
     def update_fcm_token():
         data = request.get_json()
