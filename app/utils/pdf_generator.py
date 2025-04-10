@@ -1,4 +1,3 @@
-# app/utils/pdf_generator.py
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
@@ -44,7 +43,8 @@ def generate_ticket_pdf(ticket, institution_name, service, position, wait_time):
     
     # Balcão (guichê)
     c.setFont("Helvetica", 12)
-    c.drawCentredString(center_x, height - margin - 210, f"Balcão: {ticket.counter if ticket.counter else 'N/A'}")
+    counter_text = f"Balcão: {ticket.counter if ticket.counter else 'Aguardando chamada'}"
+    c.drawCentredString(center_x, height - margin - 210, counter_text)
     
     # Posição e Tempo de espera
     c.setFont("Helvetica", 12)

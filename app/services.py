@@ -1,4 +1,3 @@
-# app/services.py
 import logging
 import uuid
 import numpy as np
@@ -6,8 +5,8 @@ import math
 from datetime import datetime, timedelta
 from flask_socketio import emit
 from . import db, socketio
-from .models import Queue, Ticket
-from .utils.pdf_generator import generate_ticket_pdf  # Novo import
+from .models import Queue, Ticket, User
+from .utils.pdf_generator import generate_ticket_pdf
 import firebase_admin
 from firebase_admin import credentials, messaging
 import os
@@ -77,8 +76,16 @@ class QueueService:
         return receipt
 
     @staticmethod
-    def generate_pdf_ticket(ticket, position, wait_time):
+    def generate_pdf_ticket(ticket, position=None, wait_time=None):
         """Gera um PDF para o ticket físico."""
+        # Calcular position e wait_time se não fornecidos
+        if position is None:
+            position = max(0, ticket.ticket_number - ticket.queue.current_ticket)
+        if wait_time is None:
+            wait_time = QueueService.calculate_wait_time(
+                ticket.queue.id, ticket.ticket_number, ticket.priority
+            )
+
         pdf_buffer = generate_ticket_pdf(
             ticket=ticket,
             institution_name=ticket.queue.institution_name,
@@ -130,6 +137,15 @@ class QueueService:
     def send_notification(fcm_token, message, ticket_id=None, via_websocket=False, user_id=None):
         logger.info(f"Notificação para user_id {user_id}: {message}")
         
+        # Se o fcm_token não foi fornecido, buscar no banco de dados
+        if not fcm_token and user_id:
+            user = User.query.get(user_id)
+            if user and user.fcm_token:
+                fcm_token = user.fcm_token
+                logger.debug(f"FCM token recuperado do banco para user_id {user_id}: {fcm_token}")
+            else:
+                logger.warning(f"FCM token não encontrado para user_id {user_id}")
+
         # Enviar notificação via FCM usando firebase-admin
         if fcm_token:
             try:
@@ -146,7 +162,7 @@ class QueueService:
             except Exception as e:
                 logger.error(f"Erro ao enviar notificação FCM: {e}")
         else:
-            logger.warning(f"Token FCM não fornecido para user_id {user_id}")
+            logger.warning(f"Token FCM não fornecido e não encontrado para user_id {user_id}")
 
         # Enviar via WebSocket, se solicitado
         if via_websocket and socketio:
@@ -234,7 +250,6 @@ class QueueService:
         db.session.commit()
         
         message = f"É a sua vez! {queue.service}, Senha {queue.prefix}{next_ticket.ticket_number}. Guichê {next_ticket.counter:02d}."
-        # Aqui você precisaria do fcm_token do usuário. Para simplificar, vamos pular a notificação FCM por enquanto
         QueueService.send_notification(None, message, next_ticket.id, via_websocket=True, user_id=next_ticket.user_id)
         
         if socketio:
@@ -278,6 +293,16 @@ class QueueService:
         ticket.trade_available = True
         db.session.commit()
         logger.info(f"Ticket {ticket_id} oferecido para troca por {user_id}")
+
+        # Enviar notificação para outros usuários via WebSocket
+        if socketio:
+            emit('trade_available', {
+                'ticket_id': ticket.id,
+                'service': ticket.queue.service,
+                'number': f"{ticket.queue.prefix}{ticket.ticket_number}",
+                'position': max(0, ticket.ticket_number - ticket.queue.current_ticket)
+            }, namespace='/', broadcast=True)
+
         return ticket
 
     @staticmethod
@@ -297,6 +322,23 @@ class QueueService:
         ticket_from.trade_available, ticket_to.trade_available = False, False
         db.session.commit()
         logger.info(f"Troca realizada entre {ticket_from_id} e {ticket_to_id}")
+
+        # Notificar ambos os usuários sobre a troca
+        QueueService.send_notification(
+            None,
+            f"Sua senha foi trocada! Nova senha: {ticket_from.queue.prefix}{ticket_from.ticket_number}",
+            ticket_from.id,
+            via_websocket=True,
+            user_id=ticket_from.user_id
+        )
+        QueueService.send_notification(
+            None,
+            f"Sua senha foi trocada! Nova senha: {ticket_to.queue.prefix}{ticket_to.ticket_number}",
+            ticket_to.id,
+            via_websocket=True,
+            user_id=ticket_to.user_id
+        )
+
         return {"ticket_from": ticket_from, "ticket_to": ticket_to}
 
     @staticmethod
@@ -333,4 +375,22 @@ class QueueService:
         ticket.queue.active_tickets -= 1
         db.session.commit()
         logger.info(f"Ticket {ticket_id} cancelado por {user_id}")
+
+        # Notificar o usuário sobre o cancelamento
+        QueueService.send_notification(
+            None,
+            f"Sua senha {ticket.queue.prefix}{ticket.ticket_number} foi cancelada.",
+            ticket.id,
+            via_websocket=True,
+            user_id=user_id
+        )
+
+        if socketio:
+            emit('queue_update', {
+                'queue_id': ticket.queue.id,
+                'active_tickets': ticket.queue.active_tickets,
+                'current_ticket': ticket.queue.current_ticket,
+                'message': f"Senha {ticket.queue.prefix}{ticket.ticket_number} cancelada"
+            }, namespace='/', room=str(ticket.queue.id))
+
         return ticket

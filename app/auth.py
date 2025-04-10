@@ -1,4 +1,3 @@
-# app/auth.py
 from flask import request, jsonify
 import jwt
 import os
@@ -7,6 +6,7 @@ import firebase_admin
 from firebase_admin import credentials, auth
 import json
 import logging
+from datetime import datetime, timedelta
 
 # Configuração de logging
 logging.basicConfig(level=logging.INFO)
@@ -18,7 +18,8 @@ if firebase_creds_json:
     try:
         cred_dict = json.loads(firebase_creds_json)
         cred = credentials.Certificate(cred_dict)
-        firebase_admin.initialize_app(cred)
+        if not firebase_admin._apps:  # Verificar se o Firebase já foi inicializado
+            firebase_admin.initialize_app(cred)
         logger.info("Firebase Admin SDK inicializado com sucesso")
     except json.JSONDecodeError as e:
         logger.error(f"Erro ao decodificar FIREBASE_CREDENTIALS: {e}")
@@ -40,17 +41,22 @@ def require_auth(f):
         
         try:
             token = token.replace('Bearer ', '')
-            # Verificar token do Firebase
+            # Tentar verificar como token do Firebase (usuários normais)
             decoded_token = auth.verify_id_token(token)
             request.user_id = decoded_token['uid']  # UID do Firebase
+            request.user_tipo = 'user'  # Usuários normais têm user_tipo='user'
             logger.info(f"Token Firebase válido para UID: {request.user_id}")
         except (auth.InvalidIdTokenError, ValueError) as e:
             logger.warning(f"Token Firebase inválido: {e}")
-            # Fallback para token JWT local
+            # Fallback para token JWT local (administradores)
             try:
                 payload = jwt.decode(token, os.getenv('JWT_SECRET', '974655'), algorithms=['HS256'])
                 request.user_id = payload['user_id']
-                logger.info(f"Token JWT local válido para user_id: {request.user_id}")
+                request.user_tipo = payload.get('user_tipo', 'user')  # Extrair user_tipo do token JWT
+                logger.info(f"Token JWT local válido para user_id: {request.user_id}, user_tipo: {request.user_tipo}")
+            except jwt.ExpiredSignatureError:
+                logger.warning("Token JWT local expirado")
+                return jsonify({'error': 'Token expirado'}), 401
             except jwt.InvalidTokenError:
                 logger.warning("Token JWT local inválido")
                 return jsonify({'error': 'Token inválido'}), 401
@@ -59,17 +65,45 @@ def require_auth(f):
     return decorated
 
 def init_auth_routes(app):
-    @app.route('/api/login', methods=['POST'])
-    def login():
+    @app.route('/api/admin/login', methods=['POST'])
+    def admin_login():
         data = request.get_json()
-        user_id = data.get('user_id')
-        if not user_id:
-            logger.warning("Tentativa de login sem user_id")
-            return jsonify({'error': 'user_id necessário'}), 400
-        
+        if not data or 'email' not in data or 'password' not in data:
+            logger.warning("Tentativa de login de admin sem email ou senha")
+            return jsonify({'error': 'Email e senha são obrigatórios'}), 400
+
+        email = data['email']
+        password = data['password']
+
+        # Verificar as credenciais do administrador no banco de dados
+        from .models import User
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            logger.warning(f"Tentativa de login de admin com email não encontrado: {email}")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+
+        # Simulação de verificação de senha (substitua por verificação real com hash)
+        # Para este exemplo, assumimos que a senha é 'admin123' (NÃO FAÇA ISSO EM PRODUÇÃO)
+        if password != 'admin123':
+            logger.warning(f"Tentativa de login de admin com senha incorreta para email: {email}")
+            return jsonify({'error': 'Credenciais inválidas'}), 401
+
+        # Verificar se o usuário é um administrador
+        # Para simplificar, assumimos que usuários com email terminando em '@admin.com' são administradores
+        # Em produção, você deve ter um campo `is_admin` ou `user_tipo` no modelo User
+        if not email.endswith('@admin.com'):
+            logger.warning(f"Tentativa de login de admin por usuário não administrador: {email}")
+            return jsonify({'error': 'Acesso restrito a administradores'}), 403
+
+        # Gerar token JWT para o administrador
         token = jwt.encode({
-            'user_id': user_id,
-            'exp': datetime.utcnow() + timedelta(hours=1)
+            'user_id': user.id,
+            'user_tipo': 'gestor',  # Definir como 'gestor' para administradores
+            'exp': datetime.utcnow() + timedelta(hours=24)
         }, os.getenv('JWT_SECRET', '974655'), algorithm='HS256')
-        logger.info(f"Token gerado para user_id: {user_id}")
-        return jsonify({'token': token})
+        logger.info(f"Token gerado para admin user_id: {user.id}")
+        return jsonify({
+            'token': token,
+            'user_id': user.id,
+            'user_tipo': 'gestor'
+        }), 200

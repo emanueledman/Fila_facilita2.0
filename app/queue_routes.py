@@ -1,4 +1,3 @@
-# app/queue_routes.py
 from flask import jsonify, request, send_file
 from . import db, socketio
 from .models import Institution, Queue, Ticket
@@ -113,7 +112,7 @@ def init_queue_routes(app):
     def get_ticket(service):
         data = request.get_json() or {}
         user_id = data.get('user_id', request.user_id)
-        fcm_token = data.get('fcm_token')  # Receber o token FCM do frontend
+        fcm_token = data.get('fcm_token')
         priority = data.get('priority', 0)
         is_physical = data.get('is_physical', False)
         
@@ -143,6 +142,25 @@ def init_queue_routes(app):
             return jsonify(response), 201
         except ValueError as e:
             return jsonify({'error': str(e)}), 400
+
+    @app.route('/api/ticket/<ticket_id>/pdf', methods=['GET'])
+    @require_auth
+    def download_ticket_pdf(ticket_id):
+        ticket = Ticket.query.get_or_404(ticket_id)
+        if ticket.user_id != request.user_id and ticket.user_id != 'PRESENCIAL':
+            return jsonify({'error': 'Não autorizado'}), 403
+
+        try:
+            pdf_buffer = QueueService.generate_pdf_ticket(ticket)
+            return send_file(
+                pdf_buffer,
+                as_attachment=True,
+                download_name=f"ticket_{ticket.queue.prefix}{ticket.ticket_number}.pdf",
+                mimetype='application/pdf'
+            )
+        except Exception as e:
+            logger.error(f"Erro ao gerar PDF para ticket {ticket_id}: {e}")
+            return jsonify({'error': 'Erro ao gerar PDF'}), 500
 
     @app.route('/api/ticket/<ticket_id>', methods=['GET'])
     @require_auth
