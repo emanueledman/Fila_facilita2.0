@@ -116,8 +116,9 @@ def init_queue_routes(app):
         priority = data.get('priority', 0)
         is_physical = data.get('is_physical', False)
         
-        if not fcm_token:
-            return jsonify({'error': 'FCM token é obrigatório'}), 400
+        # Removida a verificação de fcm_token obrigatório, pois o backend pode buscar o token do banco
+        # if not fcm_token:
+        #     return jsonify({'error': 'FCM token é obrigatório'}), 400
         
         try:
             ticket, pdf_buffer = QueueService.add_to_queue(service, user_id, priority, is_physical, fcm_token)
@@ -292,3 +293,25 @@ def init_queue_routes(app):
             'qr_code': t.qr_code, 'trade_available': t.trade_available,
             'user_id': t.user_id
         } for t in tickets])
+
+    # Rota para atualizar o FCM token
+    @app.route('/api/update_fcm_token', methods=['POST'])
+    @require_auth
+    def update_fcm_token():
+        user_id = request.user_id
+        data = request.get_json()
+        fcm_token = data.get('fcm_token')
+        
+        if not fcm_token:
+            return jsonify({'error': 'FCM token é obrigatório'}), 400
+        
+        from .models import User
+        user = User.query.get(user_id)
+        if not user:
+            user = User(id=user_id, fcm_token=fcm_token)
+            db.session.add(user)
+        else:
+            user.fcm_token = fcm_token
+        db.session.commit()
+        
+        return jsonify({'message': 'FCM token atualizado com sucesso'})
