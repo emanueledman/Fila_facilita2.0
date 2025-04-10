@@ -8,11 +8,9 @@ import json
 import logging
 from datetime import datetime, timedelta
 
-# Configuração de logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Carregar e inicializar o Firebase Admin SDK
 firebase_creds_json = os.getenv('FIREBASE_CREDENTIALS')
 if not firebase_creds_json:
     logger.error("Variável de ambiente FIREBASE_CREDENTIALS não encontrada")
@@ -21,7 +19,7 @@ if not firebase_creds_json:
 try:
     cred_dict = json.loads(firebase_creds_json)
     cred = credentials.Certificate(cred_dict)
-    if not firebase_admin._apps:  # Verificar se o Firebase já foi inicializado
+    if not firebase_admin._apps:
         firebase_admin.initialize_app(cred)
     logger.info("Firebase Admin SDK inicializado com sucesso")
 except json.JSONDecodeError as e:
@@ -41,18 +39,16 @@ def require_auth(f):
         
         try:
             token = token.replace('Bearer ', '')
-            # Tentar verificar como token do Firebase (usuários normais)
             decoded_token = auth.verify_id_token(token)
-            request.user_id = decoded_token['uid']  # UID do Firebase
-            request.user_tipo = 'user'  # Usuários normais têm user_tipo='user'
+            request.user_id = decoded_token['uid']
+            request.user_tipo = 'user'
             logger.info(f"Token Firebase válido para UID: {request.user_id}")
         except (auth.InvalidIdTokenError, ValueError) as e:
             logger.warning(f"Token Firebase inválido: {e}")
-            # Fallback para token JWT local (administradores)
             try:
                 payload = jwt.decode(token, os.getenv('JWT_SECRET', '974655'), algorithms=['HS256'])
                 request.user_id = payload['user_id']
-                request.user_tipo = payload.get('user_tipo', 'user')  # Extrair user_tipo do token JWT
+                request.user_tipo = payload.get('user_tipo', 'user')
                 logger.info(f"Token JWT local válido para user_id: {request.user_id}, user_tipo: {request.user_tipo}")
             except jwt.ExpiredSignatureError:
                 logger.warning("Token JWT local expirado")
@@ -75,28 +71,23 @@ def init_auth_routes(app):
         email = data['email']
         password = data['password']
 
-        # Verificar as credenciais do administrador no banco de dados
         from .models import User
         user = User.query.filter_by(email=email).first()
         if not user:
             logger.warning(f"Tentativa de login de admin com email não encontrado: {email}")
             return jsonify({'error': 'Usuário não encontrado'}), 404
 
-        # Simulação de verificação de senha (substitua por verificação real com hash)
-        # Para este exemplo, assumimos que a senha é 'admin123' (NÃO FAÇA ISSO EM PRODUÇÃO)
-        if password != 'admin123':
+        if not user.check_password(password):
             logger.warning(f"Tentativa de login de admin com senha incorreta para email: {email}")
             return jsonify({'error': 'Credenciais inválidas'}), 401
 
-        # Verificar se o usuário é um administrador
         if user.user_tipo != 'gestor':
             logger.warning(f"Tentativa de login de admin por usuário não administrador: {email}")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
 
-        # Gerar token JWT para o administrador
         token = jwt.encode({
             'user_id': user.id,
-            'user_tipo': 'gestor',  # Definir como 'gestor' para administradores
+            'user_tipo': 'gestor',
             'exp': datetime.utcnow() + timedelta(hours=24)
         }, os.getenv('JWT_SECRET', '974655'), algorithm='HS256')
         logger.info(f"Token gerado para admin user_id: {user.id}")

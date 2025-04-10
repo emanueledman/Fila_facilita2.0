@@ -1,5 +1,6 @@
 from . import db
 from datetime import datetime
+import bcrypt
 
 class Institution(db.Model):
     id = db.Column(db.String(36), primary_key=True)
@@ -48,12 +49,23 @@ class Ticket(db.Model):
 class User(db.Model):
     id = db.Column(db.String(36), primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=True)  # Campo para armazenar o hash da senha
     fcm_token = db.Column(db.String(255))
     user_tipo = db.Column(db.String(20), default='user')  # 'user' ou 'gestor'
     institution_id = db.Column(db.String(36), db.ForeignKey('institution.id'), nullable=True)
-    department = db.Column(db.String(50), nullable=True)  # Departamento que o gestor atende
+    department = db.Column(db.String(50), nullable=True)
 
     institution = db.relationship('Institution', backref=db.backref('users', lazy=True))
+
+    def set_password(self, password):
+        """Gera o hash da senha e armazena no campo password_hash."""
+        self.password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+    def check_password(self, password):
+        """Verifica se a senha fornecida corresponde ao hash armazenado."""
+        if not self.password_hash:
+            return False
+        return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8'))
 
     def __repr__(self):
         return f'<User {self.email}>'

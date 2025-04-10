@@ -1,5 +1,5 @@
 import eventlet
-eventlet.monkey_patch()  # Deve ser chamado antes de qualquer outro import
+eventlet.monkey_patch()
 
 from app import create_app, db, socketio
 from app.models import Institution, Queue, User
@@ -11,16 +11,12 @@ app = create_app()
 
 def populate_initial_data():
     with app.app_context():
-        # Não apagar as tabelas existentes
         db.drop_all()
-        # Criar tabelas apenas se não existirem
         db.create_all()
         
-        # Verificar se já existem instituições
         if Institution.query.count() > 0:
             app.logger.info("Dados iniciais de instituições já existem.")
         else:
-            # Instituições com localizações em Luanda
             institutions = [
                 {
                     'id': str(uuid.uuid4()),
@@ -116,73 +112,80 @@ def populate_initial_data():
             db.session.commit()
             app.logger.info("Dados iniciais de instituições e filas inseridos com sucesso!")
 
-        # Verificar se já existem gestores
         if User.query.filter_by(user_tipo='gestor').count() > 0:
             app.logger.info("Gestores iniciais já existem.")
         else:
-            # Adicionar gestores vinculados às instituições e departamentos
             gestores = [
                 {
                     'id': str(uuid.uuid4()),
                     'email': 'gestor.camama@saude.com',
+                    'password': 'admin123',
                     'user_tipo': 'gestor',
-                    'institution_id': institutions[0]['id'],  # Centro de Saúde Camama
+                    'institution_id': institutions[0]['id'],
                     'department': 'Consulta Médica'
                 },
                 {
                     'id': str(uuid.uuid4()),
                     'email': 'gestor.vacinacao@saude.com',
+                    'password': 'admin123',
                     'user_tipo': 'gestor',
-                    'institution_id': institutions[0]['id'],  # Centro de Saúde Camama
+                    'institution_id': institutions[0]['id'],
                     'department': 'Vacinação'
                 },
                 {
                     'id': str(uuid.uuid4()),
                     'email': 'gestor.identificacao@luanda.com',
+                    'password': 'admin123',
                     'user_tipo': 'gestor',
-                    'institution_id': institutions[1]['id'],  # Posto de Identificação Luanda
+                    'institution_id': institutions[1]['id'],
                     'department': 'Identificação'
                 },
                 {
                     'id': str(uuid.uuid4()),
                     'email': 'gestor.registo@luanda.com',
+                    'password': 'admin123',
                     'user_tipo': 'gestor',
-                    'institution_id': institutions[1]['id'],  # Posto de Identificação Luanda
+                    'institution_id': institutions[1]['id'],
                     'department': 'Registo Civil'
                 },
                 {
                     'id': str(uuid.uuid4()),
                     'email': 'gestor.bfa@kilamba.com',
+                    'password': 'admin123',
                     'user_tipo': 'gestor',
-                    'institution_id': institutions[2]['id'],  # Banco BFA Kilamba
+                    'institution_id': institutions[2]['id'],
                     'department': 'Contas'
                 },
                 {
                     'id': str(uuid.uuid4()),
                     'email': 'gestor.escola@cazenga.com',
+                    'password': 'admin123',
                     'user_tipo': 'gestor',
-                    'institution_id': institutions[3]['id'],  # Escola Primária Cazenga
+                    'institution_id': institutions[3]['id'],
                     'department': 'Matrículas'
                 },
                 {
                     'id': str(uuid.uuid4()),
                     'email': 'gestor.hospital@viana.com',
+                    'password': 'admin123',
                     'user_tipo': 'gestor',
-                    'institution_id': institutions[4]['id'],  # Hospital Viana
+                    'institution_id': institutions[4]['id'],
                     'department': 'Consulta Geral'
                 },
                 {
                     'id': str(uuid.uuid4()),
                     'email': 'gestor.laboratorio@viana.com',
+                    'password': 'admin123',
                     'user_tipo': 'gestor',
-                    'institution_id': institutions[4]['id'],  # Hospital Viana
+                    'institution_id': institutions[4]['id'],
                     'department': 'Laboratório'
                 },
                 {
                     'id': str(uuid.uuid4()),
                     'email': 'gestor.transito@talatona.com',
+                    'password': 'admin123',
                     'user_tipo': 'gestor',
-                    'institution_id': institutions[5]['id'],  # Direção de Trânsito Talatona
+                    'institution_id': institutions[5]['id'],
                     'department': 'Licenciamento'
                 },
             ]
@@ -195,6 +198,7 @@ def populate_initial_data():
                     institution_id=gestor['institution_id'],
                     department=gestor['department']
                 )
+                user.set_password(gestor['password'])  # Definir a senha com hash
                 db.session.add(user)
             
             db.session.commit()
