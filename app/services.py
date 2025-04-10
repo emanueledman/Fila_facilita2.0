@@ -37,6 +37,10 @@ class QueueService:
     @staticmethod
     def generate_receipt(ticket):
         queue = ticket.queue
+        if not queue:
+            logger.error(f"Fila não encontrada para o ticket {ticket.id}")
+            raise ValueError("Fila associada ao ticket não encontrada")
+        
         receipt = (
             "=== Comprovante Facilita 2.0 ===\n"
             f"Serviço: {queue.service}\n"
@@ -55,6 +59,10 @@ class QueueService:
     @staticmethod
     def generate_pdf_ticket(ticket, position=None, wait_time=None):
         """Gera um PDF para o ticket físico."""
+        if not ticket.queue:
+            logger.error(f"Fila não encontrada para o ticket {ticket.id}")
+            raise ValueError("Fila associada ao ticket não encontrada")
+            
         # Calcular position e wait_time se não fornecidos
         if position is None:
             position = max(0, ticket.ticket_number - ticket.queue.current_ticket)
@@ -153,10 +161,13 @@ class QueueService:
     def add_to_queue(service, user_id, priority=0, is_physical=False, fcm_token=None):
         queue = Queue.query.filter_by(service=service).first()
         if not queue:
+            logger.error(f"Fila não encontrada para o serviço: {service}")
             raise ValueError("Fila não encontrada")
         if queue.active_tickets >= queue.daily_limit:
+            logger.warning(f"Fila {service} está cheia: {queue.active_tickets}/{queue.daily_limit}")
             raise ValueError("Limite diário atingido")
         if Ticket.query.filter_by(user_id=user_id, queue_id=queue.id, status='pending').first():
+            logger.warning(f"Usuário {user_id} já possui uma senha ativa na fila {queue.id}")
             raise ValueError("Você já possui uma senha ativa")
 
         ticket_number = queue.active_tickets + 1
@@ -173,10 +184,18 @@ class QueueService:
             is_physical=is_physical,
             expires_at=expires_at
         )
-        ticket.receipt_data = QueueService.generate_receipt(ticket) if is_physical else None
+        
         queue.active_tickets += 1
         db.session.add(ticket)
         db.session.commit()
+
+        # Recarregar o ticket para garantir que a relação ticket.queue esteja disponível
+        db.session.refresh(ticket)
+        if not ticket.queue:
+            logger.error(f"Relação ticket.queue não carregada para ticket {ticket.id}")
+            raise ValueError("Erro ao carregar a fila associada ao ticket")
+
+        ticket.receipt_data = QueueService.generate_receipt(ticket) if is_physical else None
 
         wait_time = QueueService.calculate_wait_time(queue.id, ticket_number, priority)
         position = max(0, ticket.ticket_number - queue.current_ticket)
@@ -204,11 +223,13 @@ class QueueService:
     def call_next(service):
         queue = Queue.query.filter_by(service=service).first()
         if not queue or queue.active_tickets == 0:
+            logger.warning(f"Fila {service} está vazia ou não encontrada")
             raise ValueError("Fila vazia ou não encontrada")
         
         next_ticket = Ticket.query.filter_by(queue_id=queue.id, status='pending')\
             .order_by(Ticket.priority.desc(), Ticket.ticket_number).first()
         if not next_ticket:
+            logger.warning(f"Não há tickets pendentes na fila {queue.id}")
             raise ValueError("Nenhum ticket pendente")
         
         now = datetime.utcnow()
