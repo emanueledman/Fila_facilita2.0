@@ -1,5 +1,8 @@
 # run.py
-from app import create_app, db, socketio  # Adicionado socketio
+import eventlet
+eventlet.monkey_patch()  # Deve ser chamado antes de qualquer outro import
+
+from app import create_app, db, socketio
 from app.models import Institution, Queue
 from datetime import time
 import uuid
@@ -116,4 +119,4 @@ with app.app_context():
     populate_initial_data()
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000)  # Alterado para socketio.run
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
