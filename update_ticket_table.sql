@@ -1,0 +1,5 @@
+-- update_ticket_table.sql
+ALTER TABLE ticket
+ADD COLUMN priority INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN is_physical BOOLEAN NOT NULL DEFAULT FALSE,
+ADD COLUMN expires_at TIMESTAMP;

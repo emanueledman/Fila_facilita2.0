@@ -1,4 +1,4 @@
-# app/queue_routes.py (atualizado)
+# app/queue_routes.py
 from flask import jsonify, request, send_file
 from . import db, socketio
 from .models import Institution, Queue, Ticket
@@ -7,17 +7,25 @@ from .services import QueueService
 import uuid
 from datetime import datetime
 import io
+import logging
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def init_queue_routes(app):
-    # Função para emitir atualização de ticket para todos os clientes conectados
+    # Função para emitir atualização de ticket com tratamento de erro
     def emit_ticket_update(ticket):
-        socketio.emit('ticket_update', {
-            'ticket_id': ticket.id,
-            'status': ticket.status,
-            'counter': f"{ticket.counter:02d}" if ticket.counter else None,
-            'position': max(0, ticket.ticket_number - ticket.queue.current_ticket),
-            'wait_time': f'{QueueService.calculate_wait_time(ticket.queue.id, ticket.ticket_number, ticket.priority)} minutos',
-        }, namespace='/tickets')
+        try:
+            socketio.emit('ticket_update', {
+                'ticket_id': ticket.id,
+                'status': ticket.status,
+                'counter': f"{ticket.counter:02d}" if ticket.counter else None,
+                'position': max(0, ticket.ticket_number - ticket.queue.current_ticket),
+                'wait_time': f'{QueueService.calculate_wait_time(ticket.queue.id, ticket.ticket_number, ticket.priority)} minutos',
+            }, namespace='/tickets')
+        except Exception as e:
+            logger.error(f"Erro ao emitir atualização via WebSocket: {e}")
 
     @app.route('/api/queues', methods=['GET'])
     def list_queues():
@@ -110,7 +118,7 @@ def init_queue_routes(app):
         
         try:
             ticket, pdf_buffer = QueueService.add_to_queue(service, user_id, priority, is_physical)
-            emit_ticket_update(ticket)  # Emite atualização via WebSocket
+            emit_ticket_update(ticket)
             response = {
                 'message': 'Senha emitida',
                 'ticket': {
@@ -155,7 +163,7 @@ def init_queue_routes(app):
     def call_next_ticket(service):
         try:
             ticket = QueueService.call_next(service)
-            emit_ticket_update(ticket)  # Emite atualização via WebSocket
+            emit_ticket_update(ticket)
             return jsonify({
                 'message': f'Senha {ticket.queue.prefix}{ticket.ticket_number} chamada',
                 'ticket_id': ticket.id, 'remaining': ticket.queue.active_tickets
@@ -168,7 +176,7 @@ def init_queue_routes(app):
     def offer_trade(ticket_id):
         try:
             ticket = QueueService.offer_trade(ticket_id, request.user_id)
-            emit_ticket_update(ticket)  # Emite atualização via WebSocket
+            emit_ticket_update(ticket)
             return jsonify({'message': 'Senha oferecida para troca', 'ticket_id': ticket.id})
         except ValueError as e:
             return jsonify({'error': str(e)}), 400
@@ -179,8 +187,8 @@ def init_queue_routes(app):
         ticket_from_id = request.json.get('ticket_from_id')
         try:
             result = QueueService.trade_tickets(ticket_from_id, ticket_to_id, request.user_id)
-            emit_ticket_update(result['ticket_from'])  # Emite atualização via WebSocket
-            emit_ticket_update(result['ticket_to'])  # Emite atualização via WebSocket
+            emit_ticket_update(result['ticket_from'])
+            emit_ticket_update(result['ticket_to'])
             return jsonify({'message': 'Troca realizada', 'tickets': {
                 'from': {'id': result['ticket_from'].id, 'number': f"{result['ticket_from'].queue.prefix}{result['ticket_from'].ticket_number}"},
                 'to': {'id': result['ticket_to'].id, 'number': f"{result['ticket_to'].queue.prefix}{result['ticket_to'].ticket_number}"}
@@ -194,7 +202,7 @@ def init_queue_routes(app):
         qr_code = request.json.get('qr_code')
         try:
             ticket = QueueService.validate_presence(qr_code)
-            emit_ticket_update(ticket)  # Emite atualização via WebSocket
+            emit_ticket_update(ticket)
             return jsonify({'message': 'Presença validada', 'ticket_id': ticket.id})
         except ValueError as e:
             return jsonify({'error': str(e)}), 400
@@ -241,7 +249,7 @@ def init_queue_routes(app):
     def cancel_ticket(ticket_id):
         try:
             ticket = QueueService.cancel_ticket(ticket_id, request.user_id)
-            emit_ticket_update(ticket)  # Emite atualização via WebSocket
+            emit_ticket_update(ticket)
             return jsonify({'message': f'Senha {ticket.queue.prefix}{ticket.ticket_number} cancelada', 'ticket_id': ticket.id})
         except ValueError as e:
             return jsonify({'error': str(e)}), 400

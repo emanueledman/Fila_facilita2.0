@@ -48,6 +48,9 @@ class Ticket(db.Model):
     cancelled_at = db.Column(db.DateTime, nullable=True)  # Quando foi cancelado
     service_time = db.Column(db.Float, nullable=True)  # Tempo real de atendimento (em minutos)
     counter = db.Column(db.Integer, nullable=True)  # Guichê atribuído
+    priority = db.Column(db.Integer, nullable=False, default=0)  # Adicionado
+    is_physical = db.Column(db.Boolean, nullable=False, default=False)  # Adicionado
+    expires_at = db.Column(db.DateTime, nullable=True)  # Adicionado
     queue = db.relationship('Queue', backref=db.backref('tickets', lazy=True))
 
     def __repr__(self):

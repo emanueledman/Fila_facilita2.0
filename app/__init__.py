@@ -2,13 +2,15 @@
 import logging
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
-from flask_socketio import SocketIO  # Adicionado
+from flask_socketio import SocketIO
+from flask_migrate import Migrate  # Adicionado
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 db = SQLAlchemy()
-socketio = SocketIO()  # Inicializa o SocketIO
+socketio = SocketIO()
+migrate = Migrate()  # Adicionado
 
 def create_app():
     app = Flask(__name__)
@@ -31,7 +33,8 @@ def create_app():
     
     # Inicializa extensões
     db.init_app(app)
-    socketio.init_app(app, cors_allowed_origins="*")  # Inicializa o SocketIO com o app
+    socketio.init_app(app, cors_allowed_origins="*")
+    migrate.init_app(app, db)  # Adicionado
     
     # Registra rotas
     from .routes import init_routes
