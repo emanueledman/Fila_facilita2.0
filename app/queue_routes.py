@@ -4,8 +4,7 @@ from flask import jsonify, request, send_file
 from . import db, socketio
 from .models import Institution, Queue, Ticket, User
 from .auth import require_auth
-from .services import QueueService
-from ..run import suggest_service_locations  # Importar a função de sugestão
+from .services import QueueService, suggest_service_locations  # Importar a função de sugestão
 import uuid
 from datetime import datetime
 import io
