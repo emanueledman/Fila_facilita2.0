@@ -7,6 +7,7 @@ from firebase_admin import credentials, auth
 import json
 import logging
 from datetime import datetime, timedelta
+from . import db  # Importa o db do app (assumindo que está em __init__.py ou similar)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -98,3 +99,30 @@ def init_auth_routes(app):
             'institution_id': user.institution_id,
             'department': user.department
         }), 200
+
+    @app.route('/api/update_fcm_token', methods=['POST'])
+    @require_auth
+    def update_fcm_token():
+        from .models import User
+        data = request.get_json()
+        fcm_token = data.get('fcm_token')
+        email = data.get('email')
+
+        if not fcm_token or not email:
+            logger.warning("Requisição sem FCM token ou email")
+            return jsonify({'error': 'FCM token e email são obrigatórios'}), 400
+
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            logger.warning(f"Usuário não encontrado para email: {email}")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+
+        # Verifica se o email corresponde ao user_id do token (segurança extra)
+        if user.id != request.user_id:
+            logger.warning(f"Tentativa de atualização de FCM token com email inválido: {email}")
+            return jsonify({'error': 'Acesso não autorizado'}), 403
+
+        user.fcm_token = fcm_token
+        db.session.commit()
+        logger.info(f"FCM token atualizado para usuário {user.email}")
+        return jsonify({'message': 'FCM token atualizado com sucesso'}), 200
