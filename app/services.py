@@ -28,6 +28,7 @@ setup_logging()
 
 class QueueService:
     DEFAULT_EXPIRATION_MINUTES = 30
+    CALL_TIMEOUT_MINUTES = 5  # Tempo limite para validar presença após ser chamado
 
     @staticmethod
     def generate_qr_code():
@@ -168,8 +169,7 @@ class QueueService:
 
         ticket_number = queue.active_tickets + 1
         qr_code = QueueService.generate_qr_code()
-        expires_at = datetime.utcnow() + timedelta(minutes=QueueService.DEFAULT_EXPIRATION_MINUTES) if is_physical else None
-        
+        # Não definimos expires_at aqui, apenas quando o ticket for chamado
         ticket = Ticket(
             id=str(uuid.uuid4()),
             queue_id=queue.id,
@@ -178,7 +178,7 @@ class QueueService:
             qr_code=qr_code,
             priority=priority,
             is_physical=is_physical,
-            expires_at=expires_at
+            expires_at=None  # Será definido em call_next
         )
         
         queue.active_tickets += 1
@@ -227,11 +227,8 @@ class QueueService:
             raise ValueError("Nenhum ticket pendente")
         
         now = datetime.utcnow()
-        if next_ticket.expires_at and next_ticket.expires_at < now:
-            next_ticket.status = 'Cancelado'
-            queue.active_tickets -= 1
-            db.session.commit()
-            return QueueService.call_next(service)
+        # Definir expires_at para 5 minutos após ser chamado
+        next_ticket.expires_at = now + timedelta(minutes=QueueService.CALL_TIMEOUT_MINUTES)
         
         queue.current_ticket = next_ticket.ticket_number
         queue.active_tickets -= 1
@@ -241,7 +238,6 @@ class QueueService:
         next_ticket.attended_at = now
         db.session.commit()
         
-        # Mensagem ajustada para remover "Sua senha" ou "Sua vez"
         message = f"Dirija-se ao guichê {next_ticket.counter:02d}! Senha {queue.prefix}{next_ticket.ticket_number} chamada."
         QueueService.send_notification(None, message, next_ticket.id, via_websocket=True, user_id=next_ticket.user_id)
         
@@ -261,12 +257,18 @@ class QueueService:
         now = datetime.utcnow()
         tickets = Ticket.query.filter_by(status='Pendente').all()
         for ticket in tickets:
-            if ticket.expires_at and ticket.expires_at < now:
+            # Verificar se o horário de atendimento da fila acabou
+            queue = ticket.queue
+            if queue.end_time and now.time() > queue.end_time:
                 ticket.status = 'Cancelado'
                 ticket.queue.active_tickets -= 1
                 db.session.commit()
-                QueueService.send_notification(None, f"Sua senha {ticket.queue.prefix}{ticket.ticket_number} expirou!", user_id=ticket.user_id)
-                logger.info(f"Ticket {ticket.id} expirou")
+                QueueService.send_notification(
+                    None,
+                    f"Sua senha {ticket.queue.prefix}{ticket.ticket_number} foi cancelada porque o horário de atendimento terminou.",
+                    user_id=ticket.user_id
+                )
+                logger.info(f"Ticket {ticket.id} cancelado devido ao fim do horário de atendimento")
                 continue
             
             wait_time = QueueService.calculate_wait_time(ticket.queue_id, ticket.ticket_number, ticket.priority)
@@ -281,11 +283,25 @@ class QueueService:
                 user = User.query.get(ticket.user_id)
                 if user and user.last_known_lat and user.last_known_lon:
                     distance = QueueService.calculate_distance(user.last_known_lat, user.last_known_lon, ticket.queue.institution)
-                    if distance and distance > 5:  # Mais de 5 km
-                        travel_time = distance * 2  # Estimativa de 2 min/km (ajustável)
-                        if wait_time <= travel_time:  # Se o tempo de espera for menor que o tempo de viagem
+                    if distance and distance > 5:
+                        travel_time = distance * 2
+                        if wait_time <= travel_time:
                             message = f"Você está a {distance} km! Senha {ticket.queue.prefix}{ticket.ticket_number} será chamada em {wait_time} min. Comece a se deslocar!"
                             QueueService.send_notification(None, message, ticket.id, via_websocket=True, user_id=ticket.user_id)
+
+        # Verificar tickets chamados que não foram validados dentro do prazo
+        called_tickets = Ticket.query.filter_by(status='Chamado').all()
+        for ticket in called_tickets:
+            if ticket.expires_at and ticket.expires_at < now:
+                ticket.status = 'Cancelado'
+                ticket.queue.active_tickets -= 1
+                db.session.commit()
+                QueueService.send_notification(
+                    None,
+                    f"Sua senha {ticket.queue.prefix}{ticket.ticket_number} foi cancelada porque você não validou a presença a tempo.",
+                    user_id=ticket.user_id
+                )
+                logger.info(f"Ticket {ticket.id} cancelado por falta de validação de presença")
 
     @staticmethod
     def trade_tickets(ticket_from_id, ticket_to_id, user_from_id):
