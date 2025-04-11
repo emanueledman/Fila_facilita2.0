@@ -1,87 +1,91 @@
 from . import db
 from datetime import datetime
 import bcrypt
-from sqlalchemy import Column, Integer, String, Float, Time
+from sqlalchemy import Column, Integer, String, Float, Time, Boolean, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 
 class Institution(db.Model):
     __tablename__ = 'institution'
-    id = db.Column(db.String(36), primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    location = db.Column(db.String(200))
-    latitude = db.Column(db.Float)
-    longitude = db.Column(db.Float)
+    id = Column(String(36), primary_key=True, index=True)  # Índice para consultas rápidas
+    name = Column(String(100), nullable=False)
+    location = Column(String(200))
+    latitude = Column(Float)
+    longitude = Column(Float)
 
     def __repr__(self):
         return f'<Institution {self.name}>'
 
 class Queue(db.Model):
     __tablename__ = 'queue'
-    id = db.Column(db.String(36), primary_key=True)
-    institution_id = db.Column(db.String(36), db.ForeignKey('institution.id'), nullable=False)
-    service = db.Column(db.String(50), nullable=False)
-    prefix = db.Column(db.String(10), nullable=False)
-    sector = db.Column(db.String(50))
-    end_time = db.Column(db.Time, nullable=True)
-    department = db.Column(db.String(50))
-    institution_name = db.Column(db.String(100))
-    open_time = db.Column(db.Time, nullable=False)
-    daily_limit = db.Column(db.Integer, nullable=False)
-    active_tickets = db.Column(db.Integer, default=0)
-    current_ticket = db.Column(db.Integer, default=0)
-    avg_wait_time = db.Column(db.Float)
-    last_service_time = db.Column(db.Float)
-    num_counters = db.Column(db.Integer, default=1)
-    last_counter = db.Column(db.Integer, default=0)
+    id = Column(String(36), primary_key=True, index=True)  # Índice para consultas rápidas
+    institution_id = Column(String(36), ForeignKey('institution.id'), nullable=False, index=True)  # Índice para joins
+    service = Column(String(50), nullable=False, index=True)  # Índice para filtros por serviço
+    prefix = Column(String(10), nullable=False)
+    sector = Column(String(50))
+    end_time = Column(Time, nullable=True)
+    department = Column(String(50), index=True)  # Índice para filtros por departamento
+    institution_name = Column(String(100))
+    open_time = Column(Time, nullable=False)
+    daily_limit = Column(Integer, nullable=False)
+    active_tickets = Column(Integer, default=0)
+    current_ticket = Column(Integer, default=0)
+    avg_wait_time = Column(Float)
+    last_service_time = Column(Float)
+    num_counters = Column(Integer, default=1)
+    last_counter = Column(Integer, default=0)
 
-    institution = db.relationship('Institution', backref=db.backref('queues', lazy=True))
+    institution = relationship('Institution', backref=db.backref('queues', lazy='dynamic'))  # Lazy='dynamic' para eficiência
 
     def __repr__(self):
         return f'<Queue {self.service} at {self.institution_name}>'
 
 class Ticket(db.Model):
     __tablename__ = 'ticket'
-    id = db.Column(db.String(36), primary_key=True)
-    queue_id = db.Column(db.String(36), db.ForeignKey('queue.id'), nullable=False)
-    user_id = db.Column(db.String(36), nullable=False)
-    ticket_number = db.Column(db.Integer, nullable=False)
-    qr_code = db.Column(db.String(50), nullable=False)
-    priority = db.Column(db.Integer, default=0)
-    is_physical = db.Column(db.Boolean, default=False)
-    status = db.Column(db.String(20), default='Pendente')  # pending, called, attended, cancelled
-    issued_at = db.Column(db.DateTime, default=datetime.utcnow)
-    expires_at = db.Column(db.DateTime)
-    attended_at = db.Column(db.DateTime)
-    cancelled_at = db.Column(db.DateTime)
-    counter = db.Column(db.Integer)
-    service_time = db.Column(db.Float)
-    receipt_data = db.Column(db.Text)
-    trade_available = db.Column(db.Boolean, default=False)
+    id = Column(String(36), primary_key=True, index=True)  # Índice para consultas rápidas
+    queue_id = Column(String(36), ForeignKey('queue.id'), nullable=False, index=True)  # Índice para joins
+    user_id = Column(String(36), nullable=False, index=True)  # Índice para filtros por usuário
+    ticket_number = Column(Integer, nullable=False)
+    qr_code = Column(String(50), nullable=False, unique=True)  # Unique para evitar duplicatas
+    priority = Column(Integer, default=0)
+    is_physical = Column(Boolean, default=False)
+    status = Column(String(20), default='Pendente')  # Pendente, Chamado, Atendido, Cancelado
+    issued_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime)
+    attended_at = Column(DateTime)
+    cancelled_at = Column(DateTime)
+    counter = Column(Integer)
+    service_time = Column(Float)
+    receipt_data = Column(db.Text)
+    trade_available = Column(Boolean, default=False)
 
-    queue = db.relationship('Queue', backref=db.backref('tickets', lazy=True))
+    queue = relationship('Queue', backref=db.backref('tickets', lazy='dynamic'))  # Lazy='dynamic' para eficiência
 
     def __repr__(self):
         return f'<Ticket {self.ticket_number} for Queue {self.queue_id}>'
 
 class User(db.Model):
     __tablename__ = 'user'
-    id = db.Column(db.String(36), primary_key=True)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128), nullable=True)
-    fcm_token = db.Column(db.String(255))
-    user_tipo = db.Column(db.String(20), default='user')
-    institution_id = db.Column(db.String(36), db.ForeignKey('institution.id'), nullable=True)
-    department = db.Column(db.String(50), nullable=True)
-    last_known_lat = db.Column(db.Float, nullable=True)
-    last_known_lon = db.Column(db.Float, nullable=True)
-    last_location_update = db.Column(db.DateTime, nullable=True)
+    id = Column(String(36), primary_key=True, index=True)  # Índice para consultas rápidas
+    email = Column(String(120), unique=True, nullable=False, index=True)  # Índice para login
+    password_hash = Column(String(128), nullable=True)  # Pode ser null para usuários Firebase
+    fcm_token = Column(String(255), nullable=True)
+    user_tipo = Column(String(20), default='user', index=True)  # Índice para filtros por tipo
+    institution_id = Column(String(36), ForeignKey('institution.id'), nullable=True, index=True)  # Índice para joins
+    department = Column(String(50), nullable=True, index=True)  # Índice para filtros por departamento
+    last_known_lat = Column(Float, nullable=True)
+    last_known_lon = Column(Float, nullable=True)
+    last_location_update = Column(DateTime, nullable=True)
 
-    institution = db.relationship('Institution', backref=db.backref('users', lazy=True))
+    institution = relationship('Institution', backref=db.backref('users', lazy='dynamic'))  # Lazy='dynamic' para eficiência
 
     def set_password(self, password):
-        self.password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        """Define a senha do usuário com hash seguro."""
+        if password:
+            self.password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
     def check_password(self, password):
-        if not self.password_hash:
+        """Verifica se a senha fornecida corresponde ao hash armazenado."""
+        if not self.password_hash or not password:
             return False
         return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8'))
 

@@ -93,9 +93,9 @@ def init_queue_routes(app):
 
         user = User.query.get(user_id)
         if not user:
-            email = request.current_user.get('email')
+            email = data.get('email')  # Usa o email enviado, se disponível
             if not email:
-                logger.error(f"Email não encontrado no token para user_id={user_id}")
+                logger.error(f"Email não encontrado para user_id={user_id}")
                 return jsonify({'error': 'Email é obrigatório para criar um novo usuário'}), 400
             user = User(id=user_id, email=email)
             db.session.add(user)
@@ -412,23 +412,27 @@ def init_queue_routes(app):
         user_id = request.user_id
         data = request.get_json()
         fcm_token = data.get('fcm_token')
+        email = data.get('email')  # Email enviado pelo FilaOnlineHome
         
-        if not fcm_token:
-            logger.error(f"FCM token não fornecido por user_id={user_id}")
-            return jsonify({'error': 'FCM token é obrigatório'}), 400
+        if not fcm_token or not email:
+            logger.error(f"FCM token ou email não fornecidos por user_id={user_id}")
+            return jsonify({'error': 'FCM token e email são obrigatórios'}), 400
         
         user = User.query.get(user_id)
         if not user:
-            email = request.current_user.get('email')
-            if not email:
-                logger.error(f"Email não encontrado no token para user_id={user_id}")
-                return jsonify({'error': 'Email é obrigatório para criar um novo usuário'}), 400
+            # Cria um novo usuário se não existir
             user = User(id=user_id, email=email, fcm_token=fcm_token)
             db.session.add(user)
+            logger.info(f"Novo usuário criado: user_id={user_id}, email={email}")
         else:
+            # Verifica se o email do token corresponde ao usuário
+            if user.email != email:
+                logger.warning(f"Email fornecido ({email}) não corresponde ao user_id={user_id}")
+                return jsonify({'error': 'Email não corresponde ao usuário autenticado'}), 403
             user.fcm_token = fcm_token
+        
         db.session.commit()
-        logger.info(f"FCM token atualizado para user_id={user_id}")
+        logger.info(f"FCM token atualizado para user_id={user_id}, email={email}")
         return jsonify({'message': 'FCM token atualizado com sucesso'}), 200
 
     @app.route('/api/service/<institution_id>/<service>/current', methods=['GET'])
@@ -444,3 +448,4 @@ def init_queue_routes(app):
             return jsonify({'current_ticket': 'N/A'})
         
         return jsonify({'current_ticket': f"{queue.prefix}{current_ticket:03d}"})
+
