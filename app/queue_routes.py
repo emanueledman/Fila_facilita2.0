@@ -93,7 +93,7 @@ def init_queue_routes(app):
 
         user = User.query.get(user_id)
         if not user:
-            email = data.get('email')  # Usa o email enviado, se disponível
+            email = data.get('email')
             if not email:
                 logger.error(f"Email não encontrado para user_id={user_id}")
                 return jsonify({'error': 'Email é obrigatório para criar um novo usuário'}), 400
@@ -412,7 +412,7 @@ def init_queue_routes(app):
         user_id = request.user_id
         data = request.get_json()
         fcm_token = data.get('fcm_token')
-        email = data.get('email')  # Email enviado pelo FilaOnlineHome
+        email = data.get('email')
         
         if not fcm_token or not email:
             logger.error(f"FCM token ou email não fornecidos por user_id={user_id}")
@@ -420,12 +420,10 @@ def init_queue_routes(app):
         
         user = User.query.get(user_id)
         if not user:
-            # Cria um novo usuário se não existir
             user = User(id=user_id, email=email, fcm_token=fcm_token)
             db.session.add(user)
             logger.info(f"Novo usuário criado: user_id={user_id}, email={email}")
         else:
-            # Verifica se o email do token corresponde ao usuário
             if user.email != email:
                 logger.warning(f"Email fornecido ({email}) não corresponde ao user_id={user_id}")
                 return jsonify({'error': 'Email não corresponde ao usuário autenticado'}), 403
@@ -448,4 +446,3 @@ def init_queue_routes(app):
             return jsonify({'current_ticket': 'N/A'})
         
         return jsonify({'current_ticket': f"{queue.prefix}{current_ticket:03d}"})
-

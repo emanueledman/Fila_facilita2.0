@@ -29,9 +29,17 @@ def create_app():
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
-    # Configuração de logging
-    logging.basicConfig(level=logging.DEBUG)
-    app.logger.setLevel(logging.DEBUG)
+    # Configuração de logging unificada
+    handler = logging.handlers.RotatingFileHandler(
+        'queue_service.log', maxBytes=1024*1024, backupCount=10
+    )
+    handler.setFormatter(logging.Formatter(
+        '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+    ))
+    handler.setLevel(logging.INFO)
+    app.logger.handlers = []
+    app.logger.addHandler(handler)
+    app.logger.setLevel(logging.INFO if os.getenv('FLASK_ENV') == 'production' else logging.DEBUG)
     app.logger.info(f"Iniciando com banco de dados: {app.config['SQLALCHEMY_DATABASE_URI']}")
     
     # Configurações do SocketIO
@@ -43,13 +51,13 @@ def create_app():
     socketio.init_app(app, cors_allowed_origins="*", async_mode='eventlet', logger=True, engineio_logger=True)
     limiter.init_app(app)
     
-    # Importar modelos explicitamente antes de criar tabelas
+    # Importar modelos e criar tabelas
     with app.app_context():
         from .models import Institution, Queue, User, Ticket
-        db.drop_all()  # Garante que o banco seja limpo antes de recriar
+        db.drop_all()  # Limpa o banco
         db.create_all()
         app.logger.info("Tabelas do banco de dados recriadas com sucesso")
-
+    
     # Registra rotas
     from .routes import init_routes
     from .queue_routes import init_queue_routes
@@ -64,7 +72,6 @@ def create_app():
     # Configuração para produção/desenvolvimento
     if os.getenv('FLASK_ENV') == 'production':
         app.config['DEBUG'] = False
-        app.logger.setLevel(logging.INFO)
         app.logger.info("Aplicação configurada para modo de produção")
     else:
         app.config['DEBUG'] = True

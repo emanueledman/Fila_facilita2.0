@@ -7,7 +7,7 @@ from firebase_admin import credentials, auth
 import json
 import logging
 from datetime import datetime, timedelta
-from . import db  # Importa o db do app (assumindo que está em __init__.py ou similar)
+from . import db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -117,7 +117,6 @@ def init_auth_routes(app):
             logger.warning(f"Usuário não encontrado para email: {email}")
             return jsonify({'error': 'Usuário não encontrado'}), 404
 
-        # Verifica se o email corresponde ao user_id do token (segurança extra)
         if user.id != request.user_id:
             logger.warning(f"Tentativa de atualização de FCM token com email inválido: {email}")
             return jsonify({'error': 'Acesso não autorizado'}), 403
