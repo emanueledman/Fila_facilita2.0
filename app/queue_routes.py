@@ -58,7 +58,7 @@ def init_queue_routes(app):
                 } for q in queues]
             })
         logger.info(f"Lista de filas retornada: {len(result)} instituições encontradas.")
-        return jsonify(result)
+        return jsonify(result), 200
 
     @app.route('/api/suggest-service', methods=['GET'])
     @require_auth
@@ -74,7 +74,7 @@ def init_queue_routes(app):
         try:
             suggestions = suggest_service_locations(service, user_lat, user_lon)
             logger.info(f"Sugestões geradas para o serviço '{service}': {len(suggestions)} resultados.")
-            return jsonify(suggestions)
+            return jsonify(suggestions), 200
         except Exception as e:
             logger.error(f"Erro ao gerar sugestões para o serviço '{service}': {e}")
             return jsonify({'error': "Erro ao gerar sugestões."}), 500
@@ -172,7 +172,7 @@ def init_queue_routes(app):
         queue.num_counters = data.get('num_counters', queue.num_counters)
         db.session.commit()
         logger.info(f"Fila atualizada: {queue.service} (ID: {id})")
-        return jsonify({'message': 'Fila atualizada'})
+        return jsonify({'message': 'Fila atualizada'}), 200
 
     @app.route('/api/queue/<id>', methods=['DELETE'])
     @require_auth
@@ -184,7 +184,7 @@ def init_queue_routes(app):
         db.session.delete(queue)
         db.session.commit()
         logger.info(f"Fila excluída: {id}")
-        return jsonify({'message': 'Fila excluída'})
+        return jsonify({'message': 'Fila excluída'}), 200
 
     @app.route('/api/queue/<service>/ticket', methods=['POST'])
     @require_auth
@@ -268,8 +268,8 @@ def init_queue_routes(app):
             'wait_time': wait_time if wait_time != "N/A" else "N/A",
             'priority': ticket.priority,
             'is_physical': ticket.is_physical,
-            'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None
-        })
+            ' expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None
+        }), 200
 
     @app.route('/api/queue/<service>/call', methods=['POST'])
     @require_auth
@@ -282,7 +282,7 @@ def init_queue_routes(app):
                 'message': f'Senha {ticket.queue.prefix}{ticket.ticket_number} chamada',
                 'ticket_id': ticket.id,
                 'remaining': ticket.queue.active_tickets
-            })
+            }), 200
         except ValueError as e:
             logger.error(f"Erro ao chamar próxima senha para serviço {service}: {str(e)}")
             return jsonify({'error': str(e)}), 400
@@ -294,7 +294,7 @@ def init_queue_routes(app):
             ticket = QueueService.offer_trade(ticket_id, request.user_id)
             emit_ticket_update(ticket)
             logger.info(f"Senha oferecida para troca: {ticket_id}")
-            return jsonify({'message': 'Senha oferecida para troca', 'ticket_id': ticket.id})
+            return jsonify({'message': 'Senha oferecida para troca', 'ticket_id': ticket.id}), 200
         except ValueError as e:
             logger.error(f"Erro ao oferecer troca para ticket {ticket_id}: {str(e)}")
             return jsonify({'error': str(e)}), 400
@@ -311,7 +311,7 @@ def init_queue_routes(app):
             return jsonify({'message': 'Troca realizada', 'tickets': {
                 'from': {'id': result['ticket_from'].id, 'number': f"{result['ticket_from'].queue.prefix}{result['ticket_from'].ticket_number}"},
                 'to': {'id': result['ticket_to'].id, 'number': f"{result['ticket_to'].queue.prefix}{result['ticket_to'].ticket_number}"}
-            }})
+            }}), 200
         except ValueError as e:
             logger.error(f"Erro ao realizar troca entre tickets {ticket_from_id} e {ticket_to_id}: {str(e)}")
             return jsonify({'error': str(e)}), 400
@@ -324,7 +324,7 @@ def init_queue_routes(app):
             ticket = QueueService.validate_presence(qr_code)
             emit_ticket_update(ticket)
             logger.info(f"Presença validada para ticket {ticket.id}")
-            return jsonify({'message': 'Presença validada', 'ticket_id': ticket.id})
+            return jsonify({'message': 'Presença validada', 'ticket_id': ticket.id}), 200
         except ValueError as e:
             logger.error(f"Erro ao validar presença com QR {qr_code}: {str(e)}")
             return jsonify({'error': str(e)}), 400
@@ -344,7 +344,7 @@ def init_queue_routes(app):
             'wait_time': QueueService.calculate_wait_time(t.queue.id, t.ticket_number, t.priority) if t.status == 'Pendente' else "N/A",
             'qr_code': t.qr_code,
             'trade_available': t.trade_available
-        } for t in tickets])
+        } for t in tickets]), 200
 
     @app.route('/api/tickets/trade_available', methods=['GET'])
     @require_auth
@@ -354,7 +354,7 @@ def init_queue_routes(app):
         user_queue_ids = {t.queue_id for t in user_tickets}
         
         if not user_queue_ids:
-            return jsonify([])
+            return jsonify([]), 200
         
         tickets = Ticket.query.filter(
             Ticket.queue_id.in_(user_queue_ids),
@@ -370,7 +370,7 @@ def init_queue_routes(app):
             'number': f"{t.queue.prefix}{t.ticket_number}",
             'position': max(0, t.ticket_number - t.queue.current_ticket),
             'user_id': t.user_id
-        } for t in tickets])
+        } for t in tickets]), 200
 
     @app.route('/api/ticket/<ticket_id>/cancel', methods=['POST'])
     @require_auth
@@ -379,7 +379,7 @@ def init_queue_routes(app):
             ticket = QueueService.cancel_ticket(ticket_id, request.user_id)
             emit_ticket_update(ticket)
             logger.info(f"Senha cancelada: {ticket.queue.prefix}{ticket.ticket_number} (ticket_id={ticket.id})")
-            return jsonify({'message': f'Senha {ticket.queue.prefix}{ticket.ticket_number} cancelada', 'ticket_id': ticket.id})
+            return jsonify({'message': f'Senha {ticket.queue.prefix}{ticket.ticket_number} cancelada', 'ticket_id': ticket.id}), 200
         except ValueError as e:
             logger.error(f"Erro ao cancelar ticket {ticket_id}: {str(e)}")
             return jsonify({'error': str(e)}), 400
@@ -404,7 +404,7 @@ def init_queue_routes(app):
             'qr_code': t.qr_code,
             'trade_available': t.trade_available,
             'user_id': t.user_id
-        } for t in tickets])
+        } for t in tickets]), 200
 
     @app.route('/api/update_fcm_token', methods=['POST'])
     @require_auth
@@ -433,16 +433,48 @@ def init_queue_routes(app):
         logger.info(f"FCM token atualizado para user_id={user_id}, email={email}")
         return jsonify({'message': 'FCM token atualizado com sucesso'}), 200
 
-    @app.route('/api/service/<institution_id>/<service>/current', methods=['GET'])
+    @app.route('/api/service/<institution_name>/<service>/current', methods=['GET'])
     @require_auth
-    def get_currently_serving(institution_id, service):
-        queue = Queue.query.filter_by(institution_id=institution_id, service=service).first()
+    def get_currently_serving(institution_name, service):
+        # Buscar a instituição pelo nome
+        institution = Institution.query.filter_by(name=institution_name).first()
+        if not institution:
+            logger.error(f"Instituição não encontrada: {institution_name}")
+            return jsonify({'error': 'Instituição não encontrada'}), 404
+        
+        # Buscar a fila pelo institution_id e serviço
+        queue = Queue.query.filter_by(institution_id=institution.id, service=service).first()
         if not queue:
-            logger.error(f"Fila não encontrada para institution_id={institution_id}, service={service}")
+            logger.error(f"Fila não encontrada para institution_name={institution_name}, service={service}")
             return jsonify({'error': 'Fila não encontrada'}), 404
         
         current_ticket = queue.current_ticket
         if current_ticket == 0:
-            return jsonify({'current_ticket': 'N/A'})
+            return jsonify({'current_ticket': 'N/A'}), 200
         
-        return jsonify({'current_ticket': f"{queue.prefix}{current_ticket:03d}"})
+        return jsonify({'current_ticket': f"{queue.prefix}{current_ticket:03d}"}), 200
+
+    @app.route('/api/calculate_distance', methods=['POST'])
+    @require_auth
+    def calculate_distance():
+        data = request.get_json()
+        user_lat = data.get('latitude', type=float)
+        user_lon = data.get('longitude', type=float)
+        institution_id = data.get('institution_id')
+
+        if not all([user_lat, user_lon, institution_id]):
+            logger.warning("Requisição de distância sem latitude, longitude ou institution_id")
+            return jsonify({'error': 'Latitude, longitude e institution_id são obrigatórios'}), 400
+
+        institution = Institution.query.get(institution_id)
+        if not institution:
+            logger.error(f"Instituição não encontrada para institution_id={institution_id}")
+            return jsonify({'error': 'Instituição não encontrada'}), 404
+
+        distance = QueueService.calculate_distance(user_lat, user_lon, institution)
+        if distance is None:
+            logger.error(f"Erro ao calcular distância para institution_id={institution_id}")
+            return jsonify({'error': 'Erro ao calcular distância'}), 500
+
+        logger.info(f"Distância calculada: {distance:.2f} km entre usuário ({user_lat}, {user_lon}) e {institution.name}")
+        return jsonify({'distance': distance}), 200

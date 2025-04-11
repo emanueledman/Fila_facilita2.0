@@ -470,12 +470,13 @@ class QueueService:
             user_id=user_id
         )
 
+        # Usar Ticket.issued_at em vez de Ticket.created_at
         eligible_tickets = Ticket.query.filter(
             Ticket.queue_id == ticket.queue_id,
             Ticket.user_id != user_id,
             Ticket.status == 'Pendente',
             Ticket.trade_available == False
-        ).order_by(Ticket.created_at.asc()).limit(5).all()
+        ).order_by(Ticket.issued_at.asc()).limit(5).all()
 
         if socketio:
             for eligible_ticket in eligible_tickets:
@@ -492,7 +493,6 @@ class QueueService:
                     logger.error(f"Erro ao emitir trade_available para user_id {eligible_ticket.user_id}: {e}")
 
         return ticket
-
     @staticmethod
     def cancel_ticket(ticket_id, user_id):
         ticket = Ticket.query.get_or_404(ticket_id)
