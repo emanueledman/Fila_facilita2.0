@@ -4,19 +4,24 @@ import bcrypt
 from sqlalchemy import Column, Integer, String, Float, Time
 
 class Institution(db.Model):
+    __tablename__ = 'institution'
     id = db.Column(db.String(36), primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     location = db.Column(db.String(200))
     latitude = db.Column(db.Float)
     longitude = db.Column(db.Float)
 
+    def __repr__(self):
+        return f'<Institution {self.name}>'
+
 class Queue(db.Model):
+    __tablename__ = 'queue'
     id = db.Column(db.String(36), primary_key=True)
     institution_id = db.Column(db.String(36), db.ForeignKey('institution.id'), nullable=False)
     service = db.Column(db.String(50), nullable=False)
     prefix = db.Column(db.String(10), nullable=False)
     sector = db.Column(db.String(50))
-    end_time = Column(Time, nullable=True)
+    end_time = db.Column(db.Time, nullable=True)
     department = db.Column(db.String(50))
     institution_name = db.Column(db.String(100))
     open_time = db.Column(db.Time, nullable=False)
@@ -28,7 +33,13 @@ class Queue(db.Model):
     num_counters = db.Column(db.Integer, default=1)
     last_counter = db.Column(db.Integer, default=0)
 
+    institution = db.relationship('Institution', backref=db.backref('queues', lazy=True))
+
+    def __repr__(self):
+        return f'<Queue {self.service} at {self.institution_name}>'
+
 class Ticket(db.Model):
+    __tablename__ = 'ticket'
     id = db.Column(db.String(36), primary_key=True)
     queue_id = db.Column(db.String(36), db.ForeignKey('queue.id'), nullable=False)
     user_id = db.Column(db.String(36), nullable=False)
@@ -48,23 +59,28 @@ class Ticket(db.Model):
 
     queue = db.relationship('Queue', backref=db.backref('tickets', lazy=True))
 
+    def __repr__(self):
+        return f'<Ticket {self.ticket_number} for Queue {self.queue_id}>'
+
 class User(db.Model):
+    __tablename__ = 'user'
     id = db.Column(db.String(36), primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128), nullable=True)  # Campo para armazenar o hash da senha
+    password_hash = db.Column(db.String(128), nullable=True)
     fcm_token = db.Column(db.String(255))
-    user_tipo = db.Column(db.String(20), default='user')  # 'user' ou 'gestor'
+    user_tipo = db.Column(db.String(20), default='user')
     institution_id = db.Column(db.String(36), db.ForeignKey('institution.id'), nullable=True)
     department = db.Column(db.String(50), nullable=True)
+    last_known_lat = db.Column(db.Float, nullable=True)
+    last_known_lon = db.Column(db.Float, nullable=True)
+    last_location_update = db.Column(db.DateTime, nullable=True)
 
     institution = db.relationship('Institution', backref=db.backref('users', lazy=True))
 
     def set_password(self, password):
-        """Gera o hash da senha e armazena no campo password_hash."""
         self.password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
     def check_password(self, password):
-        """Verifica se a senha fornecida corresponde ao hash armazenado."""
         if not self.password_hash:
             return False
         return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8'))

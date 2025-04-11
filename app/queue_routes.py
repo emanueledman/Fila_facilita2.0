@@ -1,21 +1,17 @@
-# app/queue_routes.py
-
 from flask import jsonify, request, send_file
 from . import db, socketio
 from .models import Institution, Queue, Ticket, User
 from .auth import require_auth
-from .services import QueueService, suggest_service_locations  # Importar a função de sugestão
+from .services import QueueService, suggest_service_locations
 import uuid
 from datetime import datetime
 import io
 import logging
 
-# Configurar logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def init_queue_routes(app):
-    # Função para emitir atualização de ticket com tratamento de erro
     def emit_ticket_update(ticket):
         try:
             wait_time = QueueService.calculate_wait_time(ticket.queue.id, ticket.ticket_number, ticket.priority)
@@ -52,10 +48,13 @@ def init_queue_routes(app):
                     'sector': q.sector,
                     'department': q.department,
                     'institution': q.institution_name,
-                    'open_time': q.open_time.strftime('%H:%M'),
+                    'open_time': q.open_time.strftime('%H:%M') if q.open_time else None,
+                    'end_time': q.end_time.strftime('%H:%M') if q.end_time else None,
                     'daily_limit': q.daily_limit,
                     'active_tickets': q.active_tickets,
-                    'status': 'Aberto' if now >= q.open_time and q.active_tickets < q.daily_limit else 'Fechado' if now < q.open_time else 'Lotado'
+                    'avg_wait_time': q.avg_wait_time,
+                    'num_counters': q.num_counters,
+                    'status': 'Aberto' if (q.open_time and now >= q.open_time and (q.end_time is None or now <= q.end_time) and q.active_tickets < q.daily_limit) else 'Fechado'
                 } for q in queues]
             })
         logger.info(f"Lista de filas retornada: {len(result)} instituições encontradas.")
@@ -64,13 +63,6 @@ def init_queue_routes(app):
     @app.route('/api/suggest-service', methods=['GET'])
     @require_auth
     def suggest_service():
-        """
-        Sugere locais onde o usuário pode encontrar um serviço.
-        Parâmetros esperados na query string:
-        - service (obrigatório): Nome do serviço procurado.
-        - lat (opcional): Latitude do usuário.
-        - lon (opcional): Longitude do usuário.
-        """
         service = request.args.get('service')
         user_lat = request.args.get('lat', type=float)
         user_lon = request.args.get('lon', type=float)
@@ -86,6 +78,37 @@ def init_queue_routes(app):
         except Exception as e:
             logger.error(f"Erro ao gerar sugestões para o serviço '{service}': {e}")
             return jsonify({'error': "Erro ao gerar sugestões."}), 500
+
+    @app.route('/api/update_location', methods=['POST'])
+    @require_auth
+    def update_location():
+        user_id = request.user_id
+        data = request.get_json()
+        latitude = data.get('latitude', type=float)
+        longitude = data.get('longitude', type=float)
+
+        if latitude is None or longitude is None:
+            logger.error(f"Latitude ou longitude não fornecidos por user_id={user_id}")
+            return jsonify({'error': 'Latitude e longitude são obrigatórios'}), 400
+
+        user = User.query.get(user_id)
+        if not user:
+            email = request.current_user.get('email')
+            if not email:
+                logger.error(f"Email não encontrado no token para user_id={user_id}")
+                return jsonify({'error': 'Email é obrigatório para criar um novo usuário'}), 400
+            user = User(id=user_id, email=email)
+            db.session.add(user)
+
+        user.last_known_lat = latitude
+        user.last_known_lon = longitude
+        user.last_location_update = datetime.utcnow()
+        db.session.commit()
+        logger.info(f"Localização atualizada para user_id={user_id}: lat={latitude}, lon={longitude}")
+
+        QueueService.check_proximity_notifications(user_id, latitude, longitude)
+
+        return jsonify({'message': 'Localização atualizada com sucesso'}), 200
 
     @app.route('/api/queue/create', methods=['POST'])
     @require_auth
@@ -396,7 +419,11 @@ def init_queue_routes(app):
         
         user = User.query.get(user_id)
         if not user:
-            user = User(id=user_id, fcm_token=fcm_token)
+            email = request.current_user.get('email')
+            if not email:
+                logger.error(f"Email não encontrado no token para user_id={user_id}")
+                return jsonify({'error': 'Email é obrigatório para criar um novo usuário'}), 400
+            user = User(id=user_id, email=email, fcm_token=fcm_token)
             db.session.add(user)
         else:
             user.fcm_token = fcm_token

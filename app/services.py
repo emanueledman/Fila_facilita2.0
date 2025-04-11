@@ -1,5 +1,3 @@
-# app/services.py
-
 import logging
 import uuid
 import numpy as np
@@ -11,7 +9,7 @@ from .models import Queue, Ticket, User
 from .utils.pdf_generator import generate_ticket_pdf
 from firebase_admin import messaging
 from sqlalchemy.exc import SQLAlchemyError
-from .ml_models import wait_time_predictor, service_recommendation_predictor  # Importar os preditores
+from .ml_models import wait_time_predictor, service_recommendation_predictor
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +30,7 @@ setup_logging()
 class QueueService:
     DEFAULT_EXPIRATION_MINUTES = 30
     CALL_TIMEOUT_MINUTES = 5
+    PROXIMITY_THRESHOLD_KM = 1.0
 
     @staticmethod
     def generate_qr_code():
@@ -90,18 +89,15 @@ class QueueService:
             logger.error(f"Fila não encontrada para queue_id={queue_id}")
             return 0
         
-        # Se o atendimento ainda não começou (current_ticket == 0), retornar "N/A"
         if queue.current_ticket == 0:
             logger.debug(f"Atendimento ainda não começou para queue_id={queue_id}, wait_time='N/A'")
             return "N/A"
 
-        # Calcular a posição do ticket na fila
         position = max(0, ticket_number - queue.current_ticket)
         if position == 0:
             logger.debug(f"Ticket {ticket_number} está na posição 0, wait_time=0")
             return 0
 
-        # Tentar usar o modelo de machine learning para previsão
         now = datetime.utcnow()
         hour_of_day = now.hour
         predicted_time = wait_time_predictor.predict(position, queue.active_tickets, priority, hour_of_day)
@@ -109,7 +105,6 @@ class QueueService:
         if predicted_time is not None:
             wait_time = predicted_time
         else:
-            # Fallback para o cálculo manual se o modelo não estiver treinado ou falhar
             completed_tickets = Ticket.query.filter_by(queue_id=queue_id, status='attended').all()
             service_times = [t.service_time for t in completed_tickets if t.service_time is not None and t.service_time > 0]
             
@@ -123,11 +118,10 @@ class QueueService:
 
             wait_time = position * estimated_time
             if priority > 0:
-                wait_time *= (1 - priority * 0.1)  # Reduz o tempo para prioridades mais altas
+                wait_time *= (1 - priority * 0.1)
             if queue.active_tickets > 10:
-                wait_time += (queue.active_tickets - 10) * 0.5  # Ajuste para filas longas
+                wait_time += (queue.active_tickets - 10) * 0.5
 
-            # Atualizar o tempo médio de espera da fila
             queue.avg_wait_time = estimated_time
             db.session.commit()
 
@@ -140,8 +134,19 @@ class QueueService:
         if not all([user_lat, user_lon, institution.latitude, institution.longitude]):
             logger.warning(f"Coordenadas incompletas para cálculo de distância: user_lat={user_lat}, user_lon={user_lon}, inst_lat={institution.latitude}, inst_lon={institution.longitude}")
             return None
-        distance = math.sqrt((user_lat - institution.latitude)**2 + (user_lon - institution.longitude)**2) * 111
-        return round(distance, 1)
+        
+        lat1, lon1 = math.radians(user_lat), math.radians(user_lon)
+        lat2, lon2 = math.radians(institution.latitude), math.radians(institution.longitude)
+
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+
+        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+        c = 2 * math.asin(math.sqrt(a))
+        r = 6371
+        distance = c * r
+
+        return round(distance, 2)
 
     @staticmethod
     def send_notification(fcm_token, message, ticket_id=None, via_websocket=False, user_id=None):
@@ -186,7 +191,6 @@ class QueueService:
             logger.error(f"Fila não encontrada para o serviço: {service}")
             raise ValueError("Fila não encontrada")
         
-        # Verificar se a fila está aberta
         now = datetime.utcnow().time()
         if now < queue.open_time:
             logger.warning(f"Tentativa de emitir senha antes do horário de abertura para serviço {service}. Horário atual: {now}, abertura: {queue.open_time}")
@@ -281,6 +285,53 @@ class QueueService:
         
         logger.info(f"Ticket {next_ticket.id} chamado na fila {service}")
         return next_ticket
+
+    @staticmethod
+    def check_proximity_notifications(user_id, user_lat, user_lon, desired_service=None):
+        user = User.query.get(user_id)
+        if not user or not user.fcm_token:
+            logger.warning(f"Usuário {user_id} não encontrado ou sem FCM token para notificações de proximidade")
+            return
+
+        queues = Queue.query.all()
+        now = datetime.utcnow().time()
+        notified_institutions = set()
+
+        for queue in queues:
+            if not queue.institution:
+                continue
+            if (queue.open_time and now < queue.open_time) or (queue.end_time and now > queue.end_time):
+                continue
+            if queue.active_tickets >= queue.daily_limit:
+                continue
+
+            if desired_service:
+                service_match = desired_service.lower() in queue.service.lower()
+                sector_match = desired_service.lower() in (queue.sector or "").lower()
+                if not (service_match or sector_match):
+                    continue
+
+            distance = QueueService.calculate_distance(user_lat, user_lon, queue.institution)
+            if distance is None or distance > QueueService.PROXIMITY_THRESHOLD_KM:
+                continue
+
+            institution_id = queue.institution.id
+            if institution_id in notified_institutions:
+                continue
+
+            wait_time = QueueService.calculate_wait_time(queue.id, queue.active_tickets + 1, priority=0)
+            message = (
+                f"Fila disponível próxima! {queue.service} em {queue.institution_name} "
+                f"a {distance:.2f} km de você. Tempo de espera: {wait_time if wait_time != 'N/A' else 'Aguardando início'} min."
+            )
+            QueueService.send_notification(
+                user.fcm_token,
+                message,
+                via_websocket=True,
+                user_id=user_id
+            )
+            notified_institutions.add(institution_id)
+            logger.info(f"Notificação de proximidade enviada para user_id={user_id}: {message}")
 
     @staticmethod
     def check_proactive_notifications():
@@ -476,18 +527,6 @@ class QueueService:
         return ticket
 
 def suggest_service_locations(service, user_lat=None, user_lon=None, max_results=3):
-    """
-    Sugere locais onde o usuário pode encontrar o serviço desejado, usando um modelo de machine learning para pontuar a qualidade de atendimento.
-    
-    Args:
-        service (str): Nome do serviço procurado (ex.: "Consulta Médica").
-        user_lat (float): Latitude do usuário (opcional).
-        user_lon (float): Longitude do usuário (opcional).
-        max_results (int): Número máximo de sugestões a retornar.
-    
-    Returns:
-        list: Lista de sugestões ordenadas por pontuação.
-    """
     queues = Queue.query.all()
     suggestions = []
     now = datetime.utcnow()
@@ -496,32 +535,29 @@ def suggest_service_locations(service, user_lat=None, user_lon=None, max_results
     day_of_week = now.weekday()
 
     for queue in queues:
-        # Verificar se a fila está aberta e tem vagas disponíveis
-        if current_time < queue.open_time:
+        if queue.open_time and current_time < queue.open_time:
+            continue
+        if queue.end_time and current_time > queue.end_time:
             continue
         if queue.active_tickets >= queue.daily_limit:
             continue
 
-        # Verificar correspondência com o serviço ou setor
         service_match = service.lower() in queue.service.lower()
         sector_match = service.lower() in (queue.sector or "").lower()
         if not (service_match or sector_match):
             continue
 
-        # Calcular o tempo de espera estimado
         next_ticket_number = queue.active_tickets + 1
         wait_time = QueueService.calculate_wait_time(queue.id, next_ticket_number, priority=0)
         if wait_time == "N/A":
             wait_time = float('inf')
 
-        # Calcular a distância
         distance = None
-        if user_lat is not None and user_lon is not None:
+        if user_lat is not None and user_lon is not None and queue.institution:
             distance = QueueService.calculate_distance(user_lat, user_lon, queue.institution)
             if distance is None:
                 distance = float('inf')
 
-        # Calcular a pontuação de qualidade de atendimento usando o modelo
         tickets = Ticket.query.filter_by(queue_id=queue.id, status='attended').all()
         service_times = [t.service_time for t in tickets if t.service_time is not None and t.service_time > 0]
         quality_score = None
@@ -534,7 +570,6 @@ def suggest_service_locations(service, user_lat=None, user_lon=None, max_results
             quality_score = service_recommendation_predictor.predict(
                 avg_service_time, std_service_time, service_time_per_counter, occupancy_rate, hour_of_day, day_of_week
             )
-            # Classificar a velocidade de atendimento com base no tempo médio
             if avg_service_time <= 5:
                 speed_label = "Rápida"
             elif avg_service_time <= 15:
@@ -543,35 +578,43 @@ def suggest_service_locations(service, user_lat=None, user_lon=None, max_results
                 speed_label = "Lenta"
         
         if quality_score is None:
-            # Fallback: usar uma pontuação baseada em heurísticas simples
-            quality_score = 0.5  # Pontuação neutra
+            quality_score = 0.5
             if service_times:
                 avg_service_time = np.mean(service_times)
                 std_service_time = np.std(service_times) if len(service_times) > 1 else 0
                 quality_score = (1 / (avg_service_time + 1)) - (std_service_time / (avg_service_time + 1))
-                quality_score = max(0, min(1, quality_score))  # Normalizar entre 0 e 1
+                quality_score = max(0, min(1, quality_score))
 
-        # Calcular a pontuação final
-        # Fórmula: score = (wait_time_score * 0.4) + (distance_score * 0.3) + (quality_score * 0.2) + (match_score * 0.1)
         wait_time_score = 1 / (wait_time + 1) if wait_time != float('inf') else 0
         distance_score = 1 / (distance + 1) if distance is not None and distance != float('inf') else 0
         match_score = 1 if service_match else 0.5
         score = (wait_time_score * 0.4) + (distance_score * 0.3) + (quality_score * 0.2) + (match_score * 0.1)
 
         suggestions.append({
-            'institution': queue.institution_name,
-            'location': queue.institution.location,
-            'service': queue.service,
-            'sector': queue.sector,
-            'wait_time': wait_time if wait_time != float('inf') else "Aguardando início",
-            'distance': distance if distance is not None else "Desconhecida",
-            'quality_score': quality_score,
-            'speed_label': speed_label,
-            'score': score,
-            'queue_id': queue.id,
-            'open_time': queue.open_time.strftime('%H:%M'),
-            'active_tickets': queue.active_tickets,
-            'daily_limit': queue.daily_limit
+            'institution': {
+                'id': queue.institution.id if queue.institution else None,
+                'name': queue.institution_name,
+                'location': queue.institution.location if queue.institution else None,
+                'latitude': queue.institution.latitude if queue.institution else None,
+                'longitude': queue.institution.longitude if queue.institution else None,
+            },
+            'queue': {
+                'id': queue.id,
+                'service': queue.service,
+                'sector': queue.sector,
+                'wait_time': wait_time if wait_time != float('inf') else "Aguardando início",
+                'distance': distance if distance is not None else "Desconhecida",
+                'quality_score': quality_score,
+                'speed_label': speed_label,
+                'score': score,
+                'open_time': queue.open_time.strftime('%H:%M') if queue.open_time else None,
+                'end_time': queue.end_time.strftime('%H:%M') if queue.end_time else None,
+                'active_tickets': queue.active_tickets,
+                'daily_limit': queue.daily_limit,
+                'avg_wait_time': queue.avg_wait_time,
+                'num_counters': queue.num_counters,
+                'status': 'Aberto' if queue.active_tickets < queue.daily_limit else 'Fechado'
+            }
         })
 
     suggestions.sort(key=lambda x: x['score'], reverse=True)
