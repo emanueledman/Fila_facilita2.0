@@ -1,9 +1,11 @@
+# app/queue_routes.py
+
 from flask import jsonify, request, send_file
 from . import db, socketio
-from .models import Institution, Queue, Ticket
+from .models import Institution, Queue, Ticket, User
 from .auth import require_auth
 from .services import QueueService
-from ..run import train_ml_model_periodically  # Importar a função de sugestão
+from ..run import suggest_service_locations  # Importar a função de sugestão
 import uuid
 from datetime import datetime
 import io
@@ -37,16 +39,27 @@ def init_queue_routes(app):
         for inst in institutions:
             queues = Queue.query.filter_by(institution_id=inst.id).all()
             result.append({
-                'institution': {'id': inst.id, 'name': inst.name, 'location': inst.location,
-                                'latitude': inst.latitude, 'longitude': inst.longitude},
+                'institution': {
+                    'id': inst.id,
+                    'name': inst.name,
+                    'location': inst.location,
+                    'latitude': inst.latitude,
+                    'longitude': inst.longitude
+                },
                 'queues': [{
-                    'id': q.id, 'service': q.service, 'prefix': q.prefix, 'sector': q.sector,
-                    'department': q.department, 'institution': q.institution_name,
-                    'open_time': q.open_time.strftime('%H:%M'), 'daily_limit': q.daily_limit,
+                    'id': q.id,
+                    'service': q.service,
+                    'prefix': q.prefix,
+                    'sector': q.sector,
+                    'department': q.department,
+                    'institution': q.institution_name,
+                    'open_time': q.open_time.strftime('%H:%M'),
+                    'daily_limit': q.daily_limit,
                     'active_tickets': q.active_tickets,
                     'status': 'Aberto' if now >= q.open_time and q.active_tickets < q.daily_limit else 'Fechado' if now < q.open_time else 'Lotado'
                 } for q in queues]
             })
+        logger.info(f"Lista de filas retornada: {len(result)} instituições encontradas.")
         return jsonify(result)
 
     @app.route('/api/suggest-service', methods=['GET'])
@@ -81,24 +94,34 @@ def init_queue_routes(app):
         data = request.get_json()
         required = ['service', 'prefix', 'sector', 'department', 'institution_id', 'open_time', 'daily_limit', 'num_counters']
         if not data or not all(f in data for f in required):
+            logger.warning("Campos obrigatórios faltando na criação de fila.")
             return jsonify({'error': 'Campos obrigatórios faltando'}), 400
         
         institution = Institution.query.get(data['institution_id'])
         if not institution:
+            logger.error(f"Instituição não encontrada: institution_id={data['institution_id']}")
             return jsonify({'error': 'Instituição não encontrada'}), 404
         
         if Queue.query.filter_by(service=data['service'], institution_id=data['institution_id']).first():
+            logger.warning(f"Fila já existe para o serviço {data['service']} na instituição {data['institution_id']}.")
             return jsonify({'error': 'Fila já existe'}), 400
         
         try:
             open_time = datetime.strptime(data['open_time'], '%H:%M').time()
         except ValueError:
+            logger.error(f"Formato de open_time inválido: {data['open_time']}")
             return jsonify({'error': 'Formato de open_time inválido (HH:MM)'}), 400
         
         queue = Queue(
-            id=str(uuid.uuid4()), institution_id=data['institution_id'], service=data['service'],
-            prefix=data['prefix'], sector=data['sector'], department=data['department'],
-            institution_name=institution.name, open_time=open_time, daily_limit=data['daily_limit'],
+            id=str(uuid.uuid4()),
+            institution_id=data['institution_id'],
+            service=data['service'],
+            prefix=data['prefix'],
+            sector=data['sector'],
+            department=data['department'],
+            institution_name=institution.name,
+            open_time=open_time,
+            daily_limit=data['daily_limit'],
             num_counters=data['num_counters']
         )
         db.session.add(queue)
@@ -121,6 +144,7 @@ def init_queue_routes(app):
             try:
                 queue.open_time = datetime.strptime(data['open_time'], '%H:%M').time()
             except ValueError:
+                logger.error(f"Formato de open_time inválido: {data['open_time']}")
                 return jsonify({'error': 'Formato de open_time inválido (HH:MM)'}), 400
         queue.daily_limit = data.get('daily_limit', queue.daily_limit)
         queue.num_counters = data.get('num_counters', queue.num_counters)
@@ -371,7 +395,6 @@ def init_queue_routes(app):
             logger.error(f"FCM token não fornecido por user_id={user_id}")
             return jsonify({'error': 'FCM token é obrigatório'}), 400
         
-        from .models import User
         user = User.query.get(user_id)
         if not user:
             user = User(id=user_id, fcm_token=fcm_token)
@@ -382,7 +405,6 @@ def init_queue_routes(app):
         logger.info(f"FCM token atualizado para user_id={user_id}")
         return jsonify({'message': 'FCM token atualizado com sucesso'}), 200
 
-    # Rota para obter a senha atual sendo atendida
     @app.route('/api/service/<institution_id>/<service>/current', methods=['GET'])
     @require_auth
     def get_currently_serving(institution_id, service):

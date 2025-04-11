@@ -23,6 +23,7 @@ def populate_initial_data():
             app.logger.info("Dados iniciais de instituições já existem.")
         else:
             institutions = [
+                # Instituições de Saúde
                 {
                     'id': str(uuid.uuid4()),
                     'name': 'Centro de Saúde Camama',
@@ -36,6 +37,18 @@ def populate_initial_data():
                 },
                 {
                     'id': str(uuid.uuid4()),
+                    'name': 'Hospital Viana',
+                    'location': 'Viana, Luanda',
+                    'latitude': -8.9035,
+                    'longitude': 13.3741,
+                    'queues': [
+                        {'service': 'Consulta Geral', 'prefix': 'A', 'sector': 'Saúde', 'department': 'Consulta Geral', 'open_time': time(7, 0), 'daily_limit': 20, 'num_counters': 3},
+                        {'service': 'Exames Laboratoriais', 'prefix': 'B', 'sector': 'Saúde', 'department': 'Laboratório', 'open_time': time(8, 0), 'daily_limit': 15, 'num_counters': 2},
+                    ]
+                },
+                # Instituições de Documentação
+                {
+                    'id': str(uuid.uuid4()),
                     'name': 'Posto de Identificação Luanda',
                     'location': 'Luanda Centro, Luanda',
                     'latitude': -8.8147,
@@ -45,6 +58,7 @@ def populate_initial_data():
                         {'service': 'Registo de Nascimento', 'prefix': 'B', 'sector': 'Documentação', 'department': 'Registo Civil', 'open_time': time(8, 30), 'daily_limit': 25, 'num_counters': 3},
                     ]
                 },
+                # Instituições Bancárias
                 {
                     'id': str(uuid.uuid4()),
                     'name': 'Banco BFA Kilamba',
@@ -56,6 +70,7 @@ def populate_initial_data():
                         {'service': 'Manutenção de Conta', 'prefix': 'B', 'sector': 'Bancário', 'department': 'Contas', 'open_time': time(9, 0), 'daily_limit': 15, 'num_counters': 2},
                     ]
                 },
+                # Instituições de Educação
                 {
                     'id': str(uuid.uuid4()),
                     'name': 'Escola Primária Cazenga',
@@ -66,17 +81,7 @@ def populate_initial_data():
                         {'service': 'Matrícula Escolar', 'prefix': 'A', 'sector': 'Educação', 'department': 'Matrículas', 'open_time': time(7, 30), 'daily_limit': 40, 'num_counters': 2},
                     ]
                 },
-                {
-                    'id': str(uuid.uuid4()),
-                    'name': 'Hospital Viana',
-                    'location': 'Viana, Luanda',
-                    'latitude': -8.9035,
-                    'longitude': 13.3741,
-                    'queues': [
-                        {'service': 'Consulta Geral', 'prefix': 'A', 'sector': 'Saúde', 'department': 'Consulta Geral', 'open_time': time(7, 0), 'daily_limit': 20, 'num_counters': 3},
-                        {'service': 'Exames Laboratoriais', 'prefix': 'B', 'sector': 'Saúde', 'department': 'Laboratório', 'open_time': time(8, 0), 'daily_limit': 15, 'num_counters': 2},
-                    ]
-                },
+                # Instituições de Transportes
                 {
                     'id': str(uuid.uuid4()),
                     'name': 'Direção de Trânsito Talatona',
@@ -85,6 +90,53 @@ def populate_initial_data():
                     'longitude': 13.1809,
                     'queues': [
                         {'service': 'Licenciamento de Veículos', 'prefix': 'A', 'sector': 'Transportes', 'department': 'Licenciamento', 'open_time': time(8, 0), 'daily_limit': 35, 'num_counters': 4},
+                    ]
+                },
+                # Instituições de Correios
+                {
+                    'id': str(uuid.uuid4()),
+                    'name': 'Correios de Angola - Maianga',
+                    'location': 'Maianga, Luanda',
+                    'latitude': -8.8265,
+                    'longitude': 13.2278,
+                    'queues': [
+                        {'service': 'Envio de Encomendas', 'prefix': 'A', 'sector': 'Correios', 'department': 'Encomendas', 'open_time': time(8, 0), 'daily_limit': 50, 'num_counters': 3},
+                        {'service': 'Recebimento de Correspondência', 'prefix': 'B', 'sector': 'Correios', 'department': 'Correspondência', 'open_time': time(8, 0), 'daily_limit': 40, 'num_counters': 2},
+                    ]
+                },
+                # Instituições de Energia e Águas
+                {
+                    'id': str(uuid.uuid4()),
+                    'name': 'ENDE - Empresa Nacional de Distribuição de Eletricidade',
+                    'location': 'Rangel, Luanda',
+                    'latitude': -8.8290,
+                    'longitude': 13.2601,
+                    'queues': [
+                        {'service': 'Pagamento de Faturas de Energia', 'prefix': 'A', 'sector': 'Energia e Águas', 'department': 'Faturação', 'open_time': time(8, 0), 'daily_limit': 60, 'num_counters': 4},
+                        {'service': 'Reclamações de Energia', 'prefix': 'B', 'sector': 'Energia e Águas', 'department': 'Atendimento ao Cliente', 'open_time': time(8, 0), 'daily_limit': 30, 'num_counters': 2},
+                    ]
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'name': 'EPAL - Empresa Pública de Águas de Luanda',
+                    'location': 'Samba, Luanda',
+                    'latitude': -8.8402,
+                    'longitude': 13.2156,
+                    'queues': [
+                        {'service': 'Pagamento de Faturas de Água', 'prefix': 'A', 'sector': 'Energia e Águas', 'department': 'Faturação', 'open_time': time(8, 0), 'daily_limit': 50, 'num_counters': 3},
+                        {'service': 'Reclamações de Água', 'prefix': 'B', 'sector': 'Energia e Águas', 'department': 'Atendimento ao Cliente', 'open_time': time(8, 0), 'daily_limit': 25, 'num_counters': 2},
+                    ]
+                },
+                # Instituições de Telecomunicações
+                {
+                    'id': str(uuid.uuid4()),
+                    'name': 'Unitel - Loja Cazenga',
+                    'location': 'Cazenga, Luanda',
+                    'latitude': -8.8201,
+                    'longitude': 13.2903,
+                    'queues': [
+                        {'service': 'Ativação de Linha', 'prefix': 'A', 'sector': 'Telecomunicações', 'department': 'Atendimento ao Cliente', 'open_time': time(9, 0), 'daily_limit': 40, 'num_counters': 3},
+                        {'service': 'Suporte Técnico', 'prefix': 'B', 'sector': 'Telecomunicações', 'department': 'Suporte', 'open_time': time(9, 0), 'daily_limit': 30, 'num_counters': 2},
                     ]
                 },
             ]
@@ -121,6 +173,7 @@ def populate_initial_data():
             app.logger.info("Gestores iniciais já existem.")
         else:
             gestores = [
+                # Gestores de Saúde
                 {
                     'id': str(uuid.uuid4()),
                     'email': 'gestor.camama@saude.com',
@@ -139,42 +192,10 @@ def populate_initial_data():
                 },
                 {
                     'id': str(uuid.uuid4()),
-                    'email': 'gestor.identificacao@luanda.com',
-                    'password': 'admin123',
-                    'user_tipo': 'gestor',
-                    'institution_id': institutions[1]['id'],
-                    'department': 'Identificação'
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'email': 'gestor.registo@luanda.com',
-                    'password': 'admin123',
-                    'user_tipo': 'gestor',
-                    'institution_id': institutions[1]['id'],
-                    'department': 'Registo Civil'
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'email': 'gestor.bfa@kilamba.com',
-                    'password': 'admin123',
-                    'user_tipo': 'gestor',
-                    'institution_id': institutions[2]['id'],
-                    'department': 'Contas'
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'email': 'gestor.escola@cazenga.com',
-                    'password': 'admin123',
-                    'user_tipo': 'gestor',
-                    'institution_id': institutions[3]['id'],
-                    'department': 'Matrículas'
-                },
-                {
-                    'id': str(uuid.uuid4()),
                     'email': 'gestor.hospital@viana.com',
                     'password': 'admin123',
                     'user_tipo': 'gestor',
-                    'institution_id': institutions[4]['id'],
+                    'institution_id': institutions[1]['id'],
                     'department': 'Consulta Geral'
                 },
                 {
@@ -182,9 +203,45 @@ def populate_initial_data():
                     'email': 'gestor.laboratorio@viana.com',
                     'password': 'admin123',
                     'user_tipo': 'gestor',
-                    'institution_id': institutions[4]['id'],
+                    'institution_id': institutions[1]['id'],
                     'department': 'Laboratório'
                 },
+                # Gestores de Documentação
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'gestor.identificacao@luanda.com',
+                    'password': 'admin123',
+                    'user_tipo': 'gestor',
+                    'institution_id': institutions[2]['id'],
+                    'department': 'Identificação'
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'gestor.registo@luanda.com',
+                    'password': 'admin123',
+                    'user_tipo': 'gestor',
+                    'institution_id': institutions[2]['id'],
+                    'department': 'Registo Civil'
+                },
+                # Gestores Bancários
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'gestor.bfa@kilamba.com',
+                    'password': 'admin123',
+                    'user_tipo': 'gestor',
+                    'institution_id': institutions[3]['id'],
+                    'department': 'Contas'
+                },
+                # Gestores de Educação
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'gestor.escola@cazenga.com',
+                    'password': 'admin123',
+                    'user_tipo': 'gestor',
+                    'institution_id': institutions[4]['id'],
+                    'department': 'Matrículas'
+                },
+                # Gestores de Transportes
                 {
                     'id': str(uuid.uuid4()),
                     'email': 'gestor.transito@talatona.com',
@@ -192,6 +249,73 @@ def populate_initial_data():
                     'user_tipo': 'gestor',
                     'institution_id': institutions[5]['id'],
                     'department': 'Licenciamento'
+                },
+                # Gestores de Correios
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'gestor.correios@maianga.com',
+                    'password': 'admin123',
+                    'user_tipo': 'gestor',
+                    'institution_id': institutions[6]['id'],
+                    'department': 'Encomendas'
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'gestor.correspondencia@maianga.com',
+                    'password': 'admin123',
+                    'user_tipo': 'gestor',
+                    'institution_id': institutions[6]['id'],
+                    'department': 'Correspondência'
+                },
+                # Gestores de Energia e Águas
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'gestor.ende@rangel.com',
+                    'password': 'admin123',
+                    'user_tipo': 'gestor',
+                    'institution_id': institutions[7]['id'],
+                    'department': 'Faturação'
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'gestor.atendimento@rangel.com',
+                    'password': 'admin123',
+                    'user_tipo': 'gestor',
+                    'institution_id': institutions[7]['id'],
+                    'department': 'Atendimento ao Cliente'
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'gestor.epal@samba.com',
+                    'password': 'admin123',
+                    'user_tipo': 'gestor',
+                    'institution_id': institutions[8]['id'],
+                    'department': 'Faturação'
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'gestor.atendimento@samba.com',
+                    'password': 'admin123',
+                    'user_tipo': 'gestor',
+                    'institution_id': institutions[8]['id'],
+                    'department': 'Atendimento ao Cliente'
+                },
+                # Gestores de Telecomunicações
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'gestor.unitel@cazenga.com',
+                    'password': 'admin123',
+                    'user_tipo': 'gestor',
+                    'institution_id': institutions[9]['id'],
+                    'department': 'Atendimento ao Cliente'
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'gestor.suporte@cazenga.com',
+                    'password': 'admin123',
+                    'user_tipo': 'gestor',
+                    'institution_id': institutions[9]['id'],
+                    'department': 'Suporte'
                 },
             ]
 
