@@ -1,4 +1,7 @@
 import logging
+import eventlet
+eventlet.monkey_patch()  # Chamado antes de qualquer importação
+
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO
@@ -54,9 +57,23 @@ def create_app():
     # Importar modelos e criar tabelas
     with app.app_context():
         from .models import Institution, Queue, User, Ticket
-        db.drop_all()  # Limpa o banco
+        
+        # Criar tabelas apenas se não existirem
         db.create_all()
-        app.logger.info("Tabelas do banco de dados recriadas com sucesso")
+        
+        # Limpar o banco apenas em desenvolvimento
+        if os.getenv('FLASK_ENV') != 'production':
+            db.drop_all()
+            db.create_all()
+            app.logger.info("Banco limpo e tabelas recriadas (modo desenvolvimento)")
+        
+        # Verificar se o banco está vazio e popular dados iniciais
+        if Institution.query.count() == 0:
+            from .data_init import populate_initial_data
+            populate_initial_data(app)
+            app.logger.info("Dados iniciais inseridos automaticamente")
+        else:
+            app.logger.info("Banco já contém dados, pulando inicialização")
     
     # Registra rotas
     from .routes import init_routes
@@ -78,3 +95,6 @@ def create_app():
         app.logger.info("Aplicação configurada para modo de desenvolvimento")
 
     return app
+
+# Criar a aplicação para uso com Gunicorn
+app = create_app()
