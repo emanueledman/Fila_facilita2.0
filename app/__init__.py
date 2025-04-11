@@ -2,6 +2,8 @@ import logging
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 import os
 from dotenv import load_dotenv
 
@@ -11,6 +13,7 @@ load_dotenv()
 # Inicializar extensões
 db = SQLAlchemy()
 socketio = SocketIO()
+limiter = Limiter(key_func=get_remote_address)
 
 def create_app():
     app = Flask(__name__)
@@ -38,6 +41,7 @@ def create_app():
     # Inicializa extensões
     db.init_app(app)
     socketio.init_app(app, cors_allowed_origins="*", async_mode='eventlet', logger=True, engineio_logger=True)
+    limiter.init_app(app)
     
     # Criar tabelas no banco de dados, se não existirem
     with app.app_context():

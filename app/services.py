@@ -1,3 +1,5 @@
+# app/services.py
+
 import logging
 import uuid
 import numpy as np
@@ -9,6 +11,7 @@ from .models import Queue, Ticket, User
 from .utils.pdf_generator import generate_ticket_pdf
 from firebase_admin import messaging
 from sqlalchemy.exc import SQLAlchemyError
+from .ml_models import wait_time_predictor  # Importar o preditor de ml_models.py
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +31,7 @@ setup_logging()
 
 class QueueService:
     DEFAULT_EXPIRATION_MINUTES = 30
-    CALL_TIMEOUT_MINUTES = 5  # Tempo limite para validar presença após ser chamado
+    CALL_TIMEOUT_MINUTES = 5
 
     @staticmethod
     def generate_qr_code():
@@ -83,37 +86,59 @@ class QueueService:
     @staticmethod
     def calculate_wait_time(queue_id, ticket_number, priority=0):
         queue = Queue.query.get(queue_id)
-        if not queue or queue.active_tickets == 0:
+        if not queue:
+            logger.error(f"Fila não encontrada para queue_id={queue_id}")
             return 0
         
+        # Se o atendimento ainda não começou (current_ticket == 0), retornar "N/A"
+        if queue.current_ticket == 0:
+            logger.debug(f"Atendimento ainda não começou para queue_id={queue_id}, wait_time='N/A'")
+            return "N/A"
+
+        # Calcular a posição do ticket na fila
         position = max(0, ticket_number - queue.current_ticket)
         if position == 0:
+            logger.debug(f"Ticket {ticket_number} está na posição 0, wait_time=0")
             return 0
 
-        completed_tickets = Ticket.query.filter_by(queue_id=queue_id, status='attended').all()
-        service_times = [t.service_time for t in completed_tickets if t.service_time is not None]
+        # Tentar usar o modelo de machine learning para previsão
+        now = datetime.utcnow()
+        hour_of_day = now.hour
+        predicted_time = wait_time_predictor.predict(position, queue.active_tickets, priority, hour_of_day)
         
-        if service_times:
-            avg_time = np.mean(service_times)
-            std_dev = np.std(service_times) if len(service_times) > 1 else 0
-            estimated_time = avg_time + min(5, std_dev)
+        if predicted_time is not None:
+            wait_time = predicted_time
         else:
-            estimated_time = queue.avg_wait_time or 5
-        
-        wait_time = position * estimated_time
-        if priority > 0:
-            wait_time = max(0, wait_time - (priority * 5))
-        if queue.active_tickets > 10:
-            wait_time += (queue.active_tickets - 10) * 0.2
-        
-        queue.avg_wait_time = estimated_time
-        db.session.commit()
-        logger.debug(f"Wait time calculado para ticket {ticket_number} na fila {queue_id}: {wait_time} min")
-        return round(wait_time, 1)
+            # Fallback para o cálculo manual se o modelo não estiver treinado ou falhar
+            completed_tickets = Ticket.query.filter_by(queue_id=queue_id, status='attended').all()
+            service_times = [t.service_time for t in completed_tickets if t.service_time is not None and t.service_time > 0]
+            
+            if service_times:
+                avg_time = np.mean(service_times)
+                estimated_time = avg_time
+                logger.debug(f"Tempo médio de atendimento calculado: {avg_time} min")
+            else:
+                estimated_time = queue.avg_wait_time or 5
+                logger.debug(f"Nenhum ticket atendido, usando tempo padrão: {estimated_time} min")
+
+            wait_time = position * estimated_time
+            if priority > 0:
+                wait_time *= (1 - priority * 0.1)  # Reduz o tempo para prioridades mais altas
+            if queue.active_tickets > 10:
+                wait_time += (queue.active_tickets - 10) * 0.5  # Ajuste para filas longas
+
+            # Atualizar o tempo médio de espera da fila
+            queue.avg_wait_time = estimated_time
+            db.session.commit()
+
+        wait_time = round(wait_time, 1)
+        logger.debug(f"Wait time calculado para ticket {ticket_number} na fila {queue_id}: {wait_time} min (position={position}, priority={priority})")
+        return wait_time
 
     @staticmethod
     def calculate_distance(user_lat, user_lon, institution):
         if not all([user_lat, user_lon, institution.latitude, institution.longitude]):
+            logger.warning(f"Coordenadas incompletas para cálculo de distância: user_lat={user_lat}, user_lon={user_lon}, inst_lat={institution.latitude}, inst_lon={institution.longitude}")
             return None
         distance = math.sqrt((user_lat - institution.latitude)**2 + (user_lon - institution.longitude)**2) * 111
         return round(distance, 1)
@@ -160,6 +185,13 @@ class QueueService:
         if not queue:
             logger.error(f"Fila não encontrada para o serviço: {service}")
             raise ValueError("Fila não encontrada")
+        
+        # Verificar se a fila está aberta
+        now = datetime.utcnow().time()
+        if now < queue.open_time:
+            logger.warning(f"Tentativa de emitir senha antes do horário de abertura para serviço {service}. Horário atual: {now}, abertura: {queue.open_time}")
+            raise ValueError(f"A fila {queue.service} ainda não está aberta. Abertura às {queue.open_time.strftime('%H:%M')}.")
+
         if queue.active_tickets >= queue.daily_limit:
             logger.warning(f"Fila {service} está cheia: {queue.active_tickets}/{queue.daily_limit}")
             raise ValueError("Limite diário atingido")
@@ -169,7 +201,6 @@ class QueueService:
 
         ticket_number = queue.active_tickets + 1
         qr_code = QueueService.generate_qr_code()
-        # Não definimos expires_at aqui, apenas quando o ticket for chamado
         ticket = Ticket(
             id=str(uuid.uuid4()),
             queue_id=queue.id,
@@ -178,7 +209,7 @@ class QueueService:
             qr_code=qr_code,
             priority=priority,
             is_physical=is_physical,
-            expires_at=None  # Será definido em call_next
+            expires_at=None
         )
         
         queue.active_tickets += 1
@@ -199,7 +230,7 @@ class QueueService:
         if is_physical:
             pdf_buffer = QueueService.generate_pdf_ticket(ticket, position, wait_time)
 
-        message = f"Senha {queue.prefix}{ticket_number} emitida. QR: {qr_code}. Espera: {wait_time} min"
+        message = f"Senha {queue.prefix}{ticket_number} emitida. QR: {qr_code}. Espera: {wait_time if wait_time != 'N/A' else 'Aguardando início'}"
         QueueService.send_notification(fcm_token, message, ticket.id, via_websocket=True, user_id=user_id)
         
         if socketio:
@@ -227,7 +258,6 @@ class QueueService:
             raise ValueError("Nenhum ticket pendente")
         
         now = datetime.utcnow()
-        # Definir expires_at para 5 minutos após ser chamado
         next_ticket.expires_at = now + timedelta(minutes=QueueService.CALL_TIMEOUT_MINUTES)
         
         queue.current_ticket = next_ticket.ticket_number
@@ -257,7 +287,6 @@ class QueueService:
         now = datetime.utcnow()
         tickets = Ticket.query.filter_by(status='Pendente').all()
         for ticket in tickets:
-            # Verificar se o horário de atendimento da fila acabou
             queue = ticket.queue
             if queue.end_time and now.time() > queue.end_time:
                 ticket.status = 'Cancelado'
@@ -272,13 +301,15 @@ class QueueService:
                 continue
             
             wait_time = QueueService.calculate_wait_time(ticket.queue_id, ticket.ticket_number, ticket.priority)
+            if wait_time == "N/A":
+                continue
+
             if wait_time <= 5 and ticket.user_id != 'PRESENCIAL':
                 distance = QueueService.calculate_distance(-8.8147, 13.2302, ticket.queue.institution)
                 distance_msg = f" Você está a {distance} km." if distance else ""
                 message = f"Sua vez está próxima! {ticket.queue.service}, Senha {ticket.queue.prefix}{ticket.ticket_number}. Prepare-se em {wait_time} min.{distance_msg}"
                 QueueService.send_notification(None, message, ticket.id, via_websocket=True, user_id=ticket.user_id)
 
-            # Notificação para usuários distantes (mais de 5 km)
             if ticket.user_id != 'PRESENCIAL':
                 user = User.query.get(ticket.user_id)
                 if user and user.last_known_lat and user.last_known_lon:
@@ -289,7 +320,6 @@ class QueueService:
                             message = f"Você está a {distance} km! Senha {ticket.queue.prefix}{ticket.ticket_number} será chamada em {wait_time} min. Comece a se deslocar!"
                             QueueService.send_notification(None, message, ticket.id, via_websocket=True, user_id=ticket.user_id)
 
-        # Verificar tickets chamados que não foram validados dentro do prazo
         called_tickets = Ticket.query.filter_by(status='Chamado').all()
         for ticket in called_tickets:
             if ticket.expires_at and ticket.expires_at < now:
@@ -410,4 +440,37 @@ class QueueService:
                 except Exception as e:
                     logger.error(f"Erro ao emitir trade_available para user_id {eligible_ticket.user_id}: {e}")
 
+        return ticket
+
+    @staticmethod
+    def cancel_ticket(ticket_id, user_id):
+        ticket = Ticket.query.get_or_404(ticket_id)
+        if ticket.user_id != user_id:
+            logger.warning(f"Tentativa inválida de cancelar ticket {ticket_id} por user_id={user_id}")
+            raise ValueError("Você só pode cancelar sua própria senha")
+        if ticket.status != 'Pendente':
+            logger.warning(f"Ticket {ticket_id} no estado {ticket.status} não pode ser cancelado")
+            raise ValueError("Esta senha não pode ser cancelada no momento")
+        
+        ticket.status = 'Cancelado'
+        ticket.queue.active_tickets -= 1
+        db.session.commit()
+        
+        QueueService.send_notification(
+            None,
+            f"Sua senha {ticket.queue.prefix}{ticket.ticket_number} foi cancelada.",
+            ticket.id,
+            via_websocket=True,
+            user_id=user_id
+        )
+        
+        if socketio:
+            emit('queue_update', {
+                'queue_id': ticket.queue_id,
+                'active_tickets': ticket.queue.active_tickets,
+                'current_ticket': ticket.queue.current_ticket,
+                'message': f"Senha {ticket.queue.prefix}{ticket.ticket_number} cancelada"
+            }, namespace='/', room=str(ticket.queue_id))
+        
+        logger.info(f"Ticket {ticket.id} cancelado por user_id={user_id}")
         return ticket

@@ -1,11 +1,16 @@
+# app/main.py
+
 import eventlet
 eventlet.monkey_patch()
 
 from app import create_app, db, socketio
 from app.models import Institution, Queue, User
-from datetime import time
+from app.services import QueueService
+from app.ml_models import wait_time_predictor, service_recommendation_predictor  # Importar os preditores
+from datetime import time, datetime
 import uuid
 import logging
+import numpy as np
 
 app = create_app()
 
@@ -198,14 +203,129 @@ def populate_initial_data():
                     institution_id=gestor['institution_id'],
                     department=gestor['department']
                 )
-                user.set_password(gestor['password'])  # Definir a senha com hash
+                user.set_password(gestor['password'])
                 db.session.add(user)
             
             db.session.commit()
             app.logger.info("Gestores iniciais inseridos com sucesso!")
 
-with app.app_context():
-    populate_initial_data()
+def train_ml_model_periodically():
+    """Tarefa periódica para treinar os modelos de machine learning."""
+    while True:
+        with app.app_context():
+            app.logger.info("Iniciando treinamento periódico do modelo de previsão de tempo de espera.")
+            wait_time_predictor.train()
+            app.logger.info("Iniciando treinamento periódico do modelo de recomendação de serviços.")
+            service_recommendation_predictor.train()
+        eventlet.sleep(3600)  # Treinar a cada hora
+
+def suggest_service_locations(service, user_lat=None, user_lon=None, max_results=3):
+    """
+    Sugere locais onde o usuário pode encontrar o serviço desejado, usando um modelo de machine learning para pontuar a qualidade de atendimento.
+    
+    Args:
+        service (str): Nome do serviço procurado (ex.: "Consulta Médica").
+        user_lat (float): Latitude do usuário (opcional).
+        user_lon (float): Longitude do usuário (opcional).
+        max_results (int): Número máximo de sugestões a retornar.
+    
+    Returns:
+        list: Lista de sugestões ordenadas por pontuação.
+    """
+    with app.app_context():
+        queues = Queue.query.all()
+        suggestions = []
+        now = datetime.utcnow()
+        current_time = now.time()
+        hour_of_day = now.hour
+        day_of_week = now.weekday()
+
+        for queue in queues:
+            # Verificar se a fila está aberta e tem vagas disponíveis
+            if current_time < queue.open_time:
+                continue
+            if queue.active_tickets >= queue.daily_limit:
+                continue
+
+            # Verificar correspondência com o serviço ou setor
+            service_match = service.lower() in queue.service.lower()
+            sector_match = service.lower() in (queue.sector or "").lower()
+            if not (service_match or sector_match):
+                continue
+
+            # Calcular o tempo de espera estimado
+            next_ticket_number = queue.active_tickets + 1
+            wait_time = QueueService.calculate_wait_time(queue.id, next_ticket_number, priority=0)
+            if wait_time == "N/A":
+                wait_time = float('inf')
+
+            # Calcular a distância
+            distance = None
+            if user_lat is not None and user_lon is not None:
+                distance = QueueService.calculate_distance(user_lat, user_lon, queue.institution)
+                if distance is None:
+                    distance = float('inf')
+
+            # Calcular a pontuação de qualidade de atendimento usando o modelo
+            tickets = Ticket.query.filter_by(queue_id=queue.id, status='attended').all()
+            service_times = [t.service_time for t in tickets if t.service_time is not None and t.service_time > 0]
+            quality_score = None
+            speed_label = "Desconhecida"
+            if service_times:
+                avg_service_time = np.mean(service_times)
+                std_service_time = np.std(service_times) if len(service_times) > 1 else 0
+                service_time_per_counter = avg_service_time / max(1, queue.num_counters)
+                occupancy_rate = queue.active_tickets / max(1, queue.daily_limit)
+                quality_score = service_recommendation_predictor.predict(
+                    avg_service_time, std_service_time, service_time_per_counter, occupancy_rate, hour_of_day, day_of_week
+                )
+                # Classificar a velocidade de atendimento com base no tempo médio
+                if avg_service_time <= 5:
+                    speed_label = "Rápida"
+                elif avg_service_time <= 15:
+                    speed_label = "Moderada"
+                else:
+                    speed_label = "Lenta"
+            
+            if quality_score is None:
+                # Fallback: usar uma pontuação baseada em heurísticas simples
+                quality_score = 0.5  # Pontuação neutra
+                if service_times:
+                    avg_service_time = np.mean(service_times)
+                    std_service_time = np.std(service_times) if len(service_times) > 1 else 0
+                    quality_score = (1 / (avg_service_time + 1)) - (std_service_time / (avg_service_time + 1))
+                    quality_score = max(0, min(1, quality_score))  # Normalizar entre 0 e 1
+
+            # Calcular a pontuação final
+            # Fórmula: score = (wait_time_score * 0.4) + (distance_score * 0.3) + (quality_score * 0.2) + (match_score * 0.1)
+            wait_time_score = 1 / (wait_time + 1) if wait_time != float('inf') else 0
+            distance_score = 1 / (distance + 1) if distance is not None and distance != float('inf') else 0
+            match_score = 1 if service_match else 0.5
+            score = (wait_time_score * 0.4) + (distance_score * 0.3) + (quality_score * 0.2) + (match_score * 0.1)
+
+            suggestions.append({
+                'institution': queue.institution_name,
+                'location': queue.institution.location,
+                'service': queue.service,
+                'sector': queue.sector,
+                'wait_time': wait_time if wait_time != float('inf') else "Aguardando início",
+                'distance': distance if distance is not None else "Desconhecida",
+                'quality_score': quality_score,
+                'speed_label': speed_label,
+                'score': score,
+                'queue_id': queue.id,
+                'open_time': queue.open_time.strftime('%H:%M'),
+                'active_tickets': queue.active_tickets,
+                'daily_limit': queue.daily_limit
+            })
+
+        suggestions.sort(key=lambda x: x['score'], reverse=True)
+        return suggestions[:max_results]
 
 if __name__ == '__main__':
+    with app.app_context():
+        populate_initial_data()
+    
+    eventlet.spawn(train_ml_model_periodically)
+    
     socketio.run(app, debug=True, host='0.0.0.0', port=5000)

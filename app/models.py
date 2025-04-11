@@ -1,6 +1,7 @@
 from . import db
 from datetime import datetime
 import bcrypt
+from sqlalchemy import Column, Integer, String, Float, Time
 
 class Institution(db.Model):
     id = db.Column(db.String(36), primary_key=True)
@@ -15,6 +16,7 @@ class Queue(db.Model):
     service = db.Column(db.String(50), nullable=False)
     prefix = db.Column(db.String(10), nullable=False)
     sector = db.Column(db.String(50))
+    end_time = Column(Time, nullable=True)
     department = db.Column(db.String(50))
     institution_name = db.Column(db.String(100))
     open_time = db.Column(db.Time, nullable=False)
