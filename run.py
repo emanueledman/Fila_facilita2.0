@@ -11,9 +11,7 @@ app = create_app()
 
 def populate_initial_data():
     with app.app_context():
-        db.drop_all()
-        db.create_all()
-        
+        # Não precisa de db.drop_all() aqui, já que create_app() faz isso
         if Institution.query.count() > 0:
             app.logger.info("Dados iniciais de instituições já existem.")
         else:
@@ -339,8 +337,8 @@ def populate_initial_data():
                 app.logger.error(f"Erro ao inserir gestores iniciais: {str(e)}")
                 raise
 
+
 def train_ml_model_periodically():
-    """Tarefa periódica para treinar os modelos de machine learning."""
     while True:
         with app.app_context():
             try:
@@ -350,7 +348,7 @@ def train_ml_model_periodically():
                 service_recommendation_predictor.train()
             except Exception as e:
                 app.logger.error(f"Erro ao treinar modelos de ML: {str(e)}")
-        eventlet.sleep(3600)  # Treinar a cada hora
+        eventlet.sleep(3600)
 
 if __name__ == '__main__':
     with app.app_context():
@@ -359,3 +357,6 @@ if __name__ == '__main__':
     eventlet.spawn(train_ml_model_periodically)
     
     socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+    
+    
+          

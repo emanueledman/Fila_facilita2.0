@@ -7,7 +7,7 @@ from flask_limiter.util import get_remote_address
 import os
 from dotenv import load_dotenv
 
-# Carregar variáveis de ambiente do arquivo .env (apenas para desenvolvimento local)
+# Carregar variáveis de ambiente
 load_dotenv()
 
 # Inicializar extensões
@@ -23,18 +23,18 @@ def create_app():
     database_url = os.getenv('DATABASE_URL')
     if not database_url:
         app.logger.error("DATABASE_URL não encontrado nas variáveis de ambiente!")
-        database_url = 'sqlite:///facilita.db'  # Fallback apenas para desenvolvimento local
+        database_url = 'sqlite:///facilita.db'  # Fallback para desenvolvimento
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://')
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     # Configuração de logging
-    logging.basicConfig(level=logging.DEBUG)  # Mantido como DEBUG para facilitar a depuração
+    logging.basicConfig(level=logging.DEBUG)
     app.logger.setLevel(logging.DEBUG)
     app.logger.info(f"Iniciando com banco de dados: {app.config['SQLALCHEMY_DATABASE_URI']}")
     
-    # Configurações adicionais para o SocketIO
+    # Configurações do SocketIO
     app.config['SOCKETIO_LOGGER'] = True
     app.config['SOCKETIO_ENGINEIO_LOGGER'] = True
     
@@ -43,11 +43,12 @@ def create_app():
     socketio.init_app(app, cors_allowed_origins="*", async_mode='eventlet', logger=True, engineio_logger=True)
     limiter.init_app(app)
     
-    # Criar tabelas no banco de dados, se não existirem
+    # Importar modelos explicitamente antes de criar tabelas
     with app.app_context():
-        from . import models
+        from .models import Institution, Queue, User, Ticket
+        db.drop_all()  # Garante que o banco seja limpo antes de recriar
         db.create_all()
-        app.logger.info("Tabelas do banco de dados criadas ou verificadas")
+        app.logger.info("Tabelas do banco de dados recriadas com sucesso")
 
     # Registra rotas
     from .routes import init_routes
@@ -60,7 +61,7 @@ def create_app():
     init_user_routes(app)
     init_admin_routes(app)
 
-    # Configuração adicional para produção
+    # Configuração para produção/desenvolvimento
     if os.getenv('FLASK_ENV') == 'production':
         app.config['DEBUG'] = False
         app.logger.setLevel(logging.INFO)
