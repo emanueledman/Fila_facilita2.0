@@ -8,6 +8,7 @@ from . import db, socketio
 from .models import Queue, Ticket, User
 from .utils.pdf_generator import generate_ticket_pdf
 from firebase_admin import messaging
+from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
 
@@ -58,12 +59,10 @@ class QueueService:
 
     @staticmethod
     def generate_pdf_ticket(ticket, position=None, wait_time=None):
-        """Gera um PDF para o ticket físico."""
         if not ticket.queue:
             logger.error(f"Fila não encontrada para o ticket {ticket.id}")
             raise ValueError("Fila associada ao ticket não encontrada")
             
-        # Calcular position e wait_time se não fornecidos
         if position is None:
             position = max(0, ticket.ticket_number - ticket.queue.current_ticket)
         if wait_time is None:
@@ -122,7 +121,6 @@ class QueueService:
     def send_notification(fcm_token, message, ticket_id=None, via_websocket=False, user_id=None):
         logger.info(f"Notificação para user_id {user_id}: {message}")
         
-        # Se o fcm_token não foi fornecido, buscar no banco de dados
         if not fcm_token and user_id:
             user = User.query.get(user_id)
             if user and user.fcm_token:
@@ -131,7 +129,6 @@ class QueueService:
             else:
                 logger.warning(f"FCM token não encontrado para user_id {user_id}")
 
-        # Enviar notificação via FCM usando firebase-admin
         if fcm_token:
             try:
                 fcm_message = messaging.Message(
@@ -149,7 +146,6 @@ class QueueService:
         else:
             logger.warning(f"Token FCM não fornecido e não encontrado para user_id {user_id}")
 
-        # Enviar via WebSocket, se solicitado
         if via_websocket and socketio:
             try:
                 emit('notification', {'user_id': user_id, 'message': message}, namespace='/', broadcast=True)
@@ -189,7 +185,6 @@ class QueueService:
         db.session.add(ticket)
         db.session.commit()
 
-        # Recarregar o ticket para garantir que a relação ticket.queue esteja disponível
         db.session.refresh(ticket)
         if not ticket.queue:
             logger.error(f"Relação ticket.queue não carregada para ticket {ticket.id}")
@@ -200,7 +195,6 @@ class QueueService:
         wait_time = QueueService.calculate_wait_time(queue.id, ticket_number, priority)
         position = max(0, ticket.ticket_number - queue.current_ticket)
         
-        # Gera PDF se for ticket físico
         pdf_buffer = None
         if is_physical:
             pdf_buffer = QueueService.generate_pdf_ticket(ticket, position, wait_time)
@@ -247,7 +241,8 @@ class QueueService:
         next_ticket.attended_at = now
         db.session.commit()
         
-        message = f"É a sua vez! {queue.service}, Senha {queue.prefix}{next_ticket.ticket_number}. Guichê {next_ticket.counter:02d}."
+        # Mensagem ajustada para remover "Sua senha" ou "Sua vez"
+        message = f"Dirija-se ao guichê {next_ticket.counter:02d}! Senha {queue.prefix}{next_ticket.ticket_number} chamada."
         QueueService.send_notification(None, message, next_ticket.id, via_websocket=True, user_id=next_ticket.user_id)
         
         if socketio:
@@ -278,30 +273,19 @@ class QueueService:
             if wait_time <= 5 and ticket.user_id != 'PRESENCIAL':
                 distance = QueueService.calculate_distance(-8.8147, 13.2302, ticket.queue.institution)
                 distance_msg = f" Você está a {distance} km." if distance else ""
-                message = f"Sua vez está próxima! {ticket.queue.service}, Senha {ticket.queue.prefix}{ticket.ticket_number}. " \
-                          f"Prepare-se em {wait_time} min.{distance_msg}"
+                message = f"Sua vez está próxima! {ticket.queue.service}, Senha {ticket.queue.prefix}{ticket.ticket_number}. Prepare-se em {wait_time} min.{distance_msg}"
                 QueueService.send_notification(None, message, ticket.id, via_websocket=True, user_id=ticket.user_id)
 
-    @staticmethod
-    def offer_trade(ticket_id, user_id):
-        ticket = Ticket.query.get_or_404(ticket_id)
-        if ticket.user_id != user_id or ticket.status != 'Pendente':
-            logger.warning(f"Tentativa inválida de oferecer ticket {ticket_id} por {user_id}")
-            raise ValueError("Você não pode oferecer esta senha")
-        ticket.trade_available = True
-        db.session.commit()
-        logger.info(f"Ticket {ticket_id} oferecido para troca por {user_id}")
-
-        # Enviar notificação para outros usuários via WebSocket
-        if socketio:
-            emit('trade_available', {
-                'ticket_id': ticket.id,
-                'service': ticket.queue.service,
-                'number': f"{ticket.queue.prefix}{ticket.ticket_number}",
-                'position': max(0, ticket.ticket_number - ticket.queue.current_ticket)
-            }, namespace='/', broadcast=True)
-
-        return ticket
+            # Notificação para usuários distantes (mais de 5 km)
+            if ticket.user_id != 'PRESENCIAL':
+                user = User.query.get(ticket.user_id)
+                if user and user.last_known_lat and user.last_known_lon:
+                    distance = QueueService.calculate_distance(user.last_known_lat, user.last_known_lon, ticket.queue.institution)
+                    if distance and distance > 5:  # Mais de 5 km
+                        travel_time = distance * 2  # Estimativa de 2 min/km (ajustável)
+                        if wait_time <= travel_time:  # Se o tempo de espera for menor que o tempo de viagem
+                            message = f"Você está a {distance} km! Senha {ticket.queue.prefix}{ticket.ticket_number} será chamada em {wait_time} min. Comece a se deslocar!"
+                            QueueService.send_notification(None, message, ticket.id, via_websocket=True, user_id=ticket.user_id)
 
     @staticmethod
     def trade_tickets(ticket_from_id, ticket_to_id, user_from_id):
@@ -321,7 +305,6 @@ class QueueService:
         db.session.commit()
         logger.info(f"Troca realizada entre {ticket_from_id} e {ticket_to_id}")
 
-        # Notificar ambos os usuários sobre a troca
         QueueService.send_notification(
             None,
             f"Sua senha foi trocada! Nova senha: {ticket_from.queue.prefix}{ticket_from.ticket_number}",
@@ -360,35 +343,55 @@ class QueueService:
         return ticket
 
     @staticmethod
-    def cancel_ticket(ticket_id, user_id):
+    def offer_trade(ticket_id, user_id):
+        logger.info(f"Iniciando oferta de troca para ticket {ticket_id} por user_id {user_id}")
         ticket = Ticket.query.get_or_404(ticket_id)
         if ticket.user_id != user_id:
-            logger.warning(f"Tentativa inválida de cancelar ticket {ticket_id} por {user_id}")
-            raise ValueError("Você só pode cancelar sua própria senha")
-        if ticket.status not in ['Pendente', 'Chamado']:
-            raise ValueError("Esta senha não pode ser cancelada")
+            logger.warning(f"Tentativa inválida de oferecer ticket {ticket_id} por {user_id}")
+            raise ValueError("Você só pode oferecer sua própria senha.")
+        if ticket.status != 'Pendente':
+            logger.warning(f"Ticket {ticket_id} no estado {ticket.status} não pode ser oferecido")
+            raise ValueError(f"Esta senha está no estado '{ticket.status}' e não pode ser oferecida.")
+        if ticket.trade_available:
+            logger.warning(f"Ticket {ticket_id} já está oferecido para troca")
+            raise ValueError("Esta senha já está oferecida para troca.")
         
-        ticket.status = 'Cancelado'
-        ticket.cancelled_at = datetime.utcnow()
-        ticket.queue.active_tickets -= 1
-        db.session.commit()
-        logger.info(f"Ticket {ticket_id} cancelado por {user_id}")
+        try:
+            ticket.trade_available = True
+            db.session.commit()
+            logger.info(f"Ticket {ticket_id} oferecido para troca com sucesso")
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            logger.error(f"Erro ao persistir oferta de troca do ticket {ticket_id}: {e}")
+            raise ValueError("Erro interno ao oferecer a senha para troca.")
 
-        # Notificar o usuário sobre o cancelamento
         QueueService.send_notification(
             None,
-            f"Sua senha {ticket.queue.prefix}{ticket.ticket_number} foi cancelada.",
+            f"Sua senha {ticket.queue.prefix}{ticket.ticket_number} foi oferecida para troca!",
             ticket.id,
             via_websocket=True,
             user_id=user_id
         )
 
+        eligible_tickets = Ticket.query.filter(
+            Ticket.queue_id == ticket.queue_id,
+            Ticket.user_id != user_id,
+            Ticket.status == 'Pendente',
+            Ticket.trade_available == False
+        ).order_by(Ticket.created_at.asc()).limit(5).all()
+
         if socketio:
-            emit('queue_update', {
-                'queue_id': ticket.queue.id,
-                'active_tickets': ticket.queue.active_tickets,
-                'current_ticket': ticket.queue.current_ticket,
-                'message': f"Senha {ticket.queue.prefix}{ticket.ticket_number} cancelada"
-            }, namespace='/', room=str(ticket.queue.id))
+            for eligible_ticket in eligible_tickets:
+                try:
+                    emit('trade_available', {
+                        'ticket_id': ticket.id,
+                        'queue_id': ticket.queue_id,
+                        'service': ticket.queue.service,
+                        'number': f"{ticket.queue.prefix}{ticket.ticket_number}",
+                        'position': max(0, ticket.ticket_number - ticket.queue.current_ticket)
+                    }, namespace='/', room=str(eligible_ticket.user_id))
+                    logger.debug(f"Evento trade_available emitido para user_id {eligible_ticket.user_id}")
+                except Exception as e:
+                    logger.error(f"Erro ao emitir trade_available para user_id {eligible_ticket.user_id}: {e}")
 
         return ticket
