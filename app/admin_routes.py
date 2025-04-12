@@ -15,7 +15,7 @@ def init_admin_routes(app):
     @app.route('/api/admin/login', methods=['POST'])
     def admin_login():
         """
-        Autentica um gestor com email e senha, retornando um JWT.
+        Autentica um gestor com email e senha, retornando um JWT e informações do usuário.
         """
         data = request.get_json()
         email = data.get('email')
@@ -42,7 +42,10 @@ def init_admin_routes(app):
             'message': 'Login bem-sucedido',
             'token': token,
             'user_id': user.id,
-            'email': user.email
+            'email': user.email,
+            'user_tipo': user.user_tipo,
+            'department': user.department,
+            'institution_id': user.institution_id
         }), 200
 
     @app.route('/api/admin/queues', methods=['GET'])
@@ -73,7 +76,7 @@ def init_admin_routes(app):
         response = [{
             'id': q.id,
             'service': q.service,
-            'prefix': q.prefix,  # Incluído para frontend
+            'prefix': q.prefix,
             'institution_name': q.institution_name,
             'active_tickets': q.active_tickets,
             'daily_limit': q.daily_limit,
@@ -114,7 +117,7 @@ def init_admin_routes(app):
             return jsonify({'error': 'Acesso negado: fila não pertence à sua instituição ou departamento'}), 403
 
         try:
-            ticket = QueueService.call_next(queue.service)  # Usar service para compatibilidade com QueueService
+            ticket = QueueService.call_next(queue.service)
             response = {
                 'message': f'Senha {ticket.queue.prefix}{ticket.ticket_number} chamada',
                 'ticket_id': ticket.id,
