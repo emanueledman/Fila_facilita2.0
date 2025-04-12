@@ -2,12 +2,49 @@ from flask import jsonify, request
 from . import db
 from .models import User, Queue
 from .auth import require_auth
+from .services import QueueService
+import jwt
+import os
+from datetime import datetime, timedelta
 import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def init_admin_routes(app):
+    @app.route('/api/admin/login', methods=['POST'])
+    def admin_login():
+        """
+        Autentica um gestor com email e senha, retornando um JWT.
+        """
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+
+        if not email or not password:
+            logger.warning("Requisição de login sem email ou senha")
+            return jsonify({'error': 'Email e senha são obrigatórios'}), 400
+
+        user = User.query.filter_by(email=email, user_tipo='gestor').first()
+        if not user or not user.check_password(password):
+            logger.warning(f"Tentativa de login inválida para email: {email}")
+            return jsonify({'error': 'Credenciais inválidas'}), 401
+
+        token = jwt.encode({
+            'user_id': user.id,
+            'user_tipo': user.user_tipo,
+            'email': user.email,
+            'exp': datetime.utcnow() + timedelta(hours=1)
+        }, os.getenv('JWT_SECRET_KEY', '974655'), algorithm='HS256')
+
+        logger.info(f"Gestor autenticado: {email}")
+        return jsonify({
+            'message': 'Login bem-sucedido',
+            'token': token,
+            'user_id': user.id,
+            'email': user.email
+        }), 200
+
     @app.route('/api/admin/queues', methods=['GET'])
     @require_auth
     def list_admin_queues():
@@ -36,6 +73,7 @@ def init_admin_routes(app):
         response = [{
             'id': q.id,
             'service': q.service,
+            'prefix': q.prefix,  # Incluído para frontend
             'institution_name': q.institution_name,
             'active_tickets': q.active_tickets,
             'daily_limit': q.daily_limit,
@@ -75,9 +113,8 @@ def init_admin_routes(app):
             logger.warning(f"Gestor {request.user_id} tentou acessar fila {queue_id} fora de sua instituição ou departamento")
             return jsonify({'error': 'Acesso negado: fila não pertence à sua instituição ou departamento'}), 403
 
-        from .services import QueueService
         try:
-            ticket = QueueService.call_next(queue_id)
+            ticket = QueueService.call_next(queue.service)  # Usar service para compatibilidade com QueueService
             response = {
                 'message': f'Senha {ticket.queue.prefix}{ticket.ticket_number} chamada',
                 'ticket_id': ticket.id,
