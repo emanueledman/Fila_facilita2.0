@@ -9,12 +9,13 @@ import os
 # Configurar CORS
 CORS(app, resources={r"/api/*": {
     "origins": [
-        "http://127.0.0.1:5500",  # Frontend local
-        "https://frontfa.netlify.app",  # Frontend principal
-        "https://courageous-dolphin-66662b.netlify.app"  # Outro frontend
+        "http://127.0.0.1:5500",
+        "https://frontfa.netlify.app", # Sem barra no final
+        "https://courageous-dolphin-66662b.netlify.app"
     ],
     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    "allow_headers": ["Content-Type", "Authorization"]
+    "allow_headers": ["Content-Type", "Authorization"],
+    "supports_credentials": True  # Se estiver usando credentials
 }})
 
 # Configurar SocketIO com caminho explícito

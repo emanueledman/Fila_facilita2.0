@@ -52,12 +52,15 @@ def init_user_routes(app):
         if request.method == 'OPTIONS':
             # Resposta para requisição preflight
             response = make_response()
-            response.headers['Access-Control-Allow-Origin'] = 'https://frontfa.netlify.app/'
+            # Use a origem da requisição em vez de um valor fixo
+            response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
             response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
             response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-            response.headers['Access-Control-Max-Age'] = 86400  # Cache por 24 horas
+            response.headers['Access-Control-Max-Age'] = '86400'  # Cache por 24 horas
             logger.info("Resposta OPTIONS enviada para /api/admin/login")
-            return response, 200
+            return response
+        
+    # Resto do código permanece igual...
 
         # Lógica para POST
         logger.info("Recebida requisição POST para /api/admin/login")
