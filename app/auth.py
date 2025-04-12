@@ -111,7 +111,7 @@ def init_auth_routes(app):
                 'user_tipo': 'gestor',
                 'institution_id': user.institution_id,
                 'department': user.department,
-                'email': user.email  # Adicionado para corresponder ao main.js
+                'email': user.email
             }), 200
 
         except Exception as e:
