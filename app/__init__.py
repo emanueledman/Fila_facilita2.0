@@ -46,14 +46,25 @@ def create_app():
     app.config['SOCKETIO_ENGINEIO_LOGGER'] = True
     
     db.init_app(app)
-    socketio.init_app(app, cors_allowed_origins="*", async_mode='eventlet', logger=True, engineio_logger=True)
+    socketio.init_app(
+        app,
+        cors_allowed_origins=[
+            "http://127.0.0.1:5500",
+            "https://frontfa.netlify.app",
+            "https://courageous-dolphin-66662b.netlify.app"
+        ],
+        async_mode='eventlet',
+        path='/tickets',  # Corrige erros 404
+        logger=True,
+        engineio_logger=True
+    )
     limiter.init_app(app)
     
     CORS(app, resources={r"/api/*": {
         "origins": [
             "http://127.0.0.1:5500",
-            "https://*.netlify.app",
-            "https://*.vercel.app"
+            "https://frontfa.netlify.app",
+            "https://courageous-dolphin-66662b.netlify.app"
         ],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"]

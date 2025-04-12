@@ -1,7 +1,9 @@
 import eventlet
-eventlet.monkey_patch()  # Chamado antes de qualquer import
+eventlet.monkey_patch()
 
-from run import app  # Importa o app após o monkey patch
+from app import create_app, socketio
+
+app = create_app()
 
 if __name__ == "__main__":
-    app.run()  # Para execução direta (não recomendado para produção)
+    socketio.run(app)
