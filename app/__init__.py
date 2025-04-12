@@ -7,6 +7,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from flask_cors import CORS  # Adicionar CORS
 import os
 from dotenv import load_dotenv
 
@@ -53,6 +54,17 @@ def create_app():
     db.init_app(app)
     socketio.init_app(app, cors_allowed_origins="*", async_mode='eventlet', logger=True, engineio_logger=True)
     limiter.init_app(app)
+    
+    # Configurar CORS para rotas HTTP
+    CORS(app, resources={r"/api/*": {
+        "origins": [
+            "http://127.0.0.1:5500",  # Frontend local
+            "https://*.netlify.app",  # Frontend no Netlify
+            "https://*.vercel.app"    # Frontend no Vercel
+        ],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }})
     
     # Importar modelos e criar tabelas
     with app.app_context():
