@@ -62,62 +62,6 @@ def require_auth(f):
     return decorated
 
 def init_auth_routes(app):
-    @app.route('/api/admin/login', methods=['POST', 'OPTIONS'])
-    def admin_login():
-        if request.method == 'OPTIONS':
-            # Resposta para requisição preflight
-            response = make_response()
-            response.headers['Access-Control-Allow-Origin'] = 'https://glistening-klepon-5ebcce.netlify.app'
-            response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-            response.headers['Access-Control-Max-Age'] = 86400  # Cache por 24 horas
-            logger.info("Resposta OPTIONS enviada para /api/admin/login")
-            return response, 200
-
-        logger.info("Recebida requisição POST para /api/admin/login")
-        try:
-            data = request.get_json()
-            if not data or 'email' not in data or 'password' not in data:
-                logger.warning("Tentativa de login de admin sem email ou senha")
-                return jsonify({'error': 'Email e senha são obrigatórios'}), 400
-
-            email = data['email']
-            password = data['password']
-
-            from .models import User
-            logger.info(f"Buscando usuário com email={email}")
-            user = User.query.filter_by(email=email).first()
-            if not user:
-                logger.warning(f"Tentativa de login de admin com email não encontrado: {email}")
-                return jsonify({'error': 'Usuário não encontrado'}), 404
-
-            if not user.check_password(password):
-                logger.warning(f"Tentativa de login de admin com senha incorreta para email: {email}")
-                return jsonify({'error': 'Credenciais inválidas'}), 401
-
-            if user.user_tipo != 'gestor':
-                logger.warning(f"Tentativa de login de admin por usuário não administrador: {email}")
-                return jsonify({'error': 'Acesso restrito a administradores'}), 403
-
-            token = jwt.encode({
-                'user_id': user.id,
-                'user_tipo': 'gestor',
-                'exp': datetime.utcnow() + timedelta(hours=24)
-            }, os.getenv('JWT_SECRET', '974655'), algorithm='HS256')
-            logger.info(f"Token gerado para admin user_id: {user.id}")
-            return jsonify({
-                'token': token,
-                'user_id': user.id,
-                'user_tipo': 'gestor',
-                'institution_id': user.institution_id,
-                'department': user.department,
-                'email': user.email
-            }), 200
-
-        except Exception as e:
-            logger.error(f"Erro ao processar login para email={email}: {str(e)}")
-            return jsonify({'error': 'Erro interno no servidor'}), 500
-
     @app.route('/api/update_fcm_token', methods=['POST'])
     @require_auth
     def update_fcm_token():
