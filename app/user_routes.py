@@ -80,7 +80,8 @@ def init_user_routes(app):
                 logger.warning(f"Usuário não encontrado para email={email}")
                 return jsonify({"error": "Credenciais inválidas"}), 401
 
-            if user.password != password:  # Substitua por hash seguro na produção
+            # Usamos o método check_password em vez de comparar diretamente
+            if not user.check_password(password):
                 logger.warning(f"Senha inválida para email={email}")
                 return jsonify({"error": "Credenciais inválidas"}), 401
 
