@@ -52,7 +52,7 @@ def init_user_routes(app):
         if request.method == 'OPTIONS':
             # Resposta para requisição preflight
             response = make_response()
-            response.headers['Access-Control-Allow-Origin'] = 'glistening-klepon-5ebcce.netlify.app'
+            response.headers['Access-Control-Allow-Origin'] = 'https://glistening-klepon-5ebcce.netlify.app'
             response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
             response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
             response.headers['Access-Control-Max-Age'] = 86400  # Cache por 24 horas
@@ -60,37 +60,53 @@ def init_user_routes(app):
             return response, 200
 
         # Lógica para POST
-        data = request.get_json()
-        email = data.get('email')
-        password = data.get('password')
+        logger.info("Recebida requisição POST para /api/admin/login")
+        try:
+            data = request.get_json()
+            if not data:
+                logger.warning("Requisição POST sem corpo JSON")
+                return jsonify({"error": "Corpo da requisição inválido"}), 400
 
-        if not email or not password:
-            logger.warning("Tentativa de login sem email ou senha")
-            return jsonify({"error": "Email e senha são obrigatórios"}), 400
+            email = data.get('email')
+            password = data.get('password')
 
-        user = User.query.filter_by(email=email).first()
-        if not user or user.password != password:  # Substitua por hash seguro na produção
-            logger.warning(f"Tentativa de login com credenciais inválidas para email={email}")
-            return jsonify({"error": "Credenciais inválidas"}), 401
+            if not email or not password:
+                logger.warning("Tentativa de login sem email ou senha")
+                return jsonify({"error": "Email e senha são obrigatórios"}), 400
 
-        if user.user_tipo != 'gestor':
-            logger.warning(f"Tentativa de login como gestor por usuário não autorizado: {email}")
-            return jsonify({"error": "Acesso restrito a gestores"}), 403
+            logger.info(f"Buscando usuário com email={email}")
+            user = User.query.filter_by(email=email).first()
+            if not user:
+                logger.warning(f"Usuário não encontrado para email={email}")
+                return jsonify({"error": "Credenciais inválidas"}), 401
 
-        # Gerar token JWT
-        secret_key = os.getenv('SECRET_KEY', '00974655')
-        token = jwt.encode({
-            'user_id': user.id,
-            'user_tipo': user.user_tipo,
-            'exp': datetime.utcnow() + timedelta(hours=24)
-        }, secret_key, algorithm='HS256')
+            if user.password != password:  # Substitua por hash seguro na produção
+                logger.warning(f"Senha inválida para email={email}")
+                return jsonify({"error": "Credenciais inválidas"}), 401
 
-        logger.info(f"Login bem-sucedido para gestor: {email}")
-        return jsonify({
-            "token": token,
-            "user_id": user.id,
-            "user_tipo": user.user_tipo,
-            "institution_id": user.institution_id,
-            "department": user.department,
-            "email": user.email
-        }), 200
+            if user.user_tipo != 'gestor':
+                logger.warning(f"Tentativa de login como gestor por usuário não autorizado: {email}")
+                return jsonify({"error": "Acesso restrito a gestores"}), 403
+
+            # Gerar token JWT
+            secret_key = os.getenv('SECRET_KEY', '00974655')
+            token = jwt.encode({
+                'user_id': user.id,
+                'user_tipo': user.user_tipo,
+                'exp': datetime.utcnow() + timedelta(hours=24)
+            }, secret_key, algorithm='HS256')
+
+            response = {
+                "token": token,
+                "user_id": user.id,
+                "user_tipo": user.user_tipo,
+                "institution_id": user.institution_id,
+                "department": user.department,
+                "email": user.email
+            }
+            logger.info(f"Login bem-sucedido para gestor: {email}")
+            return jsonify(response), 200
+
+        except Exception as e:
+            logger.error(f"Erro ao processar login para email={email}: {str(e)}")
+            return jsonify({"error": "Erro interno no servidor"}), 500
