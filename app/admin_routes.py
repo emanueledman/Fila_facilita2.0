@@ -77,7 +77,7 @@ def init_admin_routes(app):
 
         from .services import QueueService
         try:
-            ticket = QueueService.call_next(queue_id)  # Assume que call_next aceita queue_id diretamente
+            ticket = QueueService.call_next(queue_id)
             response = {
                 'message': f'Senha {ticket.queue.prefix}{ticket.ticket_number} chamada',
                 'ticket_id': ticket.id,

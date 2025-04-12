@@ -1,13 +1,16 @@
 import eventlet
-eventlet.monkey_patch()  # Chamado antes de qualquer importação
+eventlet.monkey_patch()
 
 from app import app, socketio
 from flask_cors import CORS
 from app.ml_models import wait_time_predictor, service_recommendation_predictor
 
-# Configurar CORS para ambiente local
+# Configurar CORS
 CORS(app, resources={r"/api/*": {
-    "origins": ["http://127.0.0.1:5500"],
+    "origins": [
+        "http://127.0.0.1:5500",  # Frontend local
+        "https://*.netlify.app"   # Frontend no Netlify
+    ],
     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     "allow_headers": ["Content-Type", "Authorization"]
 }})

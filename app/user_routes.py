@@ -1,8 +1,11 @@
-from flask import jsonify, request
+from flask import jsonify, request, make_response
 from . import db
 from .models import User
 from .auth import require_auth
 import logging
+import jwt
+import os
+from datetime import datetime, timedelta
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -43,3 +46,51 @@ def init_user_routes(app):
             'email': user.email,
             'fcm_token': user.fcm_token
         })
+
+    @app.route('/api/admin/login', methods=['POST', 'OPTIONS'])
+    def admin_login():
+        if request.method == 'OPTIONS':
+            # Resposta para requisição preflight
+            response = make_response()
+            response.headers['Access-Control-Allow-Origin'] = 'https://67fa242b6d1cacda59b478e6--glistening-klepon-5ebcce.netlify.app'
+            response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+            response.headers['Access-Control-Max-Age'] = 86400  # Cache por 24 horas
+            logger.info("Resposta OPTIONS enviada para /api/admin/login")
+            return response, 200
+
+        # Lógica para POST
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+
+        if not email or not password:
+            logger.warning("Tentativa de login sem email ou senha")
+            return jsonify({"error": "Email e senha são obrigatórios"}), 400
+
+        user = User.query.filter_by(email=email).first()
+        if not user or user.password != password:  # Substitua por hash seguro na produção
+            logger.warning(f"Tentativa de login com credenciais inválidas para email={email}")
+            return jsonify({"error": "Credenciais inválidas"}), 401
+
+        if user.user_tipo != 'gestor':
+            logger.warning(f"Tentativa de login como gestor por usuário não autorizado: {email}")
+            return jsonify({"error": "Acesso restrito a gestores"}), 403
+
+        # Gerar token JWT
+        secret_key = os.getenv('SECRET_KEY', '00974655')
+        token = jwt.encode({
+            'user_id': user.id,
+            'user_tipo': user.user_tipo,
+            'exp': datetime.utcnow() + timedelta(hours=24)
+        }, secret_key, algorithm='HS256')
+
+        logger.info(f"Login bem-sucedido para gestor: {email}")
+        return jsonify({
+            "token": token,
+            "user_id": user.id,
+            "user_tipo": user.user_tipo,
+            "institution_id": user.institution_id,
+            "department": user.department,
+            "email": user.email
+        }), 200
