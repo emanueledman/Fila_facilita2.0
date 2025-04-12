@@ -454,7 +454,7 @@ class QueueService:
             raise ValueError("Esta senha já está oferecida para troca.")
         
         try:
-            ticket.trade_available = True
+            ticket.trade_available = True 
             db.session.commit()
             logger.info(f"Ticket {ticket_id} oferecido para troca com sucesso")
         except SQLAlchemyError as e:

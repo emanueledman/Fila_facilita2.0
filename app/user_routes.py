@@ -52,7 +52,7 @@ def init_user_routes(app):
         if request.method == 'OPTIONS':
             # Resposta para requisição preflight
             response = make_response()
-            response.headers['Access-Control-Allow-Origin'] = 'https://glistening-klepon-5ebcce.netlify.app'
+            response.headers['Access-Control-Allow-Origin'] = 'https://frontfa.netlify.app/'
             response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
             response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
             response.headers['Access-Control-Max-Age'] = 86400  # Cache por 24 horas
