@@ -11,12 +11,14 @@ from datetime import datetime, timedelta
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Use a mesma chave secreta para JWT em todo o sistema
+JWT_SECRET = os.getenv('SECRET_KEY', '00974655')
+
 # Configuração do Firebase
 try:
     firebase_creds = os.getenv('FIREBASE_CREDENTIALS')
     if not firebase_creds:
         raise ValueError("FIREBASE_CREDENTIALS não encontrado")
-    
     cred_dict = json.loads(firebase_creds)
     cred = credentials.Certificate(cred_dict)
     firebase_admin.initialize_app(cred)
@@ -32,9 +34,18 @@ def require_auth(f):
         if not auth_header:
             logger.warning("Cabeçalho de autorização ausente")
             return jsonify({'error': 'Token de autenticação necessário'}), 401
-
+        
         try:
-            token = auth_header.split(' ')[1] if ' ' in auth_header else auth_header
+            # Extrair token do cabeçalho
+            if ' ' in auth_header:
+                # Formato: "Bearer token"
+                scheme, token = auth_header.split(' ', 1)
+                if scheme.lower() != 'bearer':
+                    logger.warning(f"Esquema de autorização inválido: {scheme}")
+                    return jsonify({'error': 'Formato de token inválido'}), 401
+            else:
+                # Formato: apenas o token
+                token = auth_header
             
             # 1. Tentativa com Firebase
             try:
@@ -48,9 +59,7 @@ def require_auth(f):
                 
                 # 2. Tentativa com JWT local
                 try:
-                    secret_key = os.getenv('JWT_SECRET', '974655')
-                    payload = jwt.decode(token, secret_key, algorithms=['HS256'])
-                    
+                    payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
                     request.user_id = payload['user_id']
                     request.user_tipo = payload.get('user_tipo', 'user')
                     logger.info(f"Autenticado via JWT - User ID: {request.user_id}")
@@ -61,9 +70,8 @@ def require_auth(f):
                 except jwt.InvalidTokenError as jwt_error:
                     logger.warning(f"Token JWT inválido: {str(jwt_error)}")
                     return jsonify({'error': 'Token inválido'}), 401
-
         except Exception as e:
             logger.error(f"Erro de autenticação: {str(e)}")
             return jsonify({'error': 'Falha na autenticação'}), 401
-
+    
     return decorated
