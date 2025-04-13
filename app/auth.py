@@ -37,15 +37,9 @@ def require_auth(f):
         
         try:
             # Extrair token do cabeçalho
-            if ' ' in auth_header:
-                # Formato: "Bearer token"
-                scheme, token = auth_header.split(' ', 1)
-                if scheme.lower() != 'bearer':
-                    logger.warning(f"Esquema de autorização inválido: {scheme}")
-                    return jsonify({'error': 'Formato de token inválido'}), 401
-            else:
-                # Formato: apenas o token
-                token = auth_header
+            token = auth_header
+            if auth_header.lower().startswith('bearer '):
+                token = auth_header[7:]  # Remove o prefixo 'Bearer '
             
             # 1. Tentativa com Firebase
             try:
@@ -73,5 +67,5 @@ def require_auth(f):
         except Exception as e:
             logger.error(f"Erro de autenticação: {str(e)}")
             return jsonify({'error': 'Falha na autenticação'}), 401
-    
+            
     return decorated
