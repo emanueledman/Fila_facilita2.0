@@ -42,7 +42,9 @@ def init_admin_routes(app):
             'active_tickets': q.active_tickets,
             'daily_limit': q.daily_limit,
             'current_ticket': q.current_ticket,
-            'status': 'Aberto' if q.active_tickets < q.daily_limit else 'Lotado'
+            'status': 'Aberto' if q.active_tickets < q.daily_limit else 'Lotado',
+            'institution_id': q.institution_id,
+            'department': q.department
         } for q in queues]
 
         logger.info(f"Gestor {request.user_id} listou {len(response)} filas do departamento {user.department}")
@@ -121,7 +123,7 @@ def init_admin_routes(app):
             'id': t.id,
             'queue_id': t.queue_id,
             'ticket_number': f"{t.queue.prefix}{t.ticket_number}",
-            'number': f"{t.queue.prefix}{t.ticket_number}",  # Compatibilidade com frontend
+            'number': f"{t.queue.prefix}{t.ticket_number}",
             'service': t.queue.service,
             'status': t.status,
             'wait_time': QueueService.calculate_wait_time(t.queue_id, t.ticket_number, t.priority),
