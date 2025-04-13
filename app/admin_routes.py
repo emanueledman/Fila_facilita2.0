@@ -97,36 +97,60 @@ def init_admin_routes(app):
     @app.route('/api/tickets/admin', methods=['GET'])
     @require_auth
     def list_admin_tickets():
+        """
+        Lista os tickets das filas administradas pelo gestor autenticado.
+        Filtra apenas os tickets das filas que pertencem ao departamento do gestor.
+        """
         if request.user_tipo != 'gestor':
             logger.warning(f"Tentativa de acesso a /api/tickets/admin por usuário não administrador: {request.user_id}")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
 
         user = User.query.get(request.user_id)
         if not user:
-            logger.error(f"Usuário não encontrado: {request.user_id}")
+            logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
             return jsonify({'error': 'Usuário não encontrado'}), 404
 
+        if not user.institution_id or not user.department:
+            logger.warning(f"Gestor {request.user_id} não vinculado a instituição ou departamento")
+            return jsonify({'error': 'Gestor não vinculado a uma instituição ou departamento'}), 403
+
+        # Primeiro, obtemos APENAS as filas do serviço específico do gestor
+        # Modificado para filtrar por department E service, não apenas department
         queues = Queue.query.filter_by(
             institution_id=user.institution_id,
-            department=user.department
+            department=user.department,
+            service=user.department  # Assumindo que o serviço coincide com o departamento (ex: department="Vacinação", service="Vacinação")
         ).all()
-        queue_ids = [q.id for q in queues]
-
-        if not queue_ids:
-            logger.info(f"Gestor {user.email} não encontrou filas")
+        
+        if not queues:
+            logger.info(f"Nenhuma fila encontrada para o gestor {user.email} no departamento {user.department}")
             return jsonify([]), 200
-
-        tickets = Ticket.query.filter(Ticket.queue_id.in_(queue_ids)).all()
-        logger.info(f"Gestor {user.email} encontrou {len(tickets)} tickets para filas {queue_ids}")
-
-        response = [{
-            'id': t.id,
-            'number': f"{t.queue.prefix}{t.ticket_number}",
-            'service': t.queue.service,
-            'status': t.status,
-            'counter': t.counter or 'N/A',
-            'issued_at': t.issued_at.isoformat(),
-            'wait_time': t.wait_time or 'N/A'
-        } for t in tickets]
-
+        
+        queue_ids = [queue.id for queue in queues]
+        
+        # Agora obtemos APENAS os tickets das filas específicas do gestor
+        tickets = Ticket.query.filter(
+            Ticket.queue_id.in_(queue_ids)
+        ).order_by(
+            Ticket.status.asc(),
+            Ticket.issued_at.desc()
+        ).limit(50).all()
+        
+        response = []
+        for ticket in tickets:
+            queue = Queue.query.get(ticket.queue_id)
+            ticket_data = {
+                'id': ticket.id,
+                'number': f"{queue.prefix}{ticket.ticket_number}" if queue else ticket.ticket_number,
+                'queue_id': ticket.queue_id,
+                'service': queue.service if queue else 'N/A',
+                'status': ticket.status,
+                'issued_at': ticket.issued_at.isoformat() if ticket.issued_at else None,
+                'attended_at': ticket.attended_at.isoformat() if ticket.attended_at else None,
+                'counter': ticket.counter,
+                'user_id': ticket.user_id
+            }
+            response.append(ticket_data)
+        
+        logger.info(f"Gestor {user.email} listou {len(response)} tickets de seu serviço '{user.department}'")
         return jsonify(response), 200
