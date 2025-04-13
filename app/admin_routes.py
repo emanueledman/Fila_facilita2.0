@@ -47,7 +47,7 @@ def init_admin_routes(app):
             'department': q.department
         } for q in queues]
 
-        logger.info(f"Gestor {request.user_id} listou {len(response)} filas do departamento {user.department}")
+        logger.info(f"Gestor {user.email} listou {len(response)} filas do departamento {user.department}: {[q['id'] for q in response]}")
         return jsonify(response), 200
 
     @app.route('/api/admin/queue/<queue_id>/call', methods=['POST'])
@@ -88,20 +88,17 @@ def init_admin_routes(app):
                 'counter': ticket.counter,
                 'remaining': ticket.queue.active_tickets
             }
-            logger.info(f"Gestor {request.user_id} chamou ticket {ticket.id} da fila {queue_id}")
+            logger.info(f"Gestor {user.email} chamou ticket {ticket.id} da fila {queue_id}")
             return jsonify(response), 200
         except ValueError as e:
             logger.error(f"Erro ao chamar próxima senha na fila {queue_id}: {str(e)}")
             return jsonify({'error': str(e)}), 400
 
-
-
-
     @app.route('/api/tickets/admin', methods=['GET'])
     @require_auth
     def list_admin_tickets():
         """
-        Lista os tickets das filas do departamento do gestor autenticado.
+        Lista os tickets das filas do departamento do gestor autenticado, usando as filas válidas.
         """
         if request.user_tipo != 'gestor':
             logger.warning(f"Tentativa de acesso a /api/tickets/admin por usuário não administrador: {request.user_id}")
@@ -116,10 +113,22 @@ def init_admin_routes(app):
             logger.warning(f"Gestor {request.user_id} não vinculado a instituição ou departamento")
             return jsonify({'error': 'Gestor não vinculado a uma instituição ou departamento'}), 403
 
-        # Filtrar tickets apenas das filas do departamento do gestor
-        tickets = Ticket.query.join(Queue).filter(
-            Queue.institution_id == user.institution_id,
-            Queue.department == user.department
+        # Obter as filas válidas do departamento do gestor (mesma lógica de /api/admin/queues)
+        queues = Queue.query.filter_by(
+            institution_id=user.institution_id,
+            department=user.department
+        ).all()
+
+        if not queues:
+            logger.info(f"Gestor {user.email} (departamento: {user.department}) não encontrou filas")
+            return jsonify([]), 200
+
+        queue_ids = [q.id for q in queues]
+        logger.info(f"Gestor {user.email} encontrou {len(queue_ids)} filas para tickets: {queue_ids}")
+
+        # Filtrar tickets apenas para as filas válidas
+        tickets = Ticket.query.filter(
+            Ticket.queue_id.in_(queue_ids)
         ).all()
 
         # Criar log com as senhas encontradas
