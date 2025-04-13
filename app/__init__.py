@@ -73,19 +73,15 @@ def create_app():
     with app.app_context():
         from .models import Institution, Queue, User, Ticket
         
+        # Sempre reiniciar o banco
+        db.drop_all()
         db.create_all()
+        app.logger.info("Banco limpo e tabelas recriadas")
         
-        if os.getenv('FLASK_ENV') != 'production':
-            db.drop_all()
-            db.create_all()
-            app.logger.info("Banco limpo e tabelas recriadas (modo desenvolvimento)")
-        
-        if Institution.query.count() == 0:
-            from .data_init import populate_initial_data
-            populate_initial_data(app)
-            app.logger.info("Dados iniciais inseridos automaticamente")
-        else:
-            app.logger.info("Banco já contém dados, pulando inicialização")
+        # Sempre inserir dados iniciais
+        from .data_init import populate_initial_data
+        populate_initial_data(app)
+        app.logger.info("Dados iniciais inseridos automaticamente")
     
     from .routes import init_routes
     from .queue_routes import init_queue_routes
