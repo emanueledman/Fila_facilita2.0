@@ -127,7 +127,7 @@ def init_admin_routes(app):
             'service': t.queue.service,
             'status': t.status,
             'wait_time': QueueService.calculate_wait_time(t.queue_id, t.ticket_number, t.priority),
-            'counter': t.counter if t.counter is not None else 'N/A',
+            'counter': f"{t.counter:02d}" if t.counter is not None else 'N/A',
             'issued_at': t.issued_at.isoformat()
         } for t in tickets]
 
