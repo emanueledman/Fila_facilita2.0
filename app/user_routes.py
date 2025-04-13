@@ -11,16 +11,16 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def init_user_routes(app):
-    @app.after_request
-    def after_request(response):
-        """Configurações CORS"""
-        origin = request.headers.get('Origin')
-        if origin:
-            response.headers.add('Access-Control-Allow-Origin', origin)
-            response.headers.add('Access-Control-Allow-Credentials', 'true')
-            response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-            response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
-        return response
+    @app.route('/api/admin/login', methods=['POST', 'OPTIONS'])
+    def admin_login():
+        if request.method == 'OPTIONS':
+            # Resposta para requisição preflight
+            response = make_response()
+            response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+            response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+            response.headers['Access-Control-Max-Age'] = '86400'
+            return response
 
         # Lógica para POST
         logger.info("Recebida requisição POST para /api/admin/login")
