@@ -94,42 +94,4 @@ def init_admin_routes(app):
             logger.error(f"Erro ao chamar próxima senha na fila {queue_id}: {str(e)}")
             return jsonify({'error': str(e)}), 400
 
-    @app.route('/api/tickets/admin', methods=['GET'])
-    @require_auth
-    def list_admin_tickets():
-        """
-        Lista os tickets das filas do departamento do gestor autenticado.
-        """
-        if request.user_tipo != 'gestor':
-            logger.warning(f"Tentativa de acesso a /api/tickets/admin por usuário não administrador: {request.user_id}")
-            return jsonify({'error': 'Acesso restrito a administradores'}), 403
-
-        user = User.query.get(request.user_id)
-        if not user:
-            logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
-            return jsonify({'error': 'Usuário não encontrado'}), 404
-
-        if not user.institution_id or not user.department:
-            logger.warning(f"Gestor {request.user_id} não vinculado a instituição ou departamento")
-            return jsonify({'error': 'Gestor não vinculado a uma instituição ou departamento'}), 403
-
-        # Filtrar tickets apenas das filas do departamento do gestor
-        tickets = Ticket.query.join(Queue).filter(
-            Queue.institution_id == user.institution_id,
-            Queue.department == user.department
-        ).all()
-
-        response = [{
-            'id': t.id,
-            'queue_id': t.queue_id,
-            'ticket_number': f"{t.queue.prefix}{t.ticket_number}",
-            'number': f"{t.queue.prefix}{t.ticket_number}",
-            'service': t.queue.service,
-            'status': t.status,
-            'wait_time': QueueService.calculate_wait_time(t.queue_id, t.ticket_number, t.priority) or 'N/A',
-            'counter': f"{t.counter:02d}" if t.counter is not None else 'N/A',
-            'issued_at': t.issued_at.isoformat()
-        } for t in tickets]
-
-        logger.info(f"Gestor {request.user_id} listou {len(response)} tickets do departamento {user.department}")
-        return jsonify(response), 200
+    
