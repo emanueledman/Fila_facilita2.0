@@ -12,78 +12,66 @@ from . import db
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-firebase_creds_json = os.getenv('FIREBASE_CREDENTIALS')
-if not firebase_creds_json:
-    logger.error("Variável de ambiente FIREBASE_CREDENTIALS não encontrada")
-    raise ValueError("Credenciais do Firebase não encontradas na variável de ambiente FIREBASE_CREDENTIALS")
+# Configuração do Firebase
+def initialize_firebase():
+    firebase_creds_json = os.getenv('FIREBASE_CREDENTIALS')
+    if not firebase_creds_json:
+        logger.error("Variável de ambiente FIREBASE_CREDENTIALS não encontrada")
+        raise ValueError("Credenciais do Firebase não encontradas")
 
-try:
-    cred_dict = json.loads(firebase_creds_json)
-    cred = credentials.Certificate(cred_dict)
-    if not firebase_admin._apps:
-        firebase_admin.initialize_app(cred)
-    logger.info("Firebase Admin SDK inicializado com sucesso")
-except json.JSONDecodeError as e:
-    logger.error(f"Erro ao decodificar FIREBASE_CREDENTIALS: {e}")
-    raise ValueError("FIREBASE_CREDENTIALS inválido: formato JSON incorreto")
-except Exception as e:
-    logger.error(f"Erro ao inicializar Firebase Admin SDK: {e}")
-    raise ValueError(f"Erro ao inicializar Firebase: {e}")
+    try:
+        cred_dict = json.loads(firebase_creds_json)
+        cred = credentials.Certificate(cred_dict)
+        if not firebase_admin._apps:
+            firebase_app = firebase_admin.initialize_app(cred)
+            logger.info("Firebase Admin SDK inicializado com sucesso")
+            return firebase_app
+    except Exception as e:
+        logger.error(f"Erro ao inicializar Firebase: {e}")
+        raise
+
+firebase_app = initialize_firebase()
 
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        token = request.headers.get('Authorization')
-        if not token:
-            logger.warning("Requisição sem token de autenticação")
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
+            logger.warning("Requisição sem cabeçalho de autorização")
             return jsonify({'error': 'Token de autenticação necessário'}), 401
-        
+
         try:
-            token = token.replace('Bearer ', '')
-            decoded_token = auth.verify_id_token(token)
-            request.user_id = decoded_token['uid']
-            request.user_tipo = 'user'
-            logger.info(f"Token Firebase válido para UID: {request.user_id}")
-        except (auth.InvalidIdTokenError, ValueError) as e:
-            logger.warning(f"Token Firebase inválido: {e}")
+            # Remove o prefixo 'Bearer ' se existir
+            token = auth_header.split(' ')[1] if ' ' in auth_header else auth_header
+            
+            # Primeiro tenta autenticar com Firebase
             try:
-                payload = jwt.decode(token, os.getenv('JWT_SECRET', '974655'), algorithms=['HS256'])
-                request.user_id = payload['user_id']
-                request.user_tipo = payload.get('user_tipo', 'user')
-                logger.info(f"Token JWT local válido para user_id: {request.user_id}, user_tipo: {request.user_tipo}")
-            except jwt.ExpiredSignatureError:
-                logger.warning("Token JWT local expirado")
-                return jsonify({'error': 'Token expirado'}), 401
-            except jwt.InvalidTokenError:
-                logger.warning("Token JWT local inválido")
-                return jsonify({'error': 'Token inválido'}), 401
-        
-        return f(*args, **kwargs)
+                decoded_token = auth.verify_id_token(token, app=firebase_app)
+                request.user_id = decoded_token['uid']
+                request.user_tipo = 'user'  # Define um tipo padrão
+                logger.info(f"Autenticado via Firebase - UID: {request.user_id}")
+                return f(*args, **kwargs)
+            except Exception as firebase_error:
+                logger.warning(f"Falha na autenticação Firebase: {str(firebase_error)}")
+                
+                # Se Firebase falhar, tenta autenticação JWT local
+                try:
+                    secret_key = os.getenv('JWT_SECRET', '974655')
+                    payload = jwt.decode(token, secret_key, algorithms=['HS256'])
+                    
+                    request.user_id = payload['user_id']
+                    request.user_tipo = payload.get('user_tipo', 'user')
+                    logger.info(f"Autenticado via JWT local - User ID: {request.user_id}, Tipo: {request.user_tipo}")
+                    return f(*args, **kwargs)
+                except jwt.ExpiredSignatureError:
+                    logger.warning("Token JWT expirado")
+                    return jsonify({'error': 'Token expirado'}), 401
+                except jwt.InvalidTokenError as jwt_error:
+                    logger.warning(f"Token JWT inválido: {str(jwt_error)}")
+                    return jsonify({'error': 'Token inválido'}), 401
+
+        except Exception as e:
+            logger.error(f"Erro durante autenticação: {str(e)}")
+            return jsonify({'error': 'Falha na autenticação'}), 401
+
     return decorated
-
-def init_auth_routes(app):
-    @app.route('/api/update_fcm_token', methods=['POST'])
-    @require_auth
-    def update_fcm_token():
-        from .models import User
-        data = request.get_json()
-        fcm_token = data.get('fcm_token')
-        email = data.get('email')
-
-        if not fcm_token or not email:
-            logger.warning("Requisição sem FCM token ou email")
-            return jsonify({'error': 'FCM token e email são obrigatórios'}), 400
-
-        user = User.query.filter_by(email=email).first()
-        if not user:
-            logger.warning(f"Usuário não encontrado para email: {email}")
-            return jsonify({'error': 'Usuário não encontrado'}), 404
-
-        if user.id != request.user_id:
-            logger.warning(f"Tentativa de atualização de FCM token com email inválido: {email}")
-            return jsonify({'error': 'Acesso não autorizado'}), 403
-
-        user.fcm_token = fcm_token
-        db.session.commit()
-        logger.info(f"FCM token atualizado para usuário {user.email}")
-        return jsonify({'message': 'FCM token atualizado com sucesso'}), 200
