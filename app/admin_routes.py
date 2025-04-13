@@ -97,57 +97,36 @@ def init_admin_routes(app):
     @app.route('/api/tickets/admin', methods=['GET'])
     @require_auth
     def list_admin_tickets():
-        """
-        Lista os tickets das filas do departamento do gestor autenticado, usando as filas válidas.
-        """
         if request.user_tipo != 'gestor':
             logger.warning(f"Tentativa de acesso a /api/tickets/admin por usuário não administrador: {request.user_id}")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
 
         user = User.query.get(request.user_id)
         if not user:
-            logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
+            logger.error(f"Usuário não encontrado: {request.user_id}")
             return jsonify({'error': 'Usuário não encontrado'}), 404
 
-        if not user.institution_id or not user.department:
-            logger.warning(f"Gestor {request.user_id} não vinculado a instituição ou departamento")
-            return jsonify({'error': 'Gestor não vinculado a uma instituição ou departamento'}), 403
-
-        # Obter as filas válidas do departamento do gestor (mesma lógica de /api/admin/queues)
         queues = Queue.query.filter_by(
             institution_id=user.institution_id,
             department=user.department
         ).all()
+        queue_ids = [q.id for q in queues]
 
-        if not queues:
-            logger.info(f"Gestor {user.email} (departamento: {user.department}) não encontrou filas")
+        if not queue_ids:
+            logger.info(f"Gestor {user.email} não encontrou filas")
             return jsonify([]), 200
 
-        queue_ids = [q.id for q in queues]
-        logger.info(f"Gestor {user.email} encontrou {len(queue_ids)} filas para tickets: {queue_ids}")
-
-        # Filtrar tickets apenas para as filas válidas
-        tickets = Ticket.query.filter(
-            Ticket.queue_id.in_(queue_ids)
-        ).all()
-
-        # Criar log com as senhas encontradas
-        ticket_numbers = [f"{t.queue.prefix}{t.ticket_number}" for t in tickets]
-        logger.info(
-            f"Gestor {user.email} (departamento: {user.department}) encontrou "
-            f"{len(ticket_numbers)} senhas na fila: {', '.join(ticket_numbers) if ticket_numbers else 'Nenhuma senha'}"
-        )
+        tickets = Ticket.query.filter(Ticket.queue_id.in_(queue_ids)).all()
+        logger.info(f"Gestor {user.email} encontrou {len(tickets)} tickets para filas {queue_ids}")
 
         response = [{
             'id': t.id,
-            'queue_id': t.queue_id,
-            'ticket_number': f"{t.queue.prefix}{t.ticket_number}",
             'number': f"{t.queue.prefix}{t.ticket_number}",
             'service': t.queue.service,
             'status': t.status,
-            'wait_time': QueueService.calculate_wait_time(t.queue_id, t.ticket_number, t.priority) or 'N/A',
-            'counter': f"{t.counter:02d}" if t.counter is not None else 'N/A',
-            'issued_at': t.issued_at.isoformat()
+            'counter': t.counter or 'N/A',
+            'issued_at': t.issued_at.isoformat(),
+            'wait_time': t.wait_time or 'N/A'
         } for t in tickets]
 
         return jsonify(response), 200
