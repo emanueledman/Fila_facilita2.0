@@ -109,6 +109,15 @@ def populate_initial_data(app):
                     'institution_id': institutions[0]['id'],
                     'department': 'Vacinação'
                 },
+                # Adicionar um usuário padrão para tickets
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'default.user@viana.com',
+                    'password': 'user123',
+                    'user_tipo': 'user',
+                    'institution_id': institutions[0]['id'],
+                    'department': None
+                },
             ]
 
             for gestor in gestores:
@@ -123,70 +132,99 @@ def populate_initial_data(app):
                 db.session.add(user)
             
             db.session.commit()
-            app.logger.info("Gestores iniciais inseridos com sucesso!")
+            app.logger.info("Gestores e usuários iniciais inseridos com sucesso!")
         except Exception as e:
             db.session.rollback()
             app.logger.error(f"Erro ao inserir gestores iniciais: {str(e)}")
             raise
 
         try:
+            # Encontrar o ID do usuário padrão
+            default_user = User.query.filter_by(email='default.user@viana.com').first()
+            if not default_user:
+                raise ValueError("Usuário padrão não encontrado!")
+
             tickets = [
                 # Consulta Geral
                 {
                     'id': str(uuid.uuid4()),
                     'queue_id': queue_ids['Consulta Geral'],
-                    'ticket_number': '001',
+                    'user_id': default_user.id,
+                    'ticket_number': 1,
+                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
                     'status': 'Pendente',
-                    'priority': False,
+                    'priority': 0,
+                    'is_physical': False,
                     'counter': None,
-                    'issued_at': datetime.utcnow()
+                    'issued_at': datetime.utcnow(),
+                    'trade_available': False
                 },
                 {
                     'id': str(uuid.uuid4()),
                     'queue_id': queue_ids['Consulta Geral'],
-                    'ticket_number': '002',
+                    'user_id': default_user.id,
+                    'ticket_number': 2,
+                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
                     'status': 'attended',
-                    'priority': False,
+                    'priority': 0,
+                    'is_physical': False,
                     'counter': 1,
-                    'issued_at': datetime.utcnow()
+                    'issued_at': datetime.utcnow(),
+                    'trade_available': False
                 },
                 # Exames Laboratoriais
                 {
                     'id': str(uuid.uuid4()),
                     'queue_id': queue_ids['Laboratório'],
-                    'ticket_number': '001',
+                    'user_id': default_user.id,
+                    'ticket_number': 1,
+                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
                     'status': 'Pendente',
-                    'priority': False,
+                    'priority': 0,
+                    'is_physical': False,
                     'counter': None,
-                    'issued_at': datetime.utcnow()
+                    'issued_at': datetime.utcnow(),
+                    'trade_available': False
                 },
                 {
                     'id': str(uuid.uuid4()),
                     'queue_id': queue_ids['Laboratório'],
-                    'ticket_number': '002',
+                    'user_id': default_user.id,
+                    'ticket_number': 2,
+                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
                     'status': 'attended',
-                    'priority': False,
+                    'priority': 0,
+                    'is_physical': False,
                     'counter': 2,
-                    'issued_at': datetime.utcnow()
+                    'issued_at': datetime.utcnow(),
+                    'trade_available': False
                 },
                 # Vacinação
                 {
                     'id': str(uuid.uuid4()),
                     'queue_id': queue_ids['Vacinação'],
-                    'ticket_number': '001',
+                    'user_id': default_user.id,
+                    'ticket_number': 1,
+                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
                     'status': 'Pendente',
-                    'priority': False,
+                    'priority': 0,
+                    'is_physical': False,
                     'counter': None,
-                    'issued_at': datetime.utcnow()
+                    'issued_at': datetime.utcnow(),
+                    'trade_available': False
                 },
                 {
                     'id': str(uuid.uuid4()),
                     'queue_id': queue_ids['Vacinação'],
-                    'ticket_number': '002',
+                    'user_id': default_user.id,
+                    'ticket_number': 2,
+                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
                     'status': 'attended',
-                    'priority': False,
+                    'priority': 0,
+                    'is_physical': False,
                     'counter': 1,
-                    'issued_at': datetime.utcnow()
+                    'issued_at': datetime.utcnow(),
+                    'trade_available': False
                 },
             ]
 
@@ -194,11 +232,15 @@ def populate_initial_data(app):
                 ticket = Ticket(
                     id=t['id'],
                     queue_id=t['queue_id'],
+                    user_id=t['user_id'],
                     ticket_number=t['ticket_number'],
+                    qr_code=t['qr_code'],
                     status=t['status'],
                     priority=t['priority'],
+                    is_physical=t['is_physical'],
                     counter=t['counter'],
-                    issued_at=t['issued_at']
+                    issued_at=t['issued_at'],
+                    trade_available=t['trade_available']
                 )
                 db.session.add(ticket)
             
