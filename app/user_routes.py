@@ -32,7 +32,6 @@ def init_user_routes(app):
 
             email = data.get('email')
             password = data.get('password')
-
             if not email or not password:
                 logger.warning("Tentativa de login sem email ou senha")
                 return jsonify({"error": "Email e senha são obrigatórios"}), 400
@@ -51,7 +50,7 @@ def init_user_routes(app):
                 logger.warning(f"Tentativa de login como gestor por usuário não autorizado: {email}")
                 return jsonify({"error": "Acesso restrito a gestores"}), 403
 
-            # Gerar token JWT
+            # Gerar token JWT (sem o prefixo Bearer)
             secret_key = os.getenv('SECRET_KEY', '00974655')
             token = jwt.encode({
                 'user_id': user.id,
@@ -59,22 +58,26 @@ def init_user_routes(app):
                 'exp': datetime.utcnow() + timedelta(hours=24)
             }, secret_key, algorithm='HS256')
 
+            # Se o token for uma string em bytes (Python 3.6 e abaixo com PyJWT antigo)
+            if isinstance(token, bytes):
+                token = token.decode('utf-8')
+
             response = jsonify({
-                "token": token,
+                "token": token,  # Token sem o prefixo Bearer
                 "user_id": user.id,
                 "user_tipo": user.user_tipo,
                 "institution_id": user.institution_id,
                 "department": user.department,
                 "email": user.email
             })
-            
+
             # Configuração CORS para a resposta
             response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
             response.headers.add('Access-Control-Allow-Credentials', 'true')
             
             logger.info(f"Login bem-sucedido para gestor: {email}")
             return response, 200
-
+            
         except Exception as e:
-            logger.error(f"Erro ao processar login para email={email}: {str(e)}")
+            logger.error(f"Erro ao processar login para email={request.json.get('email', 'unknown')}: {str(e)}")
             return jsonify({"error": "Erro interno no servidor"}), 500
