@@ -48,7 +48,7 @@ def populate_initial_data(app):
         ]
 
         try:
-            queue_ids = {}  # Armazenar IDs das filas para tickets
+            queue_ids = {}
             for inst in institutions:
                 institution = Institution(
                     id=inst['id'],
@@ -74,7 +74,7 @@ def populate_initial_data(app):
                         num_counters=q['num_counters']
                     )
                     db.session.add(queue)
-                    queue_ids[q['department']] = queue.id  # Mapear departamento ao queue_id
+                    queue_ids[q['department']] = queue.id
             
             db.session.commit()
             app.logger.info("Dados iniciais de instituições e filas inseridos com sucesso!")
@@ -109,7 +109,6 @@ def populate_initial_data(app):
                     'institution_id': institutions[0]['id'],
                     'department': 'Vacinação'
                 },
-                # Adicionar um usuário padrão para tickets
                 {
                     'id': str(uuid.uuid4()),
                     'email': 'default.user@viana.com',
@@ -139,7 +138,6 @@ def populate_initial_data(app):
             raise
 
         try:
-            # Encontrar o ID do usuário padrão
             default_user = User.query.filter_by(email='default.user@viana.com').first()
             if not default_user:
                 raise ValueError("Usuário padrão não encontrado!")

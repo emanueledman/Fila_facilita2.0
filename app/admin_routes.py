@@ -94,6 +94,9 @@ def init_admin_routes(app):
             logger.error(f"Erro ao chamar próxima senha na fila {queue_id}: {str(e)}")
             return jsonify({'error': str(e)}), 400
 
+
+
+
     @app.route('/api/tickets/admin', methods=['GET'])
     @require_auth
     def list_admin_tickets():
@@ -119,6 +122,13 @@ def init_admin_routes(app):
             Queue.department == user.department
         ).all()
 
+        # Criar log com as senhas encontradas
+        ticket_numbers = [f"{t.queue.prefix}{t.ticket_number}" for t in tickets]
+        logger.info(
+            f"Gestor {user.email} (departamento: {user.department}) encontrou "
+            f"{len(ticket_numbers)} senhas na fila: {', '.join(ticket_numbers) if ticket_numbers else 'Nenhuma senha'}"
+        )
+
         response = [{
             'id': t.id,
             'queue_id': t.queue_id,
@@ -131,6 +141,4 @@ def init_admin_routes(app):
             'issued_at': t.issued_at.isoformat()
         } for t in tickets]
 
-        logger.info(f"Gestor {request.user_id} listou {len(response)} tickets do departamento {user.department}")
         return jsonify(response), 200
-        
