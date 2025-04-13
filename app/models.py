@@ -49,7 +49,7 @@ class Ticket(db.Model):
     priority = Column(Integer, default=0)
     is_physical = Column(Boolean, default=False)
     status = Column(String(20), default='Pendente')
-    issued_at = Column(DateTime, default=datetime.utcnow)  # Campo correto
+    issued_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime)
     attended_at = Column(DateTime)
     cancelled_at = Column(DateTime)
