@@ -5,7 +5,7 @@ import math
 from datetime import datetime, timedelta
 from flask_socketio import emit
 from . import db, socketio
-from .models import Queue, Ticket, User
+from .models import Queue, Ticket, User, Department
 from .utils.pdf_generator import generate_ticket_pdf
 from firebase_admin import messaging
 from sqlalchemy.exc import SQLAlchemyError
@@ -41,14 +41,14 @@ class QueueService:
     @staticmethod
     def generate_receipt(ticket):
         queue = ticket.queue
-        if not queue:
-            logger.error(f"Fila não encontrada para o ticket {ticket.id}")
-            raise ValueError("Fila associada ao ticket não encontrada")
+        if not queue or not queue.department or not queue.department.institution:
+            logger.error(f"Dados incompletos para o ticket {ticket.id}: queue, department ou institution ausentes")
+            raise ValueError("Fila ou instituição associada ao ticket não encontrada")
         
         receipt = (
             "=== Comprovante Facilita 2.0 ===\n"
             f"Serviço: {queue.service}\n"
-            f"Instituição: {queue.institution_name}\n"
+            f"Instituição: {queue.department.institution.name}\n"
             f"Senha: {queue.prefix}{ticket.ticket_number}\n"
             f"Tipo: {'Física' if ticket.is_physical else 'Virtual'}\n"
             f"QR Code: {ticket.qr_code}\n"
@@ -62,9 +62,9 @@ class QueueService:
 
     @staticmethod
     def generate_pdf_ticket(ticket, position=None, wait_time=None):
-        if not ticket.queue:
-            logger.error(f"Fila não encontrada para o ticket {ticket.id}")
-            raise ValueError("Fila associada ao ticket não encontrada")
+        if not ticket.queue or not ticket.queue.department or not ticket.queue.department.institution:
+            logger.error(f"Dados incompletos para o ticket {ticket.id}: queue, department ou institution ausentes")
+            raise ValueError("Fila ou instituição associada ao ticket não encontrada")
             
         if position is None:
             position = max(0, ticket.ticket_number - ticket.queue.current_ticket)
@@ -75,7 +75,7 @@ class QueueService:
 
         pdf_buffer = generate_ticket_pdf(
             ticket=ticket,
-            institution_name=ticket.queue.institution_name,
+            institution_name=ticket.queue.department.institution.name,
             service=ticket.queue.service,
             position=position,
             wait_time=wait_time
@@ -298,7 +298,7 @@ class QueueService:
         notified_institutions = set()
 
         for queue in queues:
-            if not queue.institution:
+            if not queue.department or not queue.department.institution:
                 continue
             if (queue.open_time and now < queue.open_time) or (queue.end_time and now > queue.end_time):
                 continue
@@ -307,21 +307,21 @@ class QueueService:
 
             if desired_service:
                 service_match = desired_service.lower() in queue.service.lower()
-                sector_match = desired_service.lower() in (queue.sector or "").lower()
+                sector_match = desired_service.lower() in (queue.department.sector or "").lower()
                 if not (service_match or sector_match):
                     continue
 
-            distance = QueueService.calculate_distance(user_lat, user_lon, queue.institution)
+            distance = QueueService.calculate_distance(user_lat, user_lon, queue.department.institution)
             if distance is None or distance > QueueService.PROXIMITY_THRESHOLD_KM:
                 continue
 
-            institution_id = queue.institution.id
+            institution_id = queue.department.institution.id
             if institution_id in notified_institutions:
                 continue
 
             wait_time = QueueService.calculate_wait_time(queue.id, queue.active_tickets + 1, priority=0)
             message = (
-                f"Fila disponível próxima! {queue.service} em {queue.institution_name} "
+                f"Fila disponível próxima! {queue.service} em {queue.department.institution.name} "
                 f"a {distance:.2f} km de você. Tempo de espera: {wait_time if wait_time != 'N/A' else 'Aguardando início'} min."
             )
             QueueService.send_notification(
@@ -356,7 +356,7 @@ class QueueService:
                 continue
 
             if wait_time <= 5 and ticket.user_id != 'PRESENCIAL':
-                distance = QueueService.calculate_distance(-8.8147, 13.2302, ticket.queue.institution)
+                distance = QueueService.calculate_distance(-8.8147, 13.2302, ticket.queue.department.institution)
                 distance_msg = f" Você está a {distance} km." if distance else ""
                 message = f"Sua vez está próxima! {ticket.queue.service}, Senha {ticket.queue.prefix}{ticket.ticket_number}. Prepare-se em {wait_time} min.{distance_msg}"
                 QueueService.send_notification(None, message, ticket.id, via_websocket=True, user_id=ticket.user_id)
@@ -364,7 +364,7 @@ class QueueService:
             if ticket.user_id != 'PRESENCIAL':
                 user = User.query.get(ticket.user_id)
                 if user and user.last_known_lat and user.last_known_lon:
-                    distance = QueueService.calculate_distance(user.last_known_lat, user.last_known_lon, ticket.queue.institution)
+                    distance = QueueService.calculate_distance(user.last_known_lat, user.last_known_lon, ticket.queue.department.institution)
                     if distance and distance > 5:
                         travel_time = distance * 2
                         if wait_time <= travel_time:
@@ -470,7 +470,6 @@ class QueueService:
             user_id=user_id
         )
 
-        # Usar Ticket.issued_at em vez de Ticket.created_at
         eligible_tickets = Ticket.query.filter(
             Ticket.queue_id == ticket.queue_id,
             Ticket.user_id != user_id,
@@ -493,6 +492,7 @@ class QueueService:
                     logger.error(f"Erro ao emitir trade_available para user_id {eligible_ticket.user_id}: {e}")
 
         return ticket
+
     @staticmethod
     def cancel_ticket(ticket_id, user_id):
         ticket = Ticket.query.get_or_404(ticket_id)
@@ -535,6 +535,8 @@ def suggest_service_locations(service, user_lat=None, user_lon=None, max_results
     day_of_week = now.weekday()
 
     for queue in queues:
+        if not queue.department or not queue.department.institution:
+            continue
         if queue.open_time and current_time < queue.open_time:
             continue
         if queue.end_time and current_time > queue.end_time:
@@ -543,7 +545,7 @@ def suggest_service_locations(service, user_lat=None, user_lon=None, max_results
             continue
 
         service_match = service.lower() in queue.service.lower()
-        sector_match = service.lower() in (queue.sector or "").lower()
+        sector_match = service.lower() in (queue.department.sector or "").lower()
         if not (service_match or sector_match):
             continue
 
@@ -553,8 +555,8 @@ def suggest_service_locations(service, user_lat=None, user_lon=None, max_results
             wait_time = float('inf')
 
         distance = None
-        if user_lat is not None and user_lon is not None and queue.institution:
-            distance = QueueService.calculate_distance(user_lat, user_lon, queue.institution)
+        if user_lat is not None and user_lon is not None and queue.department.institution:
+            distance = QueueService.calculate_distance(user_lat, user_lon, queue.department.institution)
             if distance is None:
                 distance = float('inf')
 
@@ -592,16 +594,16 @@ def suggest_service_locations(service, user_lat=None, user_lon=None, max_results
 
         suggestions.append({
             'institution': {
-                'id': queue.institution.id if queue.institution else None,
-                'name': queue.institution_name,
-                'location': queue.institution.location if queue.institution else None,
-                'latitude': queue.institution.latitude if queue.institution else None,
-                'longitude': queue.institution.longitude if queue.institution else None,
+                'id': queue.department.institution.id if queue.department.institution else None,
+                'name': queue.department.institution.name if queue.department.institution else None,
+                'location': queue.department.institution.location if queue.department.institution else None,
+                'latitude': queue.department.institution.latitude if queue.department.institution else None,
+                'longitude': queue.department.institution.longitude if queue.department.institution else None,
             },
             'queue': {
                 'id': queue.id,
                 'service': queue.service,
-                'sector': queue.sector,
+                'sector': queue.department.sector if queue.department else None,
                 'wait_time': wait_time if wait_time != float('inf') else "Aguardando início",
                 'distance': distance if distance is not None else "Desconhecida",
                 'quality_score': quality_score,

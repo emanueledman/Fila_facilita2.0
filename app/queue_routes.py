@@ -1,6 +1,6 @@
 from flask import jsonify, request, send_file
 from . import db, socketio
-from .models import Institution, Queue, Ticket, User
+from .models import Institution, Queue, Ticket, User, Department, UserRole
 from .auth import require_auth
 from .services import QueueService, suggest_service_locations
 import uuid
@@ -32,7 +32,8 @@ def init_queue_routes(app):
         now = datetime.now().time()
         result = []
         for inst in institutions:
-            queues = Queue.query.filter_by(institution_id=inst.id).all()
+            departments = Department.query.filter_by(institution_id=inst.id).all()
+            queues = Queue.query.filter(Queue.department_id.in_([d.id for d in departments])).all()
             result.append({
                 'institution': {
                     'id': inst.id,
@@ -45,9 +46,9 @@ def init_queue_routes(app):
                     'id': q.id,
                     'service': q.service,
                     'prefix': q.prefix,
-                    'sector': q.sector,
-                    'department': q.department,
-                    'institution': q.institution_name,
+                    'sector': q.department.sector if q.department else None,
+                    'department': q.department.name if q.department else None,
+                    'institution': q.department.institution.name if q.department and q.department.institution else None,
                     'open_time': q.open_time.strftime('%H:%M') if q.open_time else None,
                     'end_time': q.end_time.strftime('%H:%M') if q.end_time else None,
                     'daily_limit': q.daily_limit,
@@ -97,7 +98,7 @@ def init_queue_routes(app):
             if not email:
                 logger.error(f"Email não encontrado para user_id={user_id}")
                 return jsonify({'error': 'Email é obrigatório para criar um novo usuário'}), 400
-            user = User(id=user_id, email=email)
+            user = User(id=user_id, email=email, name="Usuário Desconhecido", active=True)
             db.session.add(user)
 
         user.last_known_lat = latitude
@@ -113,19 +114,24 @@ def init_queue_routes(app):
     @app.route('/api/queue/create', methods=['POST'])
     @require_auth
     def create_queue():
+        user = User.query.get(request.user_id)
+        if not user or not user.is_department_admin:
+            logger.warning(f"Tentativa não autorizada de criar fila por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores'}), 403
+
         data = request.get_json()
-        required = ['service', 'prefix', 'sector', 'department', 'institution_id', 'open_time', 'daily_limit', 'num_counters']
+        required = ['service', 'prefix', 'department_id', 'open_time', 'daily_limit', 'num_counters']
         if not data or not all(f in data for f in required):
             logger.warning("Campos obrigatórios faltando na criação de fila.")
             return jsonify({'error': 'Campos obrigatórios faltando'}), 400
         
-        institution = Institution.query.get(data['institution_id'])
-        if not institution:
-            logger.error(f"Instituição não encontrada: institution_id={data['institution_id']}")
-            return jsonify({'error': 'Instituição não encontrada'}), 404
+        department = Department.query.get(data['department_id'])
+        if not department:
+            logger.error(f"Departamento não encontrado: department_id={data['department_id']}")
+            return jsonify({'error': 'Departamento não encontrado'}), 404
         
-        if Queue.query.filter_by(service=data['service'], institution_id=data['institution_id']).first():
-            logger.warning(f"Fila já existe para o serviço {data['service']} na instituição {data['institution_id']}.")
+        if Queue.query.filter_by(service=data['service'], department_id=data['department_id']).first():
+            logger.warning(f"Fila já existe para o serviço {data['service']} no departamento {data['department_id']}.")
             return jsonify({'error': 'Fila já existe'}), 400
         
         try:
@@ -136,12 +142,9 @@ def init_queue_routes(app):
         
         queue = Queue(
             id=str(uuid.uuid4()),
-            institution_id=data['institution_id'],
+            department_id=data['department_id'],
             service=data['service'],
             prefix=data['prefix'],
-            sector=data['sector'],
-            department=data['department'],
-            institution_name=institution.name,
             open_time=open_time,
             daily_limit=data['daily_limit'],
             num_counters=data['num_counters']
@@ -154,14 +157,21 @@ def init_queue_routes(app):
     @app.route('/api/queue/<id>', methods=['PUT'])
     @require_auth
     def update_queue(id):
+        user = User.query.get(request.user_id)
+        if not user or not user.is_department_admin:
+            logger.warning(f"Tentativa não autorizada de atualizar fila por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores'}), 403
+
         queue = Queue.query.get_or_404(id)
         data = request.get_json()
         queue.service = data.get('service', queue.service)
         queue.prefix = data.get('prefix', queue.prefix)
-        queue.sector = data.get('sector', queue.sector)
-        queue.department = data.get('department', queue.department)
-        queue.institution_id = data.get('institution_id', queue.institution_id)
-        queue.institution_name = Institution.query.get(queue.institution_id).name
+        if 'department_id' in data:
+            department = Department.query.get(data['department_id'])
+            if not department:
+                logger.error(f"Departamento não encontrado: department_id={data['department_id']}")
+                return jsonify({'error': 'Departamento não encontrado'}), 404
+            queue.department_id = data['department_id']
         if 'open_time' in data:
             try:
                 queue.open_time = datetime.strptime(data['open_time'], '%H:%M').time()
@@ -177,6 +187,11 @@ def init_queue_routes(app):
     @app.route('/api/queue/<id>', methods=['DELETE'])
     @require_auth
     def delete_queue(id):
+        user = User.query.get(request.user_id)
+        if not user or not user.is_department_admin:
+            logger.warning(f"Tentativa não autorizada de excluir fila por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores'}), 403
+
         queue = Queue.query.get_or_404(id)
         if Ticket.query.filter_by(queue_id=id, status='Pendente').first():
             logger.warning(f"Tentativa de excluir fila {id} com tickets pendentes")
@@ -259,7 +274,7 @@ def init_queue_routes(app):
         wait_time = QueueService.calculate_wait_time(queue.id, ticket.ticket_number, ticket.priority)
         return jsonify({
             'service': queue.service,
-            'institution': queue.institution_name,
+            'institution': queue.department.institution.name if queue.department and queue.department.institution else None,
             'ticket_number': f"{queue.prefix}{ticket.ticket_number}",
             'qr_code': ticket.qr_code,
             'status': ticket.status,
@@ -268,12 +283,17 @@ def init_queue_routes(app):
             'wait_time': wait_time if wait_time != "N/A" else "N/A",
             'priority': ticket.priority,
             'is_physical': ticket.is_physical,
-            ' expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None
+            'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None
         }), 200
 
     @app.route('/api/queue/<service>/call', methods=['POST'])
     @require_auth
     def call_next_ticket(service):
+        user = User.query.get(request.user_id)
+        if not user or not user.is_department_admin:
+            logger.warning(f"Tentativa não autorizada de chamar ticket por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores'}), 403
+
         try:
             ticket = QueueService.call_next(service)
             emit_ticket_update(ticket)
@@ -336,7 +356,7 @@ def init_queue_routes(app):
         return jsonify([{
             'id': t.id,
             'service': t.queue.service,
-            'institution': t.queue.institution_name,
+            'institution': t.queue.department.institution.name if t.queue.department and t.queue.department.institution else None,
             'number': f"{t.queue.prefix}{t.ticket_number}",
             'status': t.status,
             'counter': f"{t.counter:02d}" if t.counter else None,
@@ -366,7 +386,7 @@ def init_queue_routes(app):
         return jsonify([{
             'id': t.id,
             'service': t.queue.service,
-            'institution': t.queue.institution_name,
+            'institution': t.queue.department.institution.name if t.queue.department and t.queue.department.institution else None,
             'number': f"{t.queue.prefix}{t.ticket_number}",
             'position': max(0, t.ticket_number - t.queue.current_ticket),
             'user_id': t.user_id
@@ -387,15 +407,18 @@ def init_queue_routes(app):
     @app.route('/api/tickets/admin', methods=['GET'])
     @require_auth
     def list_all_tickets():
-        if request.user_tipo != 'gestor':
+        user = User.query.get(request.user_id)
+        if not user or not user.is_department_admin:
             logger.warning(f"Tentativa não autorizada de listar tickets por user_id={request.user_id}")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
-        tickets = Ticket.query.all()
+        tickets = Ticket.query.filter(Ticket.queue_id.in_(
+            db.session.query(Queue.id).filter_by(department_id=user.department_id)
+        )).all()
         return jsonify([{
             'id': t.id,
             'service': t.queue.service,
-            'institution': t.queue.institution_name,
+            'institution': t.queue.department.institution.name if t.queue.department and t.queue.department.institution else None,
             'number': f"{t.queue.prefix}{t.ticket_number}",
             'status': t.status,
             'counter': f"{t.counter:02d}" if t.counter else None,
@@ -420,7 +443,7 @@ def init_queue_routes(app):
         
         user = User.query.get(user_id)
         if not user:
-            user = User(id=user_id, email=email, fcm_token=fcm_token)
+            user = User(id=user_id, email=email, name="Usuário Desconhecido", active=True)
             db.session.add(user)
             logger.info(f"Novo usuário criado: user_id={user_id}, email={email}")
         else:
@@ -442,8 +465,14 @@ def init_queue_routes(app):
             logger.error(f"Instituição não encontrada: {institution_name}")
             return jsonify({'error': 'Instituição não encontrada'}), 404
         
-        # Buscar a fila pelo institution_id e serviço
-        queue = Queue.query.filter_by(institution_id=institution.id, service=service).first()
+        # Buscar o departamento associado à instituição
+        department = Department.query.filter_by(institution_id=institution.id).first()
+        if not department:
+            logger.error(f"Departamento não encontrado para institution_name={institution_name}")
+            return jsonify({'error': 'Departamento não encontrado'}), 404
+        
+        # Buscar a fila pelo department_id e serviço
+        queue = Queue.query.filter_by(department_id=department.id, service=service).first()
         if not queue:
             logger.error(f"Fila não encontrada para institution_name={institution_name}, service={service}")
             return jsonify({'error': 'Fila não encontrada'}), 404

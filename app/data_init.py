@@ -1,6 +1,6 @@
 import uuid
 from datetime import time, datetime
-from .models import Institution, Queue, User, Ticket
+from .models import Institution, Queue, User, Ticket, Department, UserRole
 from . import db
 
 def populate_initial_data(app):
@@ -12,39 +12,51 @@ def populate_initial_data(app):
                 'location': 'Viana, Luanda',
                 'latitude': -8.9035,
                 'longitude': 13.3741,
-                'queues': [
+                'departments': [
                     {
-                        'service': 'Consulta Geral',
-                        'prefix': 'A',
+                        'name': 'Consulta Geral',
                         'sector': 'Saúde',
-                        'department': 'Consulta Geral',
-                        'open_time': time(7, 0),
-                        'end_time': time(17, 0),
-                        'daily_limit': 20,
-                        'num_counters': 3
+                        'queues': [
+                            {
+                                'service': 'Consulta Geral',
+                                'prefix': 'A',
+                                'open_time': time(7, 0),
+                                'end_time': time(17, 0),
+                                'daily_limit': 20,
+                                'num_counters': 3
+                            }
+                        ]
                     },
                     {
-                        'service': 'Exames Laboratoriais',
-                        'prefix': 'B',
+                        'name': 'Laboratório',
                         'sector': 'Saúde',
-                        'department': 'Laboratório',
-                        'open_time': time(8, 0),
-                        'end_time': time(16, 0),
-                        'daily_limit': 15,
-                        'num_counters': 2
+                        'queues': [
+                            {
+                                'service': 'Exames Laboratoriais',
+                                'prefix': 'B',
+                                'open_time': time(8, 0),
+                                'end_time': time(16, 0),
+                                'daily_limit': 15,
+                                'num_counters': 2
+                            }
+                        ]
                     },
                     {
-                        'service': 'Vacinação',
-                        'prefix': 'C',
+                        'name': 'Vacinação',
                         'sector': 'Saúde',
-                        'department': 'Vacinação',
-                        'open_time': time(8, 0),
-                        'end_time': time(14, 0),
-                        'daily_limit': 10,
-                        'num_counters': 1
-                    },
+                        'queues': [
+                            {
+                                'service': 'Vacinação',
+                                'prefix': 'C',
+                                'open_time': time(8, 0),
+                                'end_time': time(14, 0),
+                                'daily_limit': 10,
+                                'num_counters': 1
+                            }
+                        ]
+                    }
                 ]
-            },
+            }
         ]
 
         try:
@@ -58,29 +70,37 @@ def populate_initial_data(app):
                     longitude=inst['longitude']
                 )
                 db.session.add(institution)
-                
-                for q in inst['queues']:
-                    queue = Queue(
+                db.session.flush()
+
+                for dept in inst['departments']:
+                    department = Department(
                         id=str(uuid.uuid4()),
                         institution_id=inst['id'],
-                        service=q['service'],
-                        prefix=q['prefix'],
-                        sector=q['sector'],
-                        department=q['department'],
-                        institution_name=inst['name'],
-                        open_time=q['open_time'],
-                        end_time=q.get('end_time'),
-                        daily_limit=q['daily_limit'],
-                        num_counters=q['num_counters']
+                        name=dept['name'],
+                        sector=dept['sector']
                     )
-                    db.session.add(queue)
-                    queue_ids[q['department']] = queue.id
+                    db.session.add(department)
+                    db.session.flush()
+
+                    for q in dept['queues']:
+                        queue = Queue(
+                            id=str(uuid.uuid4()),
+                            department_id=department.id,
+                            service=q['service'],
+                            prefix=q['prefix'],
+                            open_time=q['open_time'],
+                            end_time=q.get('end_time'),
+                            daily_limit=q['daily_limit'],
+                            num_counters=q['num_counters']
+                        )
+                        db.session.add(queue)
+                        queue_ids[dept['name']] = queue.id
             
             db.session.commit()
-            app.logger.info("Dados iniciais de instituições e filas inseridos com sucesso!")
+            app.logger.info("Dados iniciais de instituições, departamentos e filas inseridos com sucesso!")
         except Exception as e:
             db.session.rollback()
-            app.logger.error(f"Erro ao inserir dados iniciais de instituições: {str(e)}")
+            app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
             raise
 
         try:
@@ -88,44 +108,58 @@ def populate_initial_data(app):
                 {
                     'id': str(uuid.uuid4()),
                     'email': 'gestor.consulta@viana.com',
+                    'name': 'Gestor Consulta',
                     'password': 'admin123',
-                    'user_tipo': 'gestor',
+                    'user_role': UserRole.DEPARTMENT_ADMIN,
                     'institution_id': institutions[0]['id'],
-                    'department': 'Consulta Geral'
+                    'department_id': None,  # Será preenchido após criar departamentos
+                    'department_name': 'Consulta Geral'
                 },
                 {
                     'id': str(uuid.uuid4()),
                     'email': 'gestor.exames@viana.com',
+                    'name': 'Gestor Exames',
                     'password': 'admin123',
-                    'user_tipo': 'gestor',
+                    'user_role': UserRole.DEPARTMENT_ADMIN,
                     'institution_id': institutions[0]['id'],
-                    'department': 'Laboratório'
+                    'department_id': None,
+                    'department_name': 'Laboratório'
                 },
                 {
                     'id': str(uuid.uuid4()),
                     'email': 'gestor.vacinacao@viana.com',
+                    'name': 'Gestor Vacinação',
                     'password': 'admin123',
-                    'user_tipo': 'gestor',
+                    'user_role': UserRole.DEPARTMENT_ADMIN,
                     'institution_id': institutions[0]['id'],
-                    'department': 'Vacinação'
+                    'department_id': None,
+                    'department_name': 'Vacinação'
                 },
                 {
                     'id': str(uuid.uuid4()),
                     'email': 'default.user@viana.com',
+                    'name': 'Usuário Padrão',
                     'password': 'user123',
-                    'user_tipo': 'user',
+                    'user_role': UserRole.USER,
                     'institution_id': institutions[0]['id'],
-                    'department': None
-                },
+                    'department_id': None,
+                    'department_name': None
+                }
             ]
 
             for gestor in gestores:
+                department = Department.query.filter_by(
+                    institution_id=gestor['institution_id'],
+                    name=gestor['department_name']
+                ).first() if gestor['department_name'] else None
                 user = User(
                     id=gestor['id'],
                     email=gestor['email'],
-                    user_tipo=gestor['user_tipo'],
+                    name=gestor['name'],
+                    user_role=gestor['user_role'],
                     institution_id=gestor['institution_id'],
-                    department=gestor['department']
+                    department_id=department.id if department else None,
+                    active=True
                 )
                 user.set_password(gestor['password'])
                 db.session.add(user)
@@ -143,7 +177,6 @@ def populate_initial_data(app):
                 raise ValueError("Usuário padrão não encontrado!")
 
             tickets = [
-                # Consulta Geral
                 {
                     'id': str(uuid.uuid4()),
                     'queue_id': queue_ids['Consulta Geral'],
@@ -170,7 +203,6 @@ def populate_initial_data(app):
                     'issued_at': datetime.utcnow(),
                     'trade_available': False
                 },
-                # Exames Laboratoriais
                 {
                     'id': str(uuid.uuid4()),
                     'queue_id': queue_ids['Laboratório'],
@@ -197,7 +229,6 @@ def populate_initial_data(app):
                     'issued_at': datetime.utcnow(),
                     'trade_available': False
                 },
-                # Vacinação
                 {
                     'id': str(uuid.uuid4()),
                     'queue_id': queue_ids['Vacinação'],
@@ -223,7 +254,7 @@ def populate_initial_data(app):
                     'counter': 1,
                     'issued_at': datetime.utcnow(),
                     'trade_available': False
-                },
+                }
             ]
 
             for t in tickets:

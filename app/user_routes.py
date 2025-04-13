@@ -1,6 +1,6 @@
 from flask import jsonify, request, make_response
 from . import db
-from .models import User
+from .models import User, UserRole
 import logging
 import jwt
 import os
@@ -46,7 +46,7 @@ def init_user_routes(app):
                 logger.warning(f"Senha inválida para email={email}")
                 return jsonify({"error": "Credenciais inválidas"}), 401
 
-            if user.user_tipo != 'gestor':
+            if not user.is_department_admin:
                 logger.warning(f"Tentativa de login como gestor por usuário não autorizado: {email}")
                 return jsonify({"error": "Acesso restrito a gestores"}), 403
 
@@ -54,7 +54,7 @@ def init_user_routes(app):
             secret_key = os.getenv('SECRET_KEY', '00974655')
             token = jwt.encode({
                 'user_id': user.id,
-                'user_tipo': user.user_tipo,
+                'user_role': user.user_role.value,
                 'exp': datetime.utcnow() + timedelta(hours=24)
             }, secret_key, algorithm='HS256')
 
@@ -63,11 +63,11 @@ def init_user_routes(app):
                 token = token.decode('utf-8')
 
             response = jsonify({
-                "token": token,  # Token sem o prefixo Bearer
+                "token": token,
                 "user_id": user.id,
-                "user_tipo": user.user_tipo,
+                "user_role": user.user_role.value,
                 "institution_id": user.institution_id,
-                "department": user.department,
+                "department": user.department.name if user.department else None,
                 "email": user.email
             })
 

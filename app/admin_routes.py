@@ -1,6 +1,6 @@
 from flask import jsonify, request
 from . import db
-from .models import User, Queue, Ticket
+from .models import User, Queue, Ticket, Department
 from .auth import require_auth
 from .services import QueueService
 import logging
@@ -16,38 +16,35 @@ def init_admin_routes(app):
         Lista as filas administradas pelo gestor autenticado.
         Retorna apenas as filas do departamento específico do gestor.
         """
-        if request.user_tipo != 'gestor':
-            logger.warning(f"Tentativa de acesso a /api/admin/queues por usuário não administrador: {request.user_id}")
-            return jsonify({'error': 'Acesso restrito a administradores'}), 403
-
         user = User.query.get(request.user_id)
         if not user:
             logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
             return jsonify({'error': 'Usuário não encontrado'}), 404
 
-        if not user.institution_id or not user.department:
-            logger.warning(f"Gestor {request.user_id} não vinculado a instituição ou departamento")
-            return jsonify({'error': 'Gestor não vinculado a uma instituição ou departamento'}), 403
+        if not user.is_department_admin:
+            logger.warning(f"Tentativa de acesso a /api/admin/queues por usuário não administrador: {request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores'}), 403
 
-        queues = Queue.query.filter_by(
-            institution_id=user.institution_id,
-            department=user.department
-        ).all()
+        if not user.department_id:
+            logger.warning(f"Gestor {request.user_id} não vinculado a departamento")
+            return jsonify({'error': 'Gestor não vinculado a um departamento'}), 403
+
+        queues = Queue.query.filter_by(department_id=user.department_id).all()
 
         response = [{
             'id': q.id,
             'service': q.service,
             'prefix': q.prefix,
-            'institution_name': q.institution_name,
+            'institution_name': q.department.institution.name if q.department and q.department.institution else 'N/A',
             'active_tickets': q.active_tickets,
             'daily_limit': q.daily_limit,
             'current_ticket': q.current_ticket,
             'status': 'Aberto' if q.active_tickets < q.daily_limit else 'Lotado',
-            'institution_id': q.institution_id,
-            'department': q.department
+            'institution_id': q.department.institution_id if q.department else None,
+            'department': q.department.name if q.department else 'N/A'
         } for q in queues]
 
-        logger.info(f"Gestor {user.email} listou {len(response)} filas do departamento {user.department}: {[q['id'] for q in response]}")
+        logger.info(f"Gestor {user.email} listou {len(response)} filas do departamento {user.department.name if user.department else 'N/A'}: {[q['id'] for q in response]}")
         return jsonify(response), 200
 
     @app.route('/api/admin/queue/<queue_id>/call', methods=['POST'])
@@ -57,25 +54,25 @@ def init_admin_routes(app):
         Chama o próximo ticket de uma fila específica, validando permissões do gestor.
         Retorna informações básicas do ticket chamado.
         """
-        if request.user_tipo != 'gestor':
-            logger.warning(f"Tentativa de acesso a /api/admin/queue/{queue_id}/call por usuário não administrador: {request.user_id}")
-            return jsonify({'error': 'Acesso restrito a administradores'}), 403
-
         user = User.query.get(request.user_id)
         if not user:
             logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
             return jsonify({'error': 'Usuário não encontrado'}), 404
 
-        if not user.institution_id or not user.department:
-            logger.warning(f"Gestor {request.user_id} não vinculado a instituição ou departamento")
-            return jsonify({'error': 'Gestor não vinculado a uma instituição ou departamento'}), 403
+        if not user.is_department_admin:
+            logger.warning(f"Tentativa de acesso a /api/admin/queue/{queue_id}/call por usuário não administrador: {request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores'}), 403
+
+        if not user.department_id:
+            logger.warning(f"Gestor {request.user_id} não vinculado a departamento")
+            return jsonify({'error': 'Gestor não vinculado a um departamento'}), 403
 
         queue = Queue.query.get(queue_id)
         if not queue:
             logger.warning(f"Fila {queue_id} não encontrada")
             return jsonify({'error': 'Fila não encontrada'}), 404
 
-        if queue.institution_id != user.institution_id or queue.department != user.department:
+        if queue.department_id != user.department_id:
             logger.warning(f"Gestor {request.user_id} tentou acessar fila {queue_id} fora de seu departamento")
             return jsonify({'error': 'Acesso negado: fila não pertence ao seu departamento'}), 403
 
@@ -101,37 +98,28 @@ def init_admin_routes(app):
         Lista os tickets das filas administradas pelo gestor autenticado.
         Filtra apenas os tickets das filas que pertencem ao departamento do gestor.
         """
-        if request.user_tipo != 'gestor':
-            logger.warning(f"Tentativa de acesso a /api/tickets/admin por usuário não administrador: {request.user_id}")
-            return jsonify({'error': 'Acesso restrito a administradores'}), 403
-
         user = User.query.get(request.user_id)
         if not user:
             logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
             return jsonify({'error': 'Usuário não encontrado'}), 404
 
-        if not user.institution_id or not user.department:
-            logger.warning(f"Gestor {request.user_id} não vinculado a instituição ou departamento")
-            return jsonify({'error': 'Gestor não vinculado a uma instituição ou departamento'}), 403
+        if not user.is_department_admin:
+            logger.warning(f"Tentativa de acesso a /api/tickets/admin por usuário não administrador: {request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores'}), 403
 
-        # Primeiro, obtemos APENAS as filas do serviço específico do gestor
-        # Modificado para filtrar por department E service, não apenas department
-        queues = Queue.query.filter_by(
-            institution_id=user.institution_id,
-            department=user.department,
-            service=user.department  # Assumindo que o serviço coincide com o departamento (ex: department="Vacinação", service="Vacinação")
-        ).all()
+        if not user.department_id:
+            logger.warning(f"Gestor {request.user_id} não vinculado a departamento")
+            return jsonify({'error': 'Gestor não vinculado a um departamento'}), 403
+
+        queues = Queue.query.filter_by(department_id=user.department_id).all()
         
         if not queues:
-            logger.info(f"Nenhuma fila encontrada para o gestor {user.email} no departamento {user.department}")
+            logger.info(f"Nenhuma fila encontrada para o gestor {user.email} no departamento {user.department.name if user.department else 'N/A'}")
             return jsonify([]), 200
         
         queue_ids = [queue.id for queue in queues]
         
-        # Agora obtemos APENAS os tickets das filas específicas do gestor
-        tickets = Ticket.query.filter(
-            Ticket.queue_id.in_(queue_ids)
-        ).order_by(
+        tickets = Ticket.query.filter(Ticket.queue_id.in_(queue_ids)).order_by(
             Ticket.status.asc(),
             Ticket.issued_at.desc()
         ).limit(50).all()
@@ -152,5 +140,5 @@ def init_admin_routes(app):
             }
             response.append(ticket_data)
         
-        logger.info(f"Gestor {user.email} listou {len(response)} tickets de seu serviço '{user.department}'")
+        logger.info(f"Gestor {user.email} listou {len(response)} tickets de seu departamento '{user.department.name if user.department else 'N/A'}")
         return jsonify(response), 200
