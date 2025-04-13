@@ -50,10 +50,6 @@ def init_admin_routes(app):
     @app.route('/api/admin/queue/<queue_id>/call', methods=['POST'])
     @require_auth
     def admin_call_next(queue_id):
-        """
-        Chama o próximo ticket de uma fila específica, validando permissões do gestor.
-        Retorna informações básicas do ticket chamado.
-        """
         user = User.query.get(request.user_id)
         if not user:
             logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
@@ -85,12 +81,16 @@ def init_admin_routes(app):
                 'counter': ticket.counter,
                 'remaining': ticket.queue.active_tickets
             }
+            socketio.emit('notification', {
+                'message': f"Senha {ticket.queue.prefix}{ticket.ticket_number} chamada no guichê {ticket.counter:02d}",
+                'department_id': queue.department_id
+            }, namespace='/', room=f"department_{queue.department_id}")
             logger.info(f"Gestor {user.email} chamou ticket {ticket.id} da fila {queue_id}")
             return jsonify(response), 200
         except ValueError as e:
             logger.error(f"Erro ao chamar próxima senha na fila {queue_id}: {str(e)}")
             return jsonify({'error': str(e)}), 400
-
+        
     @app.route('/api/tickets/admin', methods=['GET'])
     @require_auth
     def list_admin_tickets():
