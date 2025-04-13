@@ -4,6 +4,8 @@ from .models import User, Queue, Ticket, Department
 from .auth import require_auth
 from .services import QueueService
 import logging
+from datetime import datetime, timedelta
+from sqlalchemy import func
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -12,10 +14,6 @@ def init_admin_routes(app):
     @app.route('/api/admin/queues', methods=['GET'])
     @require_auth
     def list_admin_queues():
-        """
-        Lista as filas administradas pelo gestor autenticado.
-        Retorna apenas as filas do departamento específico do gestor.
-        """
         user = User.query.get(request.user_id)
         if not user:
             logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
@@ -94,10 +92,6 @@ def init_admin_routes(app):
     @app.route('/api/tickets/admin', methods=['GET'])
     @require_auth
     def list_admin_tickets():
-        """
-        Lista os tickets das filas administradas pelo gestor autenticado.
-        Filtra apenas os tickets das filas que pertencem ao departamento do gestor.
-        """
         user = User.query.get(request.user_id)
         if not user:
             logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
@@ -142,3 +136,59 @@ def init_admin_routes(app):
         
         logger.info(f"Gestor {user.email} listou {len(response)} tickets de seu departamento '{user.department.name if user.department else 'N/A'}")
         return jsonify(response), 200
+
+    @app.route('/api/admin/report', methods=['GET'])
+    @require_auth
+    def admin_report():
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+
+        if not user.is_department_admin:
+            logger.warning(f"Tentativa de acesso a /api/admin/report por usuário não administrador: {request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores'}), 403
+
+        if not user.department_id:
+            logger.warning(f"Gestor {request.user_id} não vinculado a departamento")
+            return jsonify({'error': 'Gestor não vinculado a um departamento'}), 403
+
+        date_str = request.args.get('date')
+        try:
+            report_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            logger.warning(f"Data inválida fornecida para relatório: {date_str}")
+            return jsonify({'error': 'Data inválida. Use o formato AAAA-MM-DD'}), 400
+
+        queues = Queue.query.filter_by(department_id=user.department_id).all()
+        queue_ids = [q.id for q in queues]
+
+        start_time = datetime.combine(report_date, datetime.min.time())
+        end_time = start_time + timedelta(days=1)
+
+        report = []
+        for queue in queues:
+            tickets = Ticket.query.filter(
+                Ticket.queue_id == queue.id,
+                Ticket.issued_at >= start_time,
+                Ticket.issued_at < end_time
+            ).all()
+
+            issued = len(tickets)
+            attended = len([t for t in tickets if t.status == 'attended'])
+            service_times = [
+                (t.attended_at - t.issued_at).total_seconds() / 60.0
+                for t in tickets
+                if t.status == 'attended' and t.attended_at and t.issued_at
+            ]
+            avg_time = sum(service_times) / len(service_times) if service_times else None
+
+            report.append({
+                'service': queue.service,
+                'issued': issued,
+                'attended': attended,
+                'avg_time': avg_time,
+            })
+
+        logger.info(f"Relatório gerado para {user.email} em {date_str}: {len(report)} serviços")
+        return jsonify(report), 200
