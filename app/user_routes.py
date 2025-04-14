@@ -125,26 +125,3 @@ def init_user_routes(app):
             logger.error(f"Erro ao processar login para email={request.json.get('email', 'unknown')}: {str(e)}")
             return jsonify({"error": "Erro interno no servidor"}), 500
     
-    @app.route('/api/admin/user', methods=['GET'])
-    @require_auth
-    def get_user_info():
-        user = User.query.get(request.user_id)
-        if not user:
-            logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
-            return jsonify({'error': 'Usuário não encontrado'}), 404
-
-        try:
-            response = {
-                'id': user.id,
-                'email': user.email,
-                'name': user.name,
-                'user_role': user.user_role.value,
-                'institution_id': user.institution_id,
-                'department_id': user.department_id,
-                'department_name': user.department.name if user.department else None
-            }
-            logger.info(f"Informações do usuário retornadas para user_id={user.id}")
-            return jsonify(response), 200
-        except Exception as e:
-            logger.error(f"Erro ao buscar informações do usuário para user_id={user.id}: {str(e)}")
-            return jsonify({'error': 'Erro interno ao buscar informações do usuário'}), 500
