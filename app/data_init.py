@@ -5,61 +5,67 @@ from . import db
 
 def populate_initial_data(app):
     with app.app_context():
-        institutions = [
-            {
-                'id': str(uuid.uuid4()),
-                'name': 'Hospital Viana',
-                'location': 'Viana, Luanda',
-                'latitude': -8.9035,
-                'longitude': 13.3741,
-                'departments': [
-                    {
-                        'name': 'Consulta Geral',
-                        'sector': 'Saúde',
-                        'queues': [
-                            {
-                                'service': 'Consulta Geral',
-                                'prefix': 'A',
-                                'open_time': time(7, 0),
-                                'end_time': time(17, 0),
-                                'daily_limit': 20,
-                                'num_counters': 3
-                            }
-                        ]
-                    },
-                    {
-                        'name': 'Laboratório',
-                        'sector': 'Saúde',
-                        'queues': [
-                            {
-                                'service': 'Exames Laboratoriais',
-                                'prefix': 'B',
-                                'open_time': time(8, 0),
-                                'end_time': time(16, 0),
-                                'daily_limit': 15,
-                                'num_counters': 2
-                            }
-                        ]
-                    },
-                    {
-                        'name': 'Vacinação',
-                        'sector': 'Saúde',
-                        'queues': [
-                            {
-                                'service': 'Vacinação',
-                                'prefix': 'C',
-                                'open_time': time(8, 0),
-                                'end_time': time(14, 0),
-                                'daily_limit': 10,
-                                'num_counters': 1
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-
         try:
+            # Verificar se já existe um super admin
+            super_admin = User.query.filter_by(user_role=UserRole.SYSTEM_ADMIN).first()
+            if super_admin:
+                app.logger.info("Super admin já existe, pulando inicialização de dados administrativos.")
+                return
+
+            institutions = [
+                {
+                    'id': str(uuid.uuid4()),
+                    'name': 'Hospital Viana',
+                    'location': 'Viana, Luanda',
+                    'latitude': -8.9035,
+                    'longitude': 13.3741,
+                    'departments': [
+                        {
+                            'name': 'Consulta Geral',
+                            'sector': 'Saúde',
+                            'queues': [
+                                {
+                                    'service': 'Consulta Geral',
+                                    'prefix': 'A',
+                                    'open_time': time(7, 0),
+                                    'end_time': time(17, 0),
+                                    'daily_limit': 20,
+                                    'num_counters': 3
+                                }
+                            ]
+                        },
+                        {
+                            'name': 'Laboratório',
+                            'sector': 'Saúde',
+                            'queues': [
+                                {
+                                    'service': 'Exames Laboratoriais',
+                                    'prefix': 'B',
+                                    'open_time': time(8, 0),
+                                    'end_time': time(16, 0),
+                                    'daily_limit': 15,
+                                    'num_counters': 2
+                                }
+                            ]
+                        },
+                        {
+                            'name': 'Vacinação',
+                            'sector': 'Saúde',
+                            'queues': [
+                                {
+                                    'service': 'Vacinação',
+                                    'prefix': 'C',
+                                    'open_time': time(8, 0),
+                                    'end_time': time(14, 0),
+                                    'daily_limit': 10,
+                                    'num_counters': 1
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+
             queue_ids = {}
             for inst in institutions:
                 institution = Institution(
@@ -100,11 +106,31 @@ def populate_initial_data(app):
             app.logger.info("Dados iniciais de instituições, departamentos e filas inseridos com sucesso!")
         except Exception as e:
             db.session.rollback()
-            app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
+            app.logger.error(f"Erro ao inserir dados iniciais de instituições: {str(e)}")
             raise
 
         try:
-            gestores = [
+            users = [
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'superadmin@facilita.com',
+                    'name': 'Super Admin',
+                    'password': 'superadmin123',
+                    'user_role': UserRole.SYSTEM_ADMIN,
+                    'institution_id': None,
+                    'department_id': None,
+                    'department_name': None
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'admin.viana@facilita.com',
+                    'name': 'Admin Hospital Viana',
+                    'password': 'admin123',
+                    'user_role': UserRole.INSTITUTION_ADMIN,
+                    'institution_id': institutions[0]['id'],
+                    'department_id': None,
+                    'department_name': None
+                },
                 {
                     'id': str(uuid.uuid4()),
                     'email': 'gestor.consulta@viana.com',
@@ -112,7 +138,7 @@ def populate_initial_data(app):
                     'password': 'admin123',
                     'user_role': UserRole.DEPARTMENT_ADMIN,
                     'institution_id': institutions[0]['id'],
-                    'department_id': None,  # Será preenchido após criar departamentos
+                    'department_id': None,
                     'department_name': 'Consulta Geral'
                 },
                 {
@@ -143,32 +169,32 @@ def populate_initial_data(app):
                     'user_role': UserRole.USER,
                     'institution_id': institutions[0]['id'],
                     'department_id': None,
-                    'department_name': None
+                    'department_name': 'Consulta Geral'
                 }
             ]
 
-            for gestor in gestores:
+            for user_data in users:
                 department = Department.query.filter_by(
-                    institution_id=gestor['institution_id'],
-                    name=gestor['department_name']
-                ).first() if gestor['department_name'] else None
+                    institution_id=user_data['institution_id'],
+                    name=user_data['department_name']
+                ).first() if user_data['department_name'] else None
                 user = User(
-                    id=gestor['id'],
-                    email=gestor['email'],
-                    name=gestor['name'],
-                    user_role=gestor['user_role'],
-                    institution_id=gestor['institution_id'],
+                    id=user_data['id'],
+                    email=user_data['email'],
+                    name=user_data['name'],
+                    user_role=user_data['user_role'],
+                    institution_id=user_data['institution_id'],
                     department_id=department.id if department else None,
                     active=True
                 )
-                user.set_password(gestor['password'])
+                user.set_password(user_data['password'])
                 db.session.add(user)
             
             db.session.commit()
-            app.logger.info("Gestores e usuários iniciais inseridos com sucesso!")
+            app.logger.info("Usuários iniciais (super admin, admins, gestores e usuário padrão) inseridos com sucesso!")
         except Exception as e:
             db.session.rollback()
-            app.logger.error(f"Erro ao inserir gestores iniciais: {str(e)}")
+            app.logger.error(f"Erro ao inserir usuários iniciais: {str(e)}")
             raise
 
         try:
