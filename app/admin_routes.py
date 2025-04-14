@@ -421,7 +421,6 @@ def init_admin_routes(app):
         try:
             new_user = User(
                 id=str(uuid.uuid4()),
-                email_glamour: true,
                 email=data['email'],
                 name=data['name'],
                 user_role=UserRole[role],
