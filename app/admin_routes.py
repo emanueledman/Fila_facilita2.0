@@ -561,9 +561,9 @@ def init_admin_routes(app):
             logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
             return jsonify({'error': 'Usuário não encontrado'}), 404
 
-        if not user.is_department_admin:
-            logger.warning(f"Tentativa de acesso a /api/admin/queues por usuário não administrador: {request.user_id}")
-            return jsonify({'error': 'Acesso restrito a administradores'}), 403
+        if user.user_role != UserRole.DEPARTMENT_ADMIN:
+            logger.warning(f"Tentativa de acesso a /api/admin/queues por usuário não dept_admin: {request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores de departamento'}), 403
 
         if not user.department_id:
             logger.warning(f"Gestor {request.user_id} não vinculado a departamento")
@@ -743,3 +743,160 @@ def init_admin_routes(app):
         except Exception as e:
             logger.error(f"Erro ao gerar relatório para user_id={user.id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao gerar relatório'}), 500
+
+    @app.route('/api/admin/institutions/<institution_id>/departments', methods=['GET'])
+    @require_auth
+    def list_departments(institution_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.INSTITUTION_ADMIN or user.institution_id != institution_id:
+            logger.warning(f"Tentativa não autorizada de listar departamentos por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores da instituição'}), 403
+
+        try:
+            departments = Department.query.filter_by(institution_id=institution_id).all()
+            response = [{
+                'id': d.id,
+                'name': d.name,
+                'sector': d.sector
+            } for d in departments]
+
+            logger.info(f"Admin {user.email} listou {len(response)} departamentos da instituição {institution_id}")
+            return jsonify(response), 200
+        except Exception as e:
+            logger.error(f"Erro ao listar departamentos para user_id={user.id}: {str(e)}")
+            return jsonify({'error': 'Erro interno ao listar departamentos'}), 500
+
+    @app.route('/api/admin/institutions/<institution_id>/departments', methods=['POST'])
+    @require_auth
+    def create_department(institution_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.INSTITUTION_ADMIN or user.institution_id != institution_id:
+            logger.warning(f"Tentativa não autorizada de criar departamento por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores da instituição'}), 403
+
+        data = request.get_json()
+        required = ['name', 'sector']
+        if not data or not all(f in data for f in required):
+            logger.warning("Campos obrigatórios faltando na criação de departamento")
+            return jsonify({'error': 'Campos obrigatórios faltando: name, sector'}), 400
+
+        if Department.query.filter_by(institution_id=institution_id, name=data['name']).first():
+            logger.warning(f"Departamento com nome {data['name']} já existe na instituição {institution_id}")
+            return jsonify({'error': 'Departamento com este nome já existe'}), 400
+
+        try:
+            department = Department(
+                id=str(uuid.uuid4()),
+                institution_id=institution_id,
+                name=data['name'],
+                sector=data['sector']
+            )
+            db.session.add(department)
+            db.session.commit()
+
+            socketio.emit('department_created', {
+                'department_id': department.id,
+                'name': department.name,
+                'institution_id': institution_id
+            }, namespace='/admin')
+            logger.info(f"Departamento {department.name} criado por user_id={user.id}")
+            return jsonify({
+                'message': 'Departamento criado com sucesso',
+                'department': {
+                    'id': department.id,
+                    'name': department.name,
+                    'sector': department.sector,
+                    'institution_id': institution_id
+                }
+            }), 201
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao criar departamento: {str(e)}")
+            return jsonify({'error': 'Erro interno ao criar departamento'}), 500
+
+    @app.route('/api/admin/institutions/<institution_id>/managers', methods=['GET'])
+    @require_auth
+    def list_managers(institution_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.INSTITUTION_ADMIN or user.institution_id != institution_id:
+            logger.warning(f"Tentativa não autorizada de listar gestores por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores da instituição'}), 403
+
+        try:
+            managers = User.query.filter_by(
+                institution_id=institution_id,
+                user_role=UserRole.DEPARTMENT_ADMIN
+            ).all()
+            response = [{
+                'id': m.id,
+                'email': m.email,
+                'name': m.name,
+                'department_id': m.department_id,
+                'department_name': m.department.name if m.department else 'N/A'
+            } for m in managers]
+
+            logger.info(f"Admin {user.email} listou {len(response)} gestores da instituição {institution_id}")
+            return jsonify(response), 200
+        except Exception as e:
+            logger.error(f"Erro ao listar gestores para user_id={user.id}: {str(e)}")
+            return jsonify({'error': 'Erro interno ao listar gestores'}), 500
+
+    @app.route('/api/admin/institutions/<institution_id>/managers', methods=['POST'])
+    @require_auth
+    def create_manager(institution_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.INSTITUTION_ADMIN or user.institution_id != institution_id:
+            logger.warning(f"Tentativa não autorizada de criar gestor por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores da instituição'}), 403
+
+        data = request.get_json()
+        required = ['email', 'name', 'password', 'department_id']
+        if not data or not all(f in data for f in required):
+            logger.warning("Campos obrigatórios faltando na criação de gestor")
+            return jsonify({'error': 'Campos obrigatórios faltando: email, name, password, department_id'}), 400
+
+        department = Department.query.get(data['department_id'])
+        if not department or department.institution_id != institution_id:
+            logger.warning(f"Departamento {data['department_id']} inválido ou não pertence à instituição {institution_id}")
+            return jsonify({'error': 'Departamento inválido ou não pertence à instituição'}), 400
+
+        if User.query.filter_by(email=data['email']).first():
+            logger.warning(f"Usuário com email {data['email']} já existe")
+            return jsonify({'error': 'Usuário com este email já existe'}), 400
+
+        try:
+            manager = User(
+                id=str(uuid.uuid4()),
+                email=data['email'],
+                name=data['name'],
+                user_role=UserRole.DEPARTMENT_ADMIN,
+                institution_id=institution_id,
+                department_id=data['department_id'],
+                active=True
+            )
+            manager.set_password(data['password'])
+            db.session.add(manager)
+            db.session.commit()
+
+            socketio.emit('user_created', {
+                'user_id': manager.id,
+                'email': manager.email,
+                'name': manager.name,
+                'department_id': manager.department_id,
+                'institution_id': institution_id
+            }, namespace='/admin')
+            logger.info(f"Gestor {manager.email} criado por user_id={user.id}")
+            return jsonify({
+                'message': 'Gestor criado com sucesso',
+                'user': {
+                    'id': manager.id,
+                    'email': manager.email,
+                    'name': manager.name,
+                    'department_id': manager.department_id,
+                    'department_name': department.name
+                }
+            }), 201
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao criar gestor: {str(e)}")
+            return jsonify({'error': 'Erro interno ao criar gestor'}), 500
