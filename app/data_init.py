@@ -15,10 +15,10 @@ def populate_initial_data(app):
             institutions = [
                 {
                     'id': str(uuid.uuid4()),
-                    'name': 'Hospital Viana',
-                    'location': 'Viana, Luanda',
-                    'latitude': -8.9035,
-                    'longitude': 13.3741,
+                    'name': 'Hospital Josina Machel',
+                    'location': 'Luanda, Luanda',
+                    'latitude': -8.8167,
+                    'longitude': 13.2332,
                     'departments': [
                         {
                             'name': 'Consulta Geral',
@@ -29,36 +29,158 @@ def populate_initial_data(app):
                                     'prefix': 'A',
                                     'open_time': time(7, 0),
                                     'end_time': time(17, 0),
-                                    'daily_limit': 20,
+                                    'daily_limit': 50,
+                                    'num_counters': 5
+                                }
+                            ]
+                        },
+                        {
+                            'name': 'Urgência',
+                            'sector': 'Saúde',
+                            'queues': [
+                                {
+                                    'service': 'Urgência',
+                                    'prefix': 'B',
+                                    'open_time': time(0, 0),
+                                    'end_time': time(23, 59),
+                                    'daily_limit': 100,
+                                    'num_counters': 8
+                                }
+                            ]
+                        },
+                        {
+                            'name': 'Farmácia',
+                            'sector': 'Saúde',
+                            'queues': [
+                                {
+                                    'service': 'Distribuição de Medicamentos',
+                                    'prefix': 'C',
+                                    'open_time': time(8, 0),
+                                    'end_time': time(16, 0),
+                                    'daily_limit': 60,
                                     'num_counters': 3
                                 }
                             ]
-                        },
+                        }
+                    ]
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'name': 'Escola Primária Ngola Kiluanje',
+                    'location': 'Viana, Luanda',
+                    'latitude': -8.9035,
+                    'longitude': 13.3741,
+                    'departments': [
                         {
-                            'name': 'Laboratório',
+                            'name': 'Secretaria Escolar',
+                            'sector': 'Educação',
+                            'queues': [
+                                {
+                                    'service': 'Matrículas',
+                                    'prefix': 'M',
+                                    'open_time': time(8, 0),
+                                    'end_time': time(14, 0),
+                                    'daily_limit': 30,
+                                    'num_counters': 2
+                                },
+                                {
+                                    'service': 'Declarações',
+                                    'prefix': 'D',
+                                    'open_time': time(8, 0),
+                                    'end_time': time(14, 0),
+                                    'daily_limit': 20,
+                                    'num_counters': 1
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'name': 'Cartório Notarial de Luanda',
+                    'location': 'Luanda, Luanda',
+                    'latitude': -8.8147,
+                    'longitude': 13.2302,
+                    'departments': [
+                        {
+                            'name': 'Atendimento Notarial',
+                            'sector': 'Serviços Públicos',
+                            'queues': [
+                                {
+                                    'service': 'Autenticação de Documentos',
+                                    'prefix': 'N',
+                                    'open_time': time(8, 0),
+                                    'end_time': time(15, 0),
+                                    'daily_limit': 40,
+                                    'num_counters': 3
+                                },
+                                {
+                                    'service': 'Registo Civil',
+                                    'prefix': 'R',
+                                    'open_time': time(8, 0),
+                                    'end_time': time(15, 0),
+                                    'daily_limit': 30,
+                                    'num_counters': 2
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'name': 'Hospital Maria Pia',
+                    'location': 'Luanda, Luanda',
+                    'latitude': -8.8200,
+                    'longitude': 13.2400,
+                    'departments': [
+                        {
+                            'name': 'Pediatria',
                             'sector': 'Saúde',
                             'queues': [
                                 {
-                                    'service': 'Exames Laboratoriais',
-                                    'prefix': 'B',
-                                    'open_time': time(8, 0),
-                                    'end_time': time(16, 0),
-                                    'daily_limit': 15,
-                                    'num_counters': 2
+                                    'service': 'Consulta Pediátrica',
+                                    'prefix': 'P',
+                                    'open_time': time(7, 30),
+                                    'end_time': time(16, 30),
+                                    'daily_limit': 40,
+                                    'num_counters': 4
                                 }
                             ]
                         },
                         {
-                            'name': 'Vacinação',
+                            'name': 'Maternidade',
                             'sector': 'Saúde',
                             'queues': [
                                 {
-                                    'service': 'Vacinação',
-                                    'prefix': 'C',
+                                    'service': 'Consulta Pré-Natal',
+                                    'prefix': 'M',
                                     'open_time': time(8, 0),
-                                    'end_time': time(14, 0),
-                                    'daily_limit': 10,
-                                    'num_counters': 1
+                                    'end_time': time(15, 0),
+                                    'daily_limit': 30,
+                                    'num_counters': 2
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'name': 'Instituto Médio de Saúde de Luanda',
+                    'location': 'Luanda, Luanda',
+                    'latitude': -8.8300,
+                    'longitude': 13.2500,
+                    'departments': [
+                        {
+                            'name': 'Administração Escolar',
+                            'sector': 'Educação',
+                            'queues': [
+                                {
+                                    'service': 'Inscrições',
+                                    'prefix': 'I',
+                                    'open_time': time(8, 0),
+                                    'end_time': time(13, 0),
+                                    'daily_limit': 25,
+                                    'num_counters': 2
                                 }
                             ]
                         }
@@ -100,7 +222,7 @@ def populate_initial_data(app):
                             num_counters=q['num_counters']
                         )
                         db.session.add(queue)
-                        queue_ids[dept['name']] = queue.id
+                        queue_ids[f"{dept['name']}_{q['service']}"] = queue.id
             
             db.session.commit()
             app.logger.info("Dados iniciais de instituições, departamentos e filas inseridos com sucesso!")
@@ -123,8 +245,8 @@ def populate_initial_data(app):
                 },
                 {
                     'id': str(uuid.uuid4()),
-                    'email': 'admin.viana@facilita.com',
-                    'name': 'Admin Hospital Viana',
+                    'email': 'admin.josina@facilita.com',
+                    'name': 'Admin Josina Machel',
                     'password': 'admin123',
                     'user_role': UserRole.INSTITUTION_ADMIN,
                     'institution_id': institutions[0]['id'],
@@ -133,8 +255,8 @@ def populate_initial_data(app):
                 },
                 {
                     'id': str(uuid.uuid4()),
-                    'email': 'gestor.consulta@viana.com',
-                    'name': 'Gestor Consulta',
+                    'email': 'gestor.consulta@josina.com',
+                    'name': 'Gestor Consulta Josina',
                     'password': 'admin123',
                     'user_role': UserRole.DEPARTMENT_ADMIN,
                     'institution_id': institutions[0]['id'],
@@ -143,27 +265,117 @@ def populate_initial_data(app):
                 },
                 {
                     'id': str(uuid.uuid4()),
-                    'email': 'gestor.exames@viana.com',
-                    'name': 'Gestor Exames',
+                    'email': 'gestor.urgencia@josina.com',
+                    'name': 'Gestor Urgência Josina',
                     'password': 'admin123',
                     'user_role': UserRole.DEPARTMENT_ADMIN,
                     'institution_id': institutions[0]['id'],
                     'department_id': None,
-                    'department_name': 'Laboratório'
+                    'department_name': 'Urgência'
                 },
                 {
                     'id': str(uuid.uuid4()),
-                    'email': 'gestor.vacinacao@viana.com',
-                    'name': 'Gestor Vacinação',
+                    'email': 'gestor.farmacia@josina.com',
+                    'name': 'Gestor Farmácia Josina',
                     'password': 'admin123',
                     'user_role': UserRole.DEPARTMENT_ADMIN,
                     'institution_id': institutions[0]['id'],
                     'department_id': None,
-                    'department_name': 'Vacinação'
+                    'department_name': 'Farmácia'
                 },
                 {
                     'id': str(uuid.uuid4()),
-                    'email': 'default.user@viana.com',
+                    'email': 'admin.ngola@facilita.com',
+                    'name': 'Admin Ngola Kiluanje',
+                    'password': 'admin123',
+                    'user_role': UserRole.INSTITUTION_ADMIN,
+                    'institution_id': institutions[1]['id'],
+                    'department_id': None,
+                    'department_name': None
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'gestor.secretaria@ngola.com',
+                    'name': 'Gestor Secretaria Ngola',
+                    'password': 'admin123',
+                    'user_role': UserRole.DEPARTMENT_ADMIN,
+                    'institution_id': institutions[1]['id'],
+                    'department_id': None,
+                    'department_name': 'Secretaria Escolar'
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'admin.cartorio@facilita.com',
+                    'name': 'Admin Cartório Luanda',
+                    'password': 'admin123',
+                    'user_role': UserRole.INSTITUTION_ADMIN,
+                    'institution_id': institutions[2]['id'],
+                    'department_id': None,
+                    'department_name': None
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'gestor.notarial@cartorio.com',
+                    'name': 'Gestor Notarial Luanda',
+                    'password': 'admin123',
+                    'user_role': UserRole.DEPARTMENT_ADMIN,
+                    'institution_id': institutions[2]['id'],
+                    'department_id': None,
+                    'department_name': 'Atendimento Notarial'
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'admin.mariapia@facilita.com',
+                    'name': 'Admin Maria Pia',
+                    'password': 'admin123',
+                    'user_role': UserRole.INSTITUTION_ADMIN,
+                    'institution_id': institutions[3]['id'],
+                    'department_id': None,
+                    'department_name': None
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'gestor.pediatria@mariapia.com',
+                    'name': 'Gestor Pediatria Maria Pia',
+                    'password': 'admin123',
+                    'user_role': UserRole.DEPARTMENT_ADMIN,
+                    'institution_id': institutions[3]['id'],
+                    'department_id': None,
+                    'department_name': 'Pediatria'
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'gestor.maternidade@mariapia.com',
+                    'name': 'Gestor Maternidade Maria Pia',
+                    'password': 'admin123',
+                    'user_role': UserRole.DEPARTMENT_ADMIN,
+                    'institution_id': institutions[3]['id'],
+                    'department_id': None,
+                    'department_name': 'Maternidade'
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'admin.ims@facilita.com',
+                    'name': 'Admin IMS Luanda',
+                    'password': 'admin123',
+                    'user_role': UserRole.INSTITUTION_ADMIN,
+                    'institution_id': institutions[4]['id'],
+                    'department_id': None,
+                    'department_name': None
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'gestor.admin@ims.com',
+                    'name': 'Gestor Administração IMS',
+                    'password': 'admin123',
+                    'user_role': UserRole.DEPARTMENT_ADMIN,
+                    'institution_id': institutions[4]['id'],
+                    'department_id': None,
+                    'department_name': 'Administração Escolar'
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'email': 'default.user@facilita.com',
                     'name': 'Usuário Padrão',
                     'password': 'user123',
                     'user_role': UserRole.USER,
@@ -198,14 +410,14 @@ def populate_initial_data(app):
             raise
 
         try:
-            default_user = User.query.filter_by(email='default.user@viana.com').first()
+            default_user = User.query.filter_by(email='default.user@facilita.com').first()
             if not default_user:
                 raise ValueError("Usuário padrão não encontrado!")
 
             tickets = [
                 {
                     'id': str(uuid.uuid4()),
-                    'queue_id': queue_ids['Consulta Geral'],
+                    'queue_id': queue_ids['Consulta Geral_Consulta Geral'],
                     'user_id': default_user.id,
                     'ticket_number': 1,
                     'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
@@ -218,7 +430,7 @@ def populate_initial_data(app):
                 },
                 {
                     'id': str(uuid.uuid4()),
-                    'queue_id': queue_ids['Consulta Geral'],
+                    'queue_id': queue_ids['Consulta Geral_Consulta Geral'],
                     'user_id': default_user.id,
                     'ticket_number': 2,
                     'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
@@ -231,7 +443,7 @@ def populate_initial_data(app):
                 },
                 {
                     'id': str(uuid.uuid4()),
-                    'queue_id': queue_ids['Laboratório'],
+                    'queue_id': queue_ids['Urgência_Urgência'],
                     'user_id': default_user.id,
                     'ticket_number': 1,
                     'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
@@ -244,20 +456,7 @@ def populate_initial_data(app):
                 },
                 {
                     'id': str(uuid.uuid4()),
-                    'queue_id': queue_ids['Laboratório'],
-                    'user_id': default_user.id,
-                    'ticket_number': 2,
-                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                    'status': 'attended',
-                    'priority': 0,
-                    'is_physical': False,
-                    'counter': 2,
-                    'issued_at': datetime.utcnow(),
-                    'trade_available': False
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'queue_id': queue_ids['Vacinação'],
+                    'queue_id': queue_ids['Farmácia_Distribuição de Medicamentos'],
                     'user_id': default_user.id,
                     'ticket_number': 1,
                     'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
@@ -270,14 +469,53 @@ def populate_initial_data(app):
                 },
                 {
                     'id': str(uuid.uuid4()),
-                    'queue_id': queue_ids['Vacinação'],
+                    'queue_id': queue_ids['Secretaria Escolar_Matrículas'],
                     'user_id': default_user.id,
-                    'ticket_number': 2,
+                    'ticket_number': 1,
                     'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                    'status': 'attended',
+                    'status': 'Pendente',
                     'priority': 0,
                     'is_physical': False,
-                    'counter': 1,
+                    'counter': None,
+                    'issued_at': datetime.utcnow(),
+                    'trade_available': False
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'queue_id': queue_ids['Atendimento Notarial_Autenticação de Documentos'],
+                    'user_id': default_user.id,
+                    'ticket_number': 1,
+                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
+                    'status': 'Pendente',
+                    'priority': 0,
+                    'is_physical': False,
+                    'counter': None,
+                    'issued_at': datetime.utcnow(),
+                    'trade_available': False
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'queue_id': queue_ids['Pediatria_Consulta Pediátrica'],
+                    'user_id': default_user.id,
+                    'ticket_number': 1,
+                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
+                    'status': 'Pendente',
+                    'priority': 0,
+                    'is_physical': False,
+                    'counter': None,
+                    'issued_at': datetime.utcnow(),
+                    'trade_available': False
+                },
+                {
+                    'id': str(uuid.uuid4()),
+                    'queue_id': queue_ids['Administração Escolar_Inscrições'],
+                    'user_id': default_user.id,
+                    'ticket_number': 1,
+                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
+                    'status': 'Pendente',
+                    'priority': 0,
+                    'is_physical': False,
+                    'counter': None,
                     'issued_at': datetime.utcnow(),
                     'trade_available': False
                 }
