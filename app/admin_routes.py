@@ -14,7 +14,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def init_admin_routes(app):
-    # Endpoint para criar instituições (mantido do anterior)
     @app.route('/api/admin/institutions', methods=['POST'])
     @require_auth
     def create_institution():
@@ -65,7 +64,6 @@ def init_admin_routes(app):
             logger.error(f"Erro ao criar instituição: {str(e)}")
             return jsonify({'error': 'Erro interno ao criar instituição'}), 500
 
-    # Novo endpoint para editar instituições
     @app.route('/api/admin/institutions/<institution_id>', methods=['PUT'])
     @require_auth
     def update_institution(institution_id):
@@ -90,7 +88,6 @@ def init_admin_routes(app):
             institution.latitude = data.get('latitude', institution.latitude)
             institution.longitude = data.get('longitude', institution.longitude)
 
-            # Verificar duplicata de nome (exceto para a própria instituição)
             if 'name' in data and data['name'] != institution.name:
                 if Institution.query.filter_by(name=data['name']).first():
                     logger.warning(f"Instituição com nome {data['name']} já existe")
@@ -121,7 +118,6 @@ def init_admin_routes(app):
             logger.error(f"Erro ao atualizar instituição {institution_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao atualizar instituição'}), 500
 
-    # Novo endpoint para excluir instituições
     @app.route('/api/admin/institutions/<institution_id>', methods=['DELETE'])
     @require_auth
     def delete_institution(institution_id):
@@ -135,7 +131,6 @@ def init_admin_routes(app):
             logger.warning(f"Instituição {institution_id} não encontrada")
             return jsonify({'error': 'Instituição não encontrada'}), 404
 
-        # Verificar se há departamentos associados
         if Department.query.filter_by(institution_id=institution_id).first():
             logger.warning(f"Tentativa de excluir instituição {institution_id} com departamentos associados")
             return jsonify({'error': 'Não é possível excluir: instituição possui departamentos associados'}), 400
@@ -155,7 +150,6 @@ def init_admin_routes(app):
             logger.error(f"Erro ao excluir instituição {institution_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao excluir instituição'}), 500
 
-    # Endpoint para criar admin de instituição (mantido do anterior)
     @app.route('/api/admin/institutions/<institution_id>/admin', methods=['POST'])
     @require_auth
     def create_institution_admin(institution_id):
@@ -213,7 +207,6 @@ def init_admin_routes(app):
             logger.error(f"Erro ao criar admin de instituição: {str(e)}")
             return jsonify({'error': 'Erro interno ao criar administrador'}), 500
 
-    # Novo endpoint para editar gestores (DEPARTMENT_ADMIN)
     @app.route('/api/admin/institutions/<institution_id>/users/<user_id>', methods=['PUT'])
     @require_auth
     def update_department_admin(institution_id, user_id):
@@ -283,7 +276,6 @@ def init_admin_routes(app):
             logger.error(f"Erro ao atualizar gestor {user_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao atualizar gestor'}), 500
 
-    # Novo endpoint para excluir gestores
     @app.route('/api/admin/institutions/<institution_id>/users/<user_id>', methods=['DELETE'])
     @require_auth
     def delete_department_admin(institution_id, user_id):
@@ -305,7 +297,6 @@ def init_admin_routes(app):
             logger.warning(f"Gestor {user_id} não encontrado ou não é DEPARTMENT_ADMIN na instituição {institution_id}")
             return jsonify({'error': 'Gestor não encontrado ou não pertence à instituição'}), 404
 
-        # Verificar se o gestor tem filas ativas
         if target_user.department_id:
             queues = Queue.query.filter_by(department_id=target_user.department_id).all()
             for queue in queues:
@@ -329,7 +320,6 @@ def init_admin_routes(app):
             logger.error(f"Erro ao excluir gestor {user_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao excluir gestor'}), 500
 
-    # Endpoint para criar departamentos (mantido do anterior)
     @app.route('/api/admin/institutions/<institution_id>/departments', methods=['POST'])
     @require_auth
     def create_department(institution_id):
@@ -386,7 +376,6 @@ def init_admin_routes(app):
             logger.error(f"Erro ao criar departamento: {str(e)}")
             return jsonify({'error': 'Erro interno ao criar departamento'}), 500
 
-    # Endpoint para adicionar usuários a departamentos (mantido do anterior)
     @app.route('/api/admin/departments/<department_id>/users', methods=['POST'])
     @require_auth
     def add_department_user(department_id):
@@ -455,7 +444,6 @@ def init_admin_routes(app):
             logger.error(f"Erro ao adicionar usuário ao departamento: {str(e)}")
             return jsonify({'error': 'Erro interno ao adicionar usuário'}), 500
 
-    # Novo endpoint para listar chamadas de uma instituição (tela de espera)
     @app.route('/api/institutions/<institution_id>/calls', methods=['GET'])
     def list_institution_calls(institution_id):
         institution = Institution.query.get(institution_id)
@@ -469,7 +457,6 @@ def init_admin_routes(app):
             queues = Queue.query.filter(Queue.department_id.in_(department_ids)).all()
             queue_ids = [q.id for q in queues]
 
-            # Buscar os últimos 10 tickets chamados ou atendidos
             recent_calls = Ticket.query.filter(
                 Ticket.queue_id.in_(queue_ids),
                 Ticket.status.in_(['Chamado', 'attended'])
@@ -500,7 +487,6 @@ def init_admin_routes(app):
             logger.error(f"Erro ao listar chamadas para instituição {institution_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao listar chamadas'}), 500
 
-    # Novo endpoint para gerar senha física
     @app.route('/api/physical-ticket', methods=['POST'])
     def generate_physical_ticket():
         data = request.get_json()
@@ -520,7 +506,6 @@ def init_admin_routes(app):
             return jsonify({'error': 'Fila não encontrada para o serviço especificado'}), 400
 
         try:
-            # Gerar ticket físico para usuário "PRESENCIAL"
             ticket, pdf_buffer = QueueService.add_to_queue(
                 service=data['service'],
                 user_id='PRESENCIAL',
@@ -552,7 +537,6 @@ def init_admin_routes(app):
             logger.error(f"Erro interno ao gerar senha física: {str(e)}")
             return jsonify({'error': 'Erro interno ao gerar senha'}), 500
 
-    # Endpoints existentes mantidos com melhorias
     @app.route('/api/admin/queues', methods=['GET'])
     @require_auth
     def list_admin_queues():
@@ -765,54 +749,6 @@ def init_admin_routes(app):
         except Exception as e:
             logger.error(f"Erro ao listar departamentos para user_id={user.id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao listar departamentos'}), 500
-
-    @app.route('/api/admin/institutions/<institution_id>/departments', methods=['POST'])
-    @require_auth
-    def create_department(institution_id):
-        user = User.query.get(request.user_id)
-        if not user or user.user_role != UserRole.INSTITUTION_ADMIN or user.institution_id != institution_id:
-            logger.warning(f"Tentativa não autorizada de criar departamento por user_id={request.user_id}")
-            return jsonify({'error': 'Acesso restrito a administradores da instituição'}), 403
-
-        data = request.get_json()
-        required = ['name', 'sector']
-        if not data or not all(f in data for f in required):
-            logger.warning("Campos obrigatórios faltando na criação de departamento")
-            return jsonify({'error': 'Campos obrigatórios faltando: name, sector'}), 400
-
-        if Department.query.filter_by(institution_id=institution_id, name=data['name']).first():
-            logger.warning(f"Departamento com nome {data['name']} já existe na instituição {institution_id}")
-            return jsonify({'error': 'Departamento com este nome já existe'}), 400
-
-        try:
-            department = Department(
-                id=str(uuid.uuid4()),
-                institution_id=institution_id,
-                name=data['name'],
-                sector=data['sector']
-            )
-            db.session.add(department)
-            db.session.commit()
-
-            socketio.emit('department_created', {
-                'department_id': department.id,
-                'name': department.name,
-                'institution_id': institution_id
-            }, namespace='/admin')
-            logger.info(f"Departamento {department.name} criado por user_id={user.id}")
-            return jsonify({
-                'message': 'Departamento criado com sucesso',
-                'department': {
-                    'id': department.id,
-                    'name': department.name,
-                    'sector': department.sector,
-                    'institution_id': institution_id
-                }
-            }), 201
-        except Exception as e:
-            db.session.rollback()
-            logger.error(f"Erro ao criar departamento: {str(e)}")
-            return jsonify({'error': 'Erro interno ao criar departamento'}), 500
 
     @app.route('/api/admin/institutions/<institution_id>/managers', methods=['GET'])
     @require_auth
