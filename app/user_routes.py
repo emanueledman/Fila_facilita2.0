@@ -14,7 +14,6 @@ def init_user_routes(app):
     @app.route('/api/admin/login', methods=['POST', 'OPTIONS'])
     def admin_login():
         if request.method == 'OPTIONS':
-            # Resposta para requisição preflight
             response = make_response()
             response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
             response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
@@ -22,7 +21,6 @@ def init_user_routes(app):
             response.headers['Access-Control-Max-Age'] = '86400'
             return response
 
-        # Lógica para POST
         logger.info("Recebida requisição POST para /api/admin/login")
         try:
             data = request.get_json()
@@ -46,11 +44,7 @@ def init_user_routes(app):
                 logger.warning(f"Senha inválida para email={email}")
                 return jsonify({"error": "Credenciais inválidas"}), 401
 
-            if not user.is_department_admin:
-                logger.warning(f"Tentativa de login como gestor por usuário não autorizado: {email}")
-                return jsonify({"error": "Acesso restrito a gestores"}), 403
-
-            # Gerar token JWT (sem o prefixo Bearer)
+            # Removida a restrição de is_department_admin para permitir todos os user_role
             secret_key = os.getenv('SECRET_KEY', '00974655')
             token = jwt.encode({
                 'user_id': user.id,
@@ -58,7 +52,6 @@ def init_user_routes(app):
                 'exp': datetime.utcnow() + timedelta(hours=24)
             }, secret_key, algorithm='HS256')
 
-            # Se o token for uma string em bytes (Python 3.6 e abaixo com PyJWT antigo)
             if isinstance(token, bytes):
                 token = token.decode('utf-8')
 
@@ -67,15 +60,15 @@ def init_user_routes(app):
                 "user_id": user.id,
                 "user_role": user.user_role.value,
                 "institution_id": user.institution_id,
+                "department_id": user.department_id,
                 "department": user.department.name if user.department else None,
                 "email": user.email
             })
 
-            # Configuração CORS para a resposta
             response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
             response.headers.add('Access-Control-Allow-Credentials', 'true')
             
-            logger.info(f"Login bem-sucedido para gestor: {email}")
+            logger.info(f"Login bem-sucedido para usuário: {email} ({user.user_role.value})")
             return response, 200
             
         except Exception as e:
