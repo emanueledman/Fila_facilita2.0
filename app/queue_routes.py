@@ -1,6 +1,6 @@
 from flask import jsonify, request, send_file
 from . import db, socketio
-from .models import Institution, Queue, Ticket, User, Department, UserRole, QueueSchedule
+from .models import Institution, Queue, Ticket, User, Department, UserRole, QueueSchedule, Weekday
 from .auth import require_auth
 from .services import QueueService, suggest_service_locations, get_dashboard_data, subscribe_to_dashboard
 import uuid
