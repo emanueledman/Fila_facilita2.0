@@ -11,8 +11,6 @@ from flask_cors import CORS
 from redis import Redis
 import os
 from dotenv import load_dotenv
-import firebase_admin
-from firebase_admin import credentials
 
 load_dotenv()
 
@@ -37,14 +35,6 @@ def create_app():
     
     # Configurar Redis
     app.redis_client = Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379/0'))
-    
-    # Configurar Firebase
-    firebase_cred_path = os.getenv('FIREBASE_CREDENTIALS_PATH')
-    if firebase_cred_path and os.path.exists(firebase_cred_path):
-        cred = credentials.Certificate(firebase_cred_path)
-        firebase_admin.initialize_app(cred)
-    else:
-        app.logger.warning("FIREBASE_CREDENTIALS_PATH não encontrado ou inválido. Notificações push desativadas.")
     
     # Configurar logging
     handler = logging.handlers.RotatingFileHandler(
@@ -139,7 +129,7 @@ def create_app():
         app.logger.info("Aplicação configurada para modo de produção")
     else:
         app.config['DEBUG'] = True
-        app.logger.info("Aplicação configurada para modo de desenvolvimento.")
+        app.logger.info("Aplicação configurada para modo de desenvolvimento")
 
     return app
 
