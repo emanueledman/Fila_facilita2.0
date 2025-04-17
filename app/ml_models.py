@@ -19,7 +19,7 @@ class WaitTimePredictor:
     SCALER_PATH = "wait_time_scaler.joblib"
 
     def __init__(self):
-        self.model = RandomForestRegressor(n_estimators=100, random_state=42)  # Mudado para RandomForest para melhor precisão
+        self.model = RandomForestRegressor(n_estimators=100, random_state=42)
         self.scaler = StandardScaler()
         self.is_trained = {}
         self.load_model()
@@ -58,7 +58,7 @@ class WaitTimePredictor:
             tickets = Ticket.query.filter(
                 Ticket.queue_id == queue_id,
                 Ticket.status == 'attended',
-                Ticket.created_at >= start_date,
+                Ticket.issued_at >= start_date,  # Alterado de created_at para issued_at
                 Ticket.service_time.isnot(None),
                 Ticket.service_time > 0
             ).all()
@@ -70,7 +70,7 @@ class WaitTimePredictor:
             data = []
             for ticket in tickets:
                 position = max(0, ticket.ticket_number - queue.current_ticket)
-                hour_of_day = ticket.issued_at.hour
+                hour_of_day = ticket.issued_at.hour  # Alterado de created_at para issued_at
                 sector_encoded = hash(ticket.queue.department.sector) % 100 if ticket.queue.department else 0
                 data.append({
                     'position': position,
@@ -90,6 +90,7 @@ class WaitTimePredictor:
             df = pd.DataFrame(data)
             X = df[['position', 'active_tickets', 'priority', 'hour_of_day', 'num_counters', 'daily_limit', 'sector_encoded']]
             y = df['service_time']
+            logger.debug(f"Dados preparados para queue_id={queue_id}: {len(data)} amostras")
             return X, y
         except Exception as e:
             logger.error(f"Erro ao preparar dados para queue_id={queue_id}: {e}")
@@ -229,6 +230,7 @@ class ServiceRecommendationPredictor:
             df = pd.DataFrame(data)
             X = df[['avg_service_time', 'std_service_time', 'service_time_per_counter', 'occupancy_rate', 'availability', 'sector_encoded', 'hour_of_day', 'day_of_week']]
             y = df['quality_score']
+            logger.debug(f"Dados preparados para modelo de recomendação: {len(data)} amostras")
             return X, y
         except Exception as e:
             logger.error(f"Erro ao preparar dados para treinamento do modelo de recomendação: {e}")
@@ -349,7 +351,3 @@ class ServiceRecommendationPredictor:
         except Exception as e:
             logger.error(f"Erro ao sugerir filas para totem em institution_id={institution_id}: {e}")
             return []
-
-# Instanciar os preditores globalmente
-wait_time_predictor = WaitTimePredictor()
-service_recommendation_predictor = ServiceRecommendationPredictor()
