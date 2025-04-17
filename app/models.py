@@ -139,11 +139,11 @@ class User(db.Model):
 
 class QueueSchedule(db.Model):
     __tablename__ = 'queue_schedules'
-    id = Column(Integer, primary_key=True)
+    id = Column(String(36), primary_key=True)  # Alterado de Integer para String(36)
     queue_id = Column(String(36), ForeignKey('queue.id'), nullable=False)
     weekday = Column(Enum(Weekday), nullable=False)
-    open_time = Column(Time, nullable=False)
-    end_time = Column(Time, nullable=False)
+    open_time = Column(Time, nullable=True)  # Alterado para nullable=True
+    end_time = Column(Time, nullable=True)   # Alterado para nullable=True
     is_closed = Column(Boolean, default=False)
     queue = relationship('Queue', back_populates='schedules')
 

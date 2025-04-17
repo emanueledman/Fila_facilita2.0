@@ -1,361 +1,364 @@
 import uuid
 from datetime import time, datetime
-from .models import Institution, Queue, User, Ticket, Department, UserRole, QueueSchedule
+from .models import Institution, Queue, User, Ticket, Department, UserRole, QueueSchedule, Weekday
 from . import db
 import os
+from sqlalchemy.exc import SQLAlchemyError
 
 def populate_initial_data(app):
     with app.app_context():
         try:
-            # Verificar se já existem instituições (evita duplicações)
-            if Institution.query.count() > 0:
-                app.logger.info("Instituições já existem, pulando inicialização de dados.")
-                return
+            # Desativar autoflush para evitar problemas durante a inserção
+            with db.session.no_autoflush:
+                # Verificar se já existem instituições (evita duplicações)
+                if Institution.query.count() > 0:
+                    app.logger.info("Instituições já existem, pulando inicialização de dados.")
+                    return
 
-            # Lista de instituições
-            institutions = [
-                {
-                    'id': str(uuid.uuid4()),
-                    'name': 'Hospital Josina Machel',
-                    'location': 'Luanda, Luanda',
-                    'latitude': -8.8167,
-                    'longitude': 13.2332,
-                    'departments': [
-                        {
-                            'name': 'Consulta Geral',
-                            'sector': 'Saúde',
-                            'queues': [
-                                {
-                                    'service': 'Consulta Geral',
-                                    'prefix': 'A',
-                                    'open_time': time(7, 0),
-                                    'end_time': time(17, 0),
-                                    'daily_limit': 50,
-                                    'num_counters': 5,
-                                    'schedules': [
-                                        {'weekday': 'Monday', 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                        {'weekday': 'Tuesday', 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                        {'weekday': 'Wednesday', 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                        {'weekday': 'Thursday', 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                        {'weekday': 'Friday', 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                        {'weekday': 'Saturday', 'open_time': time(7, 0), 'end_time': time(12, 0), 'is_closed': False},
-                                        {'weekday': 'Sunday', 'is_closed': True}
-                                    ]
-                                }
-                            ]
-                        },
-                        {
-                            'name': 'Urgência',
-                            'sector': 'Saúde',
-                            'queues': [
-                                {
-                                    'service': 'Urgência',
-                                    'prefix': 'B',
-                                    'open_time': time(0, 0),
-                                    'end_time': time(23, 59),
-                                    'daily_limit': 100,
-                                    'num_counters': 8,
-                                    'schedules': [
-                                        {'weekday': 'Monday', 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                        {'weekday': 'Tuesday', 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                        {'weekday': 'Wednesday', 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                        {'weekday': 'Thursday', 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                        {'weekday': 'Friday', 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                        {'weekday': 'Saturday', 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                        {'weekday': 'Sunday', 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False}
-                                    ]
-                                }
-                            ]
-                        },
-                        {
-                            'name': 'Farmácia',
-                            'sector': 'Saúde',
-                            'queues': [
-                                {
-                                    'service': 'Distribuição de Medicamentos',
-                                    'prefix': 'C',
-                                    'open_time': time(8, 0),
-                                    'end_time': time(16, 0),
-                                    'daily_limit': 60,
-                                    'num_counters': 3,
-                                    'schedules': [
-                                        {'weekday': 'Monday', 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                        {'weekday': 'Tuesday', 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                        {'weekday': 'Wednesday', 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                        {'weekday': 'Thursday', 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                        {'weekday': 'Friday', 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                        {'weekday': 'Saturday', 'is_closed': True},
-                                        {'weekday': 'Sunday', 'is_closed': True}
-                                    ]
-                                }
-                            ]
-                        }
-                    ]
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'name': 'Escola Primária Ngola Kiluanje',
-                    'location': 'Viana, Luanda',
-                    'latitude': -8.9035,
-                    'longitude': 13.3741,
-                    'departments': [
-                        {
-                            'name': 'Secretaria Escolar',
-                            'sector': 'Educação',
-                            'queues': [
-                                {
-                                    'service': 'Matrículas',
-                                    'prefix': 'M',
-                                    'open_time': time(8, 0),
-                                    'end_time': time(14, 0),
-                                    'daily_limit': 30,
-                                    'num_counters': 2,
-                                    'schedules': [
-                                        {'weekday': 'Monday', 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                        {'weekday': 'Tuesday', 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                        {'weekday': 'Wednesday', 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                        {'weekday': 'Thursday', 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                        {'weekday': 'Friday', 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                        {'weekday': 'Saturday', 'is_closed': True},
-                                        {'weekday': 'Sunday', 'is_closed': True}
-                                    ]
-                                },
-                                {
-                                    'service': 'Declarações',
-                                    'prefix': 'D',
-                                    'open_time': time(8, 0),
-                                    'end_time': time(14, 0),
-                                    'daily_limit': 20,
-                                    'num_counters': 1,
-                                    'schedules': [
-                                        {'weekday': 'Monday', 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                        {'weekday': 'Tuesday', 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                        {'weekday': 'Wednesday', 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                        {'weekday': 'Thursday', 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                        {'weekday': 'Friday', 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                        {'weekday': 'Saturday', 'is_closed': True},
-                                        {'weekday': 'Sunday', 'is_closed': True}
-                                    ]
-                                }
-                            ]
-                        }
-                    ]
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'name': 'Cartório Notarial de Luanda',
-                    'location': 'Luanda, Luanda',
-                    'latitude': -8.8147,
-                    'longitude': 13.2302,
-                    'departments': [
-                        {
-                            'name': 'Atendimento Notarial',
-                            'sector': 'Serviços Públicos',
-                            'queues': [
-                                {
-                                    'service': 'Autenticação de Documentos',
-                                    'prefix': 'N',
-                                    'open_time': time(8, 0),
-                                    'end_time': time(15, 0),
-                                    'daily_limit': 40,
-                                    'num_counters': 3,
-                                    'schedules': [
-                                        {'weekday': 'Monday', 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                        {'weekday': 'Tuesday', 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                        {'weekday': 'Wednesday', 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                        {'weekday': 'Thursday', 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                        {'weekday': 'Friday', 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                        {'weekday': 'Saturday', 'is_closed': True},
-                                        {'weekday': 'Sunday', 'is_closed': True}
-                                    ]
-                                },
-                                {
-                                    'service': 'Registo Civil',
-                                    'prefix': 'R',
-                                    'open_time': time(8, 0),
-                                    'end_time': time(15, 0),
-                                    'daily_limit': 30,
-                                    'num_counters': 2,
-                                    'schedules': [
-                                        {'weekday': 'Monday', 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                        {'weekday': 'Tuesday', 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                        {'weekday': 'Wednesday', 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                        {'weekday': 'Thursday', 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                        {'weekday': 'Friday', 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                        {'weekday': 'Saturday', 'is_closed': True},
-                                        {'weekday': 'Sunday', 'is_closed': True}
-                                    ]
-                                }
-                            ]
-                        }
-                    ]
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'name': 'Hospital Maria Pia',
-                    'location': 'Luanda, Luanda',
-                    'latitude': -8.8200,
-                    'longitude': 13.2400,
-                    'departments': [
-                        {
-                            'name': 'Pediatria',
-                            'sector': 'Saúde',
-                            'queues': [
-                                {
-                                    'service': 'Consulta Pediátrica',
-                                    'prefix': 'P',
-                                    'open_time': time(7, 30),
-                                    'end_time': time(16, 30),
-                                    'daily_limit': 40,
-                                    'num_counters': 4,
-                                    'schedules': [
-                                        {'weekday': 'Monday', 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
-                                        {'weekday': 'Tuesday', 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
-                                        {'weekday': 'Wednesday', 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
-                                        {'weekday': 'Thursday', 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
-                                        {'weekday': 'Friday', 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
-                                        {'weekday': 'Saturday', 'is_closed': True},
-                                        {'weekday': 'Sunday', 'is_closed': True}
-                                    ]
-                                }
-                            ]
-                        },
-                        {
-                            'name': 'Maternidade',
-                            'sector': 'Saúde',
-                            'queues': [
-                                {
-                                    'service': 'Consulta Pré-Natal',
-                                    'prefix': 'M',
-                                    'open_time': time(8, 0),
-                                    'end_time': time(15, 0),
-                                    'daily_limit': 30,
-                                    'num_counters': 2,
-                                    'schedules': [
-                                        {'weekday': 'Monday', 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                        {'weekday': 'Tuesday', 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                        {'weekday': 'Wednesday', 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                        {'weekday': 'Thursday', 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                        {'weekday': 'Friday', 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                        {'weekday': 'Saturday', 'is_closed': True},
-                                        {'weekday': 'Sunday', 'is_closed': True}
-                                    ]
-                                }
-                            ]
-                        }
-                    ]
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'name': 'Instituto Médio de Saúde de Luanda',
-                    'location': 'Luanda, Luanda',
-                    'latitude': -8.8300,
-                    'longitude': 13.2500,
-                    'departments': [
-                        {
-                            'name': 'Administração Escolar',
-                            'sector': 'Educação',
-                            'queues': [
-                                {
-                                    'service': 'Inscrições',
-                                    'prefix': 'I',
-                                    'open_time': time(8, 0),
-                                    'end_time': time(13, 0),
-                                    'daily_limit': 25,
-                                    'num_counters': 2,
-                                    'schedules': [
-                                        {'weekday': 'Monday', 'open_time': time(8, 0), 'end_time': time(13, 0), 'is_closed': False},
-                                        {'weekday': 'Tuesday', 'open_time': time(8, 0), 'end_time': time(13, 0), 'is_closed': False},
-                                        {'weekday': 'Wednesday', 'open_time': time(8, 0), 'end_time': time(13, 0), 'is_closed': False},
-                                        {'weekday': 'Thursday', 'open_time': time(8, 0), 'end_time': time(13, 0), 'is_closed': False},
-                                        {'weekday': 'Friday', 'open_time': time(8, 0), 'end_time': time(13, 0), 'is_closed': False},
-                                        {'weekday': 'Saturday', 'is_closed': True},
-                                        {'weekday': 'Sunday', 'is_closed': True}
-                                    ]
-                                }
-                            ]
-                        }
-                    ]
-                }
-            ]
+                # Lista de instituições
+                institutions = [
+                    {
+                        'id': str(uuid.uuid4()),
+                        'name': 'Hospital Josina Machel',
+                        'location': 'Luanda, Luanda',
+                        'latitude': -8.8167,
+                        'longitude': 13.2332,
+                        'departments': [
+                            {
+                                'name': 'Consulta Geral',
+                                'sector': 'Saúde',
+                                'queues': [
+                                    {
+                                        'service': 'Consulta Geral',
+                                        'prefix': 'A',
+                                        'open_time': time(7, 0),
+                                        'end_time': time(17, 0),
+                                        'daily_limit': 50,
+                                        'num_counters': 5,
+                                        'schedules': [
+                                            {'weekday': Weekday.MONDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                            {'weekday': Weekday.TUESDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                            {'weekday': Weekday.THURSDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                            {'weekday': Weekday.FRIDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                            {'weekday': Weekday.SATURDAY, 'open_time': time(7, 0), 'end_time': time(12, 0), 'is_closed': False},
+                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'name': 'Urgência',
+                                'sector': 'Saúde',
+                                'queues': [
+                                    {
+                                        'service': 'Urgência',
+                                        'prefix': 'B',
+                                        'open_time': time(0, 0),
+                                        'end_time': time(23, 59),
+                                        'daily_limit': 100,
+                                        'num_counters': 8,
+                                        'schedules': [
+                                            {'weekday': Weekday.MONDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
+                                            {'weekday': Weekday.TUESDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
+                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
+                                            {'weekday': Weekday.THURSDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
+                                            {'weekday': Weekday.FRIDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
+                                            {'weekday': Weekday.SATURDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
+                                            {'weekday': Weekday.SUNDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False}
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'name': 'Farmácia',
+                                'sector': 'Saúde',
+                                'queues': [
+                                    {
+                                        'service': 'Distribuição de Medicamentos',
+                                        'prefix': 'C',
+                                        'open_time': time(8, 0),
+                                        'end_time': time(16, 0),
+                                        'daily_limit': 60,
+                                        'num_counters': 3,
+                                        'schedules': [
+                                            {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
+                                            {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
+                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
+                                            {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
+                                            {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
+                                            {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'id': str(uuid.uuid4()),
+                        'name': 'Escola Primária Ngola Kiluanje',
+                        'location': 'Viana, Luanda',
+                        'latitude': -8.9035,
+                        'longitude': 13.3741,
+                        'departments': [
+                            {
+                                'name': 'Secretaria Escolar',
+                                'sector': 'Educação',
+                                'queues': [
+                                    {
+                                        'service': 'Matrículas',
+                                        'prefix': 'M',
+                                        'open_time': time(8, 0),
+                                        'end_time': time(14, 0),
+                                        'daily_limit': 30,
+                                        'num_counters': 2,
+                                        'schedules': [
+                                            {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
+                                            {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
+                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
+                                            {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
+                                            {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
+                                            {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                        ]
+                                    },
+                                    {
+                                        'service': 'Declarações',
+                                        'prefix': 'D',
+                                        'open_time': time(8, 0),
+                                        'end_time': time(14, 0),
+                                        'daily_limit': 20,
+                                        'num_counters': 1,
+                                        'schedules': [
+                                            {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
+                                            {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
+                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
+                                            {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
+                                            {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
+                                            {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'id': str(uuid.uuid4()),
+                        'name': 'Cartório Notarial de Luanda',
+                        'location': 'Luanda, Luanda',
+                        'latitude': -8.8147,
+                        'longitude': 13.2302,
+                        'departments': [
+                            {
+                                'name': 'Atendimento Notarial',
+                                'sector': 'Serviços Públicos',
+                                'queues': [
+                                    {
+                                        'service': 'Autenticação de Documentos',
+                                        'prefix': 'N',
+                                        'open_time': time(8, 0),
+                                        'end_time': time(15, 0),
+                                        'daily_limit': 40,
+                                        'num_counters': 3,
+                                        'schedules': [
+                                            {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                            {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                            {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                            {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                            {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                        ]
+                                    },
+                                    {
+                                        'service': 'Registo Civil',
+                                        'prefix': 'R',
+                                        'open_time': time(8, 0),
+                                        'end_time': time(15, 0),
+                                        'daily_limit': 30,
+                                        'num_counters': 2,
+                                        'schedules': [
+                                            {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                            {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                            {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                            {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                            {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'id': str(uuid.uuid4()),
+                        'name': 'Hospital Maria Pia',
+                        'location': 'Luanda, Luanda',
+                        'latitude': -8.8200,
+                        'longitude': 13.2400,
+                        'departments': [
+                            {
+                                'name': 'Pediatria',
+                                'sector': 'Saúde',
+                                'queues': [
+                                    {
+                                        'service': 'Consulta Pediátrica',
+                                        'prefix': 'P',
+                                        'open_time': time(7, 30),
+                                        'end_time': time(16, 30),
+                                        'daily_limit': 40,
+                                        'num_counters': 4,
+                                        'schedules': [
+                                            {'weekday': Weekday.MONDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
+                                            {'weekday': Weekday.TUESDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
+                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
+                                            {'weekday': Weekday.THURSDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
+                                            {'weekday': Weekday.FRIDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
+                                            {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'name': 'Maternidade',
+                                'sector': 'Saúde',
+                                'queues': [
+                                    {
+                                        'service': 'Consulta Pré-Natal',
+                                        'prefix': 'M',
+                                        'open_time': time(8, 0),
+                                        'end_time': time(15, 0),
+                                        'daily_limit': 30,
+                                        'num_counters': 2,
+                                        'schedules': [
+                                            {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                            {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                            {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                            {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                            {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'id': str(uuid.uuid4()),
+                        'name': 'Instituto Médio de Saúde de Luanda',
+                        'location': 'Luanda, Luanda',
+                        'latitude': -8.8300,
+                        'longitude': 13.2500,
+                        'departments': [
+                            {
+                                'name': 'Administração Escolar',
+                                'sector': 'Educação',
+                                'queues': [
+                                    {
+                                        'service': 'Inscrições',
+                                        'prefix': 'I',
+                                        'open_time': time(8, 0),
+                                        'end_time': time(13, 0),
+                                        'daily_limit': 25,
+                                        'num_counters': 2,
+                                        'schedules': [
+                                            {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(13, 0), 'is_closed': False},
+                                            {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(13, 0), 'is_closed': False},
+                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(13, 0), 'is_closed': False},
+                                            {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(13, 0), 'is_closed': False},
+                                            {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(13, 0), 'is_closed': False},
+                                            {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
 
-            queue_ids = {}
-            for inst in institutions:
-                # Verificar se a instituição já existe
-                existing_institution = Institution.query.filter_by(name=inst['name'], location=inst['location']).first()
-                if existing_institution:
-                    app.logger.info(f"Instituição {inst['name']} já existe, pulando.")
-                    continue
-
-                institution = Institution(
-                    id=inst['id'],
-                    name=inst['name'],
-                    location=inst['location'],
-                    latitude=inst['latitude'],
-                    longitude=inst['longitude']
-                )
-                db.session.add(institution)
-                db.session.flush()
-
-                for dept in inst['departments']:
-                    # Verificar se o departamento já existe
-                    existing_department = Department.query.filter_by(
-                        institution_id=inst['id'], name=dept['name']
-                    ).first()
-                    if existing_department:
-                        app.logger.info(f"Departamento {dept['name']} já existe em {inst['name']}, pulando.")
+                queue_ids = {}
+                for inst in institutions:
+                    # Verificar se a instituição já existe
+                    existing_institution = Institution.query.filter_by(name=inst['name'], location=inst['location']).first()
+                    if existing_institution:
+                        app.logger.info(f"Instituição {inst['name']} já existe, pulando.")
                         continue
 
-                    department = Department(
-                        id=str(uuid.uuid4()),
-                        institution_id=inst['id'],
-                        name=dept['name'],
-                        sector=dept['sector']
+                    institution = Institution(
+                        id=inst['id'],
+                        name=inst['name'],
+                        location=inst['location'],
+                        latitude=inst['latitude'],
+                        longitude=inst['longitude']
                     )
-                    db.session.add(department)
+                    db.session.add(institution)
                     db.session.flush()
 
-                    for q in dept['queues']:
-                        # Verificar se a fila já existe
-                        existing_queue = Queue.query.filter_by(
-                            department_id=department.id, service=q['service']
+                    for dept in inst['departments']:
+                        # Verificar se o departamento já existe
+                        existing_department = Department.query.filter_by(
+                            institution_id=inst['id'], name=dept['name']
                         ).first()
-                        if existing_queue:
-                            app.logger.info(f"Fila {q['service']} já existe em {dept['name']}, pulando.")
-                            queue_ids[f"{dept['name']}_{q['service']}"] = existing_queue.id
+                        if existing_department:
+                            app.logger.info(f"Departamento {dept['name']} já existe em {inst['name']}, pulando.")
                             continue
 
-                        queue = Queue(
+                        department = Department(
                             id=str(uuid.uuid4()),
-                            department_id=department.id,
-                            service=q['service'],
-                            prefix=q['prefix'],
-                            open_time=q['open_time'],
-                            end_time=q.get('end_time'),
-                            daily_limit=q['daily_limit'],
-                            num_counters=q['num_counters'],
-                            active_tickets=0,
-                            current_ticket=0
+                            institution_id=inst['id'],
+                            name=dept['name'],
+                            sector=dept['sector']
                         )
-                        db.session.add(queue)
+                        db.session.add(department)
                         db.session.flush()
-                        queue_ids[f"{dept['name']}_{q['service']}"] = queue.id
 
-                        # Criar agendamentos para a fila
-                        for schedule in q.get('schedules', []):
-                            queue_schedule = QueueSchedule(
+                        for q in dept['queues']:
+                            # Verificar se a fila já existe
+                            existing_queue = Queue.query.filter_by(
+                                department_id=department.id, service=q['service']
+                            ).first()
+                            if existing_queue:
+                                app.logger.info(f"Fila {q['service']} já existe em {dept['name']}, pulando.")
+                                queue_ids[f"{dept['name']}_{q['service']}"] = existing_queue.id
+                                continue
+
+                            queue = Queue(
                                 id=str(uuid.uuid4()),
-                                queue_id=queue.id,
-                                weekday=schedule['weekday'],
-                                open_time=schedule.get('open_time'),
-                                end_time=schedule.get('end_time'),
-                                is_closed=schedule.get('is_closed', False)
+                                department_id=department.id,
+                                service=q['service'],
+                                prefix=q['prefix'],
+                                open_time=q['open_time'],
+                                end_time=q.get('end_time'),
+                                daily_limit=q['daily_limit'],
+                                num_counters=q['num_counters'],
+                                active_tickets=0,
+                                current_ticket=0
                             )
-                            db.session.add(queue_schedule)
+                            db.session.add(queue)
+                            db.session.flush()
+                            queue_ids[f"{dept['name']}_{q['service']}"] = queue.id
 
-            db.session.commit()
-            app.logger.info("Dados iniciais de instituições, departamentos, filas e agendamentos inseridos com sucesso!")
-        except Exception as e:
+                            # Criar agendamentos para a fila
+                            for schedule in q.get('schedules', []):
+                                queue_schedule = QueueSchedule(
+                                    id=str(uuid.uuid4()),
+                                    queue_id=queue.id,
+                                    weekday=schedule['weekday'],
+                                    open_time=schedule.get('open_time'),
+                                    end_time=schedule.get('end_time'),
+                                    is_closed=schedule.get('is_closed', False)
+                                )
+                                db.session.add(queue_schedule)
+
+                db.session.commit()
+                app.logger.info("Dados iniciais de instituições, departamentos, filas e agendamentos inseridos com sucesso!")
+        except SQLAlchemyError as e:
             db.session.rollback()
             app.logger.error(f"Erro ao inserir dados iniciais de instituições: {str(e)}")
             raise
@@ -549,7 +552,7 @@ def populate_initial_data(app):
             
             db.session.commit()
             app.logger.info("Usuários iniciais (super admin, admins, gestores e usuário padrão) inseridos com sucesso!")
-        except Exception as e:
+        except SQLAlchemyError as e:
             db.session.rollback()
             app.logger.error(f"Erro ao inserir usuários iniciais: {str(e)}")
             raise
@@ -566,6 +569,7 @@ def populate_initial_data(app):
                     queue.active_tickets = 0
                     queue.current_ticket = 0
 
+            from datetime import timedelta  # Importado aqui para evitar erros anteriores
             tickets = [
                 {
                     'id': str(uuid.uuid4()),
@@ -743,7 +747,7 @@ def populate_initial_data(app):
             
             db.session.commit()
             app.logger.info("Tickets iniciais (físicos e digitais) inseridos com sucesso!")
-        except Exception as e:
+        except SQLAlchemyError as e:
             db.session.rollback()
             app.logger.error(f"Erro ao inserir tickets iniciais: {str(e)}")
             raise
