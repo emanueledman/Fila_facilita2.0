@@ -50,6 +50,7 @@ def initialize_firebase_if_needed():
 # Inicializar Firebase se ainda não estiver inicializado
 initialize_firebase_if_needed()
 
+
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
