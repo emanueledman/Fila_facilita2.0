@@ -11,20 +11,20 @@ from flask_cors import CORS
 from redis import Redis
 import os
 from dotenv import load_dotenv
+import firebase_admin
+from firebase_admin import credentials
 
 load_dotenv()
 
 db = SQLAlchemy()
 socketio = SocketIO()
 limiter = Limiter(key_func=get_remote_address)
-redis_client = Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379/0'))
 
 def create_app():
     app = Flask(__name__)
     
     # Configurações básicas
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', '1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0')
-    app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', '1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0')
     database_url = os.getenv('DATABASE_URL')
     if not database_url:
         app.logger.error("DATABASE_URL não encontrado nas variáveis de ambiente!")
@@ -33,9 +33,18 @@ def create_app():
         database_url = database_url.replace('postgres://', 'postgresql://')
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', '1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0')
     
-    # Atribuir redis_client ao app
-    app.redis_client = redis_client
+    # Configurar Redis
+    app.redis_client = Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379/0'))
+    
+    # Configurar Firebase
+    firebase_cred_path = os.getenv('FIREBASE_CREDENTIALS')
+    if firebase_cred_path and os.path.exists(firebase_cred_path):
+        cred = credentials.Certificate(firebase_cred_path)
+        firebase_admin.initialize_app(cred)
+    else:
+        app.logger.warning("FIREBASE_CREDENTIALS_PATH não encontrado ou inválido. Notificações push desativadas.")
     
     # Configurar logging
     handler = logging.handlers.RotatingFileHandler(

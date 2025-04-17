@@ -18,7 +18,7 @@ JWT_SECRET = os.getenv('JWT_SECRET_KEY', '1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s
 try:
     firebase_creds = os.getenv('FIREBASE_CREDENTIALS')
     if not firebase_creds:
-        raise ValueError("FIREBASE_CREDENTIALS não encontrado")
+        raise ValueError("FIREBASE_CREDENTIALS_JSON não encontrado")
     cred_dict = json.loads(firebase_creds)
     cred = credentials.Certificate(cred_dict)
     firebase_admin.initialize_app(cred)
