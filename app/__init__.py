@@ -139,7 +139,7 @@ def create_app():
         app.logger.info("Aplicação configurada para modo de produção")
     else:
         app.config['DEBUG'] = True
-        app.logger.info("Aplicação configurada para modo de desenvolvimento")
+        app.logger.info("Aplicação configurada para modo de desenvolvimento.")
 
     return app
 
