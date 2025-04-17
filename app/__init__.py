@@ -88,20 +88,18 @@ def create_app():
     with app.app_context():
         from .models import Institution, Queue, User, Ticket, Department
         
-        # Reiniciar banco apenas em desenvolvimento ou se explicitamente solicitado
-        reset_db = os.getenv('FLASK_ENV') != 'production' or os.getenv('RESET_DB') == 'true'
-        if reset_db:
-            db.drop_all()
-            db.create_all()
-            app.logger.info("Banco limpo e tabelas recriadas")
-            
-            # Inserir dados iniciais de forma idempotente
-            from .data_init import populate_initial_data
-            try:
-                populate_initial_data(app)
-                app.logger.info("Dados iniciais inseridos automaticamente")
-            except Exception as e:
-                app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
+        # SEMPRE reiniciar o banco de dados
+        db.drop_all()
+        db.create_all()
+        app.logger.info("Banco limpo e tabelas recriadas automaticamente")
+        
+        # Inserir dados iniciais de forma idempotente
+        from .data_init import populate_initial_data
+        try:
+            populate_initial_data(app)
+            app.logger.info("Dados iniciais inseridos automaticamente")
+        except Exception as e:
+            app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
         
         # Inicializar modelos de ML (opcional, pode ser comentado se o treinamento for apenas periódico)
         from .ml_models import wait_time_predictor, service_recommendation_predictor
