@@ -15,12 +15,10 @@ def train_ml_model_periodically():
         with app.app_context():
             try:
                 logger.info("Iniciando treinamento periódico dos modelos de ML.")
-                # Treinar WaitTimePredictor para cada fila
                 queues = Queue.query.all()
                 for queue in queues:
                     logger.info(f"Treinando WaitTimePredictor para queue_id={queue.id}")
                     wait_time_predictor.train(queue.id)
-                # Treinar ServiceRecommendationPredictor
                 logger.info("Treinando ServiceRecommendationPredictor")
                 service_recommendation_predictor.train()
                 logger.info("Treinamento periódico concluído.")
