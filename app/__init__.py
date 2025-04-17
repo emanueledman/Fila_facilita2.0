@@ -17,6 +17,7 @@ load_dotenv()
 db = SQLAlchemy()
 socketio = SocketIO()
 limiter = Limiter(key_func=get_remote_address)
+redis_client = Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379/0'))
 
 def create_app():
     app = Flask(__name__)
@@ -33,8 +34,8 @@ def create_app():
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
-    # Configurar Redis
-    app.redis_client = Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379/0'))
+    # Atribuir redis_client ao app
+    app.redis_client = redis_client
     
     # Configurar logging
     handler = logging.handlers.RotatingFileHandler(
