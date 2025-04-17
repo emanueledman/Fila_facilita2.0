@@ -46,18 +46,25 @@ def init_queue_routes(app):
     def list_queues():
         institutions = Institution.query.all()
         now = datetime.now()
-        current_weekday = now.strftime('%A')
+        current_weekday_str = now.strftime('%A')
+        
+        # Converter a string do dia para o enum correto
+        current_weekday_enum = getattr(Weekday, current_weekday_str.upper())
+        
         current_time = now.time()
         result = []
+        
         for inst in institutions:
             departments = Department.query.filter_by(institution_id=inst.id).all()
             queues = Queue.query.filter(Queue.department_id.in_([d.id for d in departments])).all()
             queue_data = []
+            
             for q in queues:
                 # Verificar status com QueueSchedule
                 schedule = QueueSchedule.query.filter_by(
-                    queue_id=q.id, weekday=current_weekday
+                    queue_id=q.id, weekday=current_weekday_enum
                 ).first()
+                
                 is_open = False
                 if schedule and not schedule.is_closed:
                     is_open = (
@@ -66,6 +73,7 @@ def init_queue_routes(app):
                         current_time <= schedule.end_time and
                         q.active_tickets < q.daily_limit
                     )
+                    
                 queue_data.append({
                     'id': q.id,
                     'service': q.service,
@@ -81,6 +89,7 @@ def init_queue_routes(app):
                     'num_counters': q.num_counters,
                     'status': 'Aberto' if is_open else 'Fechado'
                 })
+                
             result.append({
                 'institution': {
                     'id': inst.id,
@@ -91,6 +100,7 @@ def init_queue_routes(app):
                 },
                 'queues': queue_data
             })
+            
         logger.info(f"Lista de filas retornada: {len(result)} instituições encontradas.")
         return jsonify(result), 200
 
