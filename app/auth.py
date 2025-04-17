@@ -72,8 +72,8 @@ def require_auth(f):
             if firebase_initialized:
                 try:
                     decoded_token = auth.verify_id_token(token)
-                    request.user_id = decoded_token.get('uid')
-                    request.user_tipo = decoded_token.get('user_tipo', 'user')
+                    request.user_id = decoded_token['uid']  # Use notação de colchetes em vez de .get()
+                    request.user_tipo = decoded_token.get('user_tipo', 'user') if hasattr(decoded_token, 'get') else 'user'
                     logger.info(f"Autenticado via Firebase - UID: {request.user_id}")
                     return f(*args, **kwargs)
                 except Exception as firebase_error:
