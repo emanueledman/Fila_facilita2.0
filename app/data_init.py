@@ -1,5 +1,5 @@
 import uuid
-from datetime import time, datetime
+from datetime import time, datetime, timedelta
 from .models import Institution, Queue, User, Ticket, Department, UserRole, QueueSchedule, Weekday
 from . import db
 import os
@@ -64,7 +64,7 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.WEDNESDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
                                             {'weekday': Weekday.THURSDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                            {'weekday': Weekday.SATURDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
+                                            {'weekday': Weekday.SATURDAY, 'open_time': time(0, 0), 'end_time': time(23,59), 'is_closed': False},
                                             {'weekday': Weekday.SUNDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False}
                                         ]
                                     }
@@ -558,195 +558,194 @@ def populate_initial_data(app):
             raise
 
         try:
-            default_user = User.query.filter_by(email='default.user@facilita.com').first()
-            if not default_user:
-                raise ValueError("Usuário padrão não encontrado!")
+            # Desativar autoflush para inserção de tickets
+            with db.session.no_autoflush:
+                default_user = User.query.filter_by(email='default.user@facilita.com').first()
+                if not default_user:
+                    raise ValueError("Usuário padrão não encontrado!")
 
-            # Atualizar active_tickets para cada fila
-            for queue_id in queue_ids.values():
-                queue = Queue.query.get(queue_id)
-                if queue:
-                    queue.active_tickets = 0
-                    queue.current_ticket = 0
+                # Atualizar active_tickets para cada fila
+                for queue_id in queue_ids.values():
+                    queue = Queue.query.get(queue_id)
+                    if queue:
+                        queue.active_tickets = 0
+                        queue.current_ticket = 0
 
-            from datetime import timedelta  # Importado aqui para evitar erros anteriores
-            tickets = [
-                {
-                    'id': str(uuid.uuid4()),
-                    'queue_id': queue_ids.get('Consulta Geral_Consulta Geral'),
-                    'user_id': default_user.id,
-                    'ticket_number': 1,
-                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                    'status': 'Pendente',
-                    'priority': 0,
-                    'is_physical': False,
-                    'counter': None,
-                    'issued_at': datetime.utcnow(),
-                    'trade_available': False
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'queue_id': queue_ids.get('Consulta Geral_Consulta Geral'),
-                    'user_id': 'PRESENCIAL',
-                    'ticket_number': 2,
-                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                    'status': 'Pendente',
-                    'priority': 0,
-                    'is_physical': True,
-                    'counter': None,
-                    'issued_at': datetime.utcnow(),
-                    'expires_at': datetime.utcnow() + timedelta(hours=4),
-                    'trade_available': False
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'queue_id': queue_ids.get('Consulta Geral_Consulta Geral'),
-                    'user_id': default_user.id,
-                    'ticket_number': 3,
-                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                    'status': 'attended',
-                    'priority': 0,
-                    'is_physical': False,
-                    'counter': 1,
-                    'issued_at': datetime.utcnow(),
-                    'attended_at': datetime.utcnow(),
-                    'trade_available': False
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'queue_id': queue_ids.get('Urgência_Urgência'),
-                    'user_id': default_user.id,
-                    'ticket_number': 1,
-                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                    'status': 'Pendente',
-                    'priority': 0,
-                    'is_physical': False,
-                    'counter': None,
-                    'issued_at': datetime.utcnow(),
-                    'trade_available': False
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'queue_id': queue_ids.get('Urgência_Urgência'),
-                    'user_id': 'PRESENCIAL',
-                    'ticket_number': 2,
-                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                    'status': 'Pendente',
-                    'priority': 0,
-                    'is_physical': True,
-                    'counter': None,
-                    'issued_at': datetime.utcnow(),
-                    'expires_at': datetime.utcnow() + timedelta(hours=4),
-                    'trade_available': False
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'queue_id': queue_ids.get('Farmácia_Distribuição de Medicamentos'),
-                    'user_id': default_user.id,
-                    'ticket_number': 1,
-                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                    'status': 'Pendente',
-                    'priority': 0,
-                    'is_physical': False,
-                    'counter': None,
-                    'issued_at': datetime.utcnow(),
-                    'trade_available': False
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'queue_id': queue_ids.get('Secretaria Escolar_Matrículas'),
-                    'user_id': default_user.id,
-                    'ticket_number': 1,
-                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                    'status': 'Pendente',
-                    'priority': 0,
-                    'is_physical': False,
-                    'counter': None,
-                    'issued_at': datetime.utcnow(),
-                    'trade_available': False
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'queue_id': queue_ids.get('Atendimento Notarial_Autenticação de Documentos'),
-                    'user_id': default_user.id,
-                    'ticket_number': 1,
-                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                    'status': 'Pendente',
-                    'priority': 0,
-                    'is_physical': False,
-                    'counter': None,
-                    'issued_at': datetime.utcnow(),
-                    'trade_available': False
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'queue_id': queue_ids.get('Pediatria_Consulta Pediátrica'),
-                    'user_id': default_user.id,
-                    'ticket_number': 1,
-                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                    'status': 'Pendente',
-                    'priority': 0,
-                    'is_physical': False,
-                    'counter': None,
-                    'issued_at': datetime.utcnow(),
-                    'trade_available': False
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'queue_id': queue_ids.get('Administração Escolar_Inscrições'),
-                    'user_id': default_user.id,
-                    'ticket_number': 1,
-                    'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                    'status': 'Pendente',
-                    'priority': 0,
-                    'is_physical': False,
-                    'counter': None,
-                    'issued_at': datetime.utcnow(),
-                    'trade_available': False
-                }
-            ]
+                tickets = [
+                    {
+                        'id': str(uuid.uuid4()),
+                        'queue_id': queue_ids.get('Consulta Geral_Consulta Geral'),
+                        'user_id': default_user.id,
+                        'ticket_number': 1,
+                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
+                        'status': 'Pendente',
+                        'priority': 0,
+                        'is_physical': False,
+                        'counter': None,
+                        'issued_at': datetime.utcnow(),
+                        'trade_available': False
+                    },
+                    {
+                        'id': str(uuid.uuid4()),
+                        'queue_id': queue_ids.get('Consulta Geral_Consulta Geral'),
+                        'user_id': None,  # Alterado de 'PRESENCIAL' para None
+                        'ticket_number': 2,
+                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
+                        'status': 'Pendente',
+                        'priority': 0,
+                        'is_physical': True,
+                        'counter': None,
+                        'issued_at': datetime.utcnow(),
+                        'expires_at': datetime.utcnow() + timedelta(hours=4),
+                        'trade_available': False
+                    },
+                    {
+                        'id': str(uuid.uuid4()),
+                        'queue_id': queue_ids.get('Consulta Geral_Consulta Geral'),
+                        'user_id': default_user.id,
+                        'ticket_number': 3,
+                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
+                        'status': 'attended',
+                        'priority': 0,
+                        'is_physical': False,
+                        'counter': 1,
+                        'issued_at': datetime.utcnow(),
+                        'attended_at': datetime.utcnow(),
+                        'trade_available': False
+                    },
+                    {
+                        'id': str(uuid.uuid4()),
+                        'queue_id': queue_ids.get('Urgência_Urgência'),
+                        'user_id': default_user.id,
+                        'ticket_number': 1,
+                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
+                        'status': 'Pendente',
+                        'priority': 0,
+                        'is_physical': False,
+                        'counter': None,
+                        'issued_at': datetime.utcnow(),
+                        'trade_available': False
+                    },
+                    {
+                        'id': str(uuid.uuid4()),
+                        'queue_id': queue_ids.get('Urgência_Urgência'),
+                        'user_id': None,  # Alterado de 'PRESENCIAL' para None
+                        'ticket_number': 2,
+                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
+                        'status': 'Pendente',
+                        'priority': 0,
+                        'is_physical': True,
+                        'counter': None,
+                        'issued_at': datetime.utcnow(),
+                        'expires_at': datetime.utcnow() + timedelta(hours=4),
+                        'trade_available': False
+                    },
+                    {
+                        'id': str(uuid.uuid4()),
+                        'queue_id': queue_ids.get('Farmácia_Distribuição de Medicamentos'),
+                        'user_id': default_user.id,
+                        'ticket_number': 1,
+                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
+                        'status': 'Pendente',
+                        'priority': 0,
+                        'is_physical': False,
+                        'counter': None,
+                        'issued_at': datetime.utcnow(),
+                        'trade_available': False
+                    },
+                    {
+                        'id': str(uuid.uuid4()),
+                        'queue_id': queue_ids.get('Secretaria Escolar_Matrículas'),
+                        'user_id': default_user.id,
+                        'ticket_number': 1,
+                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
+                        'status': 'Pendente',
+                        'priority': 0,
+                        'is_physical': False,
+                        'counter': None,
+                        'issued_at': datetime.utcnow(),
+                        'trade_available': False
+                    },
+                    {
+                        'id': str(uuid.uuid4()),
+                        'queue_id': queue_ids.get('Atendimento Notarial_Autenticação de Documentos'),
+                        'user_id': default_user.id,
+                        'ticket_number': 1,
+                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
+                        'status': 'Pendente',
+                        'priority': 0,
+                        'is_physical': False,
+                        'counter': None,
+                        'issued_at': datetime.utcnow(),
+                        'trade_available': False
+                    },
+                    {
+                        'id': str(uuid.uuid4()),
+                        'queue_id': queue_ids.get('Pediatria_Consulta Pediátrica'),
+                        'user_id': default_user.id,
+                        'ticket_number': 1,
+                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
+                        'status': 'Pendente',
+                        'priority': 0,
+                        'is_physical': False,
+                        'counter': None,
+                        'issued_at': datetime.utcnow(),
+                        'trade_available': False
+                    },
+                    {
+                        'id': str(uuid.uuid4()),
+                        'queue_id': queue_ids.get('Administração Escolar_Inscrições'),
+                        'user_id': default_user.id,
+                        'ticket_number': 1,
+                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
+                        'status': 'Pendente',
+                        'priority': 0,
+                        'is_physical': False,
+                        'counter': None,
+                        'issued_at': datetime.utcnow(),
+                        'trade_available': False
+                    }
+                ]
 
-            for t in tickets:
-                if not t['queue_id']:
-                    app.logger.warning(f"Fila não encontrada para ticket: {t}")
-                    continue
+                for t in tickets:
+                    if not t['queue_id']:
+                        app.logger.warning(f"Fila não encontrada para ticket: {t}")
+                        continue
 
-                queue = Queue.query.get(t['queue_id'])
-                if not queue:
-                    app.logger.warning(f"Fila {t['queue_id']} não encontrada para ticket")
-                    continue
+                    queue = Queue.query.get(t['queue_id'])
+                    if not queue:
+                        app.logger.warning(f"Fila {t['queue_id']} não encontrada para ticket")
+                        continue
 
-                # Verificar se o ticket já existe
-                existing_ticket = Ticket.query.filter_by(
-                    queue_id=t['queue_id'], ticket_number=t['ticket_number']
-                ).first()
-                if existing_ticket:
-                    app.logger.info(f"Ticket {t['ticket_number']} na fila {t['queue_id']} já existe, pulando.")
-                    continue
+                    # Verificar se o ticket já existe
+                    existing_ticket = Ticket.query.filter_by(
+                        queue_id=t['queue_id'], ticket_number=t['ticket_number']
+                    ).first()
+                    if existing_ticket:
+                        app.logger.info(f"Ticket {t['ticket_number']} na fila {t['queue_id']} já existe, pulando.")
+                        continue
 
-                ticket = Ticket(
-                    id=t['id'],
-                    queue_id=t['queue_id'],
-                    user_id=t['user_id'],
-                    ticket_number=t['ticket_number'],
-                    qr_code=t['qr_code'],
-                    status=t['status'],
-                    priority=t['priority'],
-                    is_physical=t['is_physical'],
-                    counter=t['counter'],
-                    issued_at=t['issued_at'],
-                    expires_at=t.get('expires_at'),
-                    attended_at=t.get('attended_at'),
-                    trade_available=t['trade_available']
-                )
-                db.session.add(ticket)
-                if t['status'] == 'Pendente' and not t['is_physical']:
-                    queue.active_tickets += 1
-                elif t['status'] == 'Pendente' and t['is_physical']:
-                    queue.active_tickets += 1
+                    ticket = Ticket(
+                        id=t['id'],
+                        queue_id=t['queue_id'],
+                        user_id=t['user_id'],
+                        ticket_number=t['ticket_number'],
+                        qr_code=t['qr_code'],
+                        status=t['status'],
+                        priority=t['priority'],
+                        is_physical=t['is_physical'],
+                        counter=t['counter'],
+                        issued_at=t['issued_at'],
+                        expires_at=t.get('expires_at'),
+                        attended_at=t.get('attended_at'),
+                        trade_available=t['trade_available']
+                    )
+                    db.session.add(ticket)
+                    if t['status'] == 'Pendente':
+                        queue.active_tickets += 1  # Incrementar para tickets presenciais e não presenciais
             
-            db.session.commit()
-            app.logger.info("Tickets iniciais (físicos e digitais) inseridos com sucesso!")
+                db.session.commit()
+                app.logger.info("Tickets iniciais (físicos e digitais) inseridos com sucesso!")
         except SQLAlchemyError as e:
             db.session.rollback()
             app.logger.error(f"Erro ao inserir tickets iniciais: {str(e)}")

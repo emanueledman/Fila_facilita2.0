@@ -69,7 +69,7 @@ class Ticket(db.Model):
     __tablename__ = 'ticket'
     id = Column(String(36), primary_key=True, index=True)
     queue_id = Column(String(36), ForeignKey('queue.id'), nullable=False, index=True)
-    user_id = Column(String(36), ForeignKey('user.id'), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey('user.id'), nullable=True, index=True)  # Alterado para nullable=True
     ticket_number = Column(Integer, nullable=False)
     qr_code = Column(String(50), nullable=False, unique=True)
     priority = Column(Integer, default=0)
@@ -139,11 +139,11 @@ class User(db.Model):
 
 class QueueSchedule(db.Model):
     __tablename__ = 'queue_schedules'
-    id = Column(String(36), primary_key=True)  # Alterado de Integer para String(36)
+    id = Column(String(36), primary_key=True)
     queue_id = Column(String(36), ForeignKey('queue.id'), nullable=False)
     weekday = Column(Enum(Weekday), nullable=False)
-    open_time = Column(Time, nullable=True)  # Alterado para nullable=True
-    end_time = Column(Time, nullable=True)   # Alterado para nullable=True
+    open_time = Column(Time, nullable=True)
+    end_time = Column(Time, nullable=True)
     is_closed = Column(Boolean, default=False)
     queue = relationship('Queue', back_populates='schedules')
 
