@@ -72,14 +72,9 @@ def require_auth(f):
             if firebase_initialized:
                 try:
                     decoded_token = auth.verify_id_token(token)
-                    # Usar acesso direto ao dicionário em vez de .get()
-                    request.user_id = decoded_token['uid'] if 'uid' in decoded_token else None
-                    
-                    # Verificar se user_tipo existe no token
-                    if 'user_tipo' in decoded_token:
-                        request.user_tipo = decoded_token['user_tipo']
-                    else:
-                        request.user_tipo = 'user'  # valor padrão
+                    # Definir user_id e user_tipo
+                    request.user_id = decoded_token.get('uid')
+                    request.user_tipo = decoded_token.get('user_tipo', 'user')  # valor padrão
                         
                     logger.info(f"Autenticado via Firebase - UID: {request.user_id}")
                     return f(*args, **kwargs)
@@ -89,10 +84,10 @@ def require_auth(f):
             
             # 2. Tentativa com JWT local
             try:
-                # Tentar com múltiplos algoritmos
-                payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256', 'RS256'])
-                request.user_id = payload['user_id'] if 'user_id' in payload else None
-                request.user_tipo = payload['user_tipo'] if 'user_tipo' in payload else 'user'
+                # Tentar apenas com HS256 para simplificar
+                payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+                request.user_id = payload.get('user_id')
+                request.user_tipo = payload.get('user_tipo', 'user')
                 logger.info(f"Autenticado via JWT - User ID: {request.user_id}")
                 return f(*args, **kwargs)
             except jwt.ExpiredSignatureError:
