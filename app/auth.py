@@ -4,23 +4,21 @@ import os
 from functools import wraps
 import firebase_admin
 from firebase_admin import auth, credentials
-import json
 import logging
 from datetime import datetime, timedelta
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Use a mesma chave secreta para JWT em todo o sistema
-JWT_SECRET = os.getenv('SECRET_KEY', '00974655')
+# Use a chave secreta para JWT do .env
+JWT_SECRET = os.getenv('JWT_SECRET_KEY', '1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0')
 
 # Configuração do Firebase
 try:
-    firebase_creds = os.getenv('FIREBASE_CREDENTIALS')
-    if not firebase_creds:
-        raise ValueError("FIREBASE_CREDENTIALS não encontrado")
-    cred_dict = json.loads(firebase_creds)
-    cred = credentials.Certificate(cred_dict)
+    firebase_cred_path = os.getenv('FIREBASE_CREDENTIALS_PATH')
+    if not firebase_cred_path or not os.path.exists(firebase_cred_path):
+        raise ValueError("FIREBASE_CREDENTIALS_PATH não encontrado ou inválido")
+    cred = credentials.Certificate(firebase_cred_path)
     firebase_admin.initialize_app(cred)
     logger.info("Firebase inicializado com sucesso")
 except Exception as e:

@@ -48,7 +48,7 @@ def init_user_routes(app):
                 logger.warning(f"Usuário {email} tem papel inválido: {user.user_role.value}")
                 return jsonify({"error": "Acesso restrito a administradores de departamento ou instituição"}), 403
 
-            secret_key = os.getenv('SECRET_KEY', '00974655')
+            secret_key = os.getenv('JWT_SECRET_KEY', '1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0')
             token = jwt.encode({
                 'user_id': user.id,
                 'user_role': user.user_role.value,
@@ -124,4 +124,3 @@ def init_user_routes(app):
         except Exception as e:
             logger.error(f"Erro ao processar login para email={request.json.get('email', 'unknown')}: {str(e)}")
             return jsonify({"error": "Erro interno no servidor"}), 500
-    
