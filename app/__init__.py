@@ -13,6 +13,7 @@ import os
 from dotenv import load_dotenv
 import firebase_admin
 from firebase_admin import credentials
+import json
 
 load_dotenv()
 
@@ -39,12 +40,27 @@ def create_app():
     app.redis_client = Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379/0'))
     
     # Configurar Firebase
-    firebase_cred_path = os.getenv('FIREBASE_CREDENTIALS')
-    if firebase_cred_path and os.path.exists(firebase_cred_path):
-        cred = credentials.Certificate(firebase_cred_path)
-        firebase_admin.initialize_app(cred)
+    firebase_creds = os.getenv('FIREBASE_CREDENTIALS')
+    if firebase_creds:
+        try:
+            # Try to parse as JSON string first
+            try:
+                cred_dict = json.loads(firebase_creds)
+                cred = credentials.Certificate(cred_dict)
+                firebase_admin.initialize_app(cred)
+                app.logger.info("Firebase inicializado com sucesso via JSON string")
+            except json.JSONDecodeError:
+                # If not a JSON string, try as file path
+                if os.path.exists(firebase_creds):
+                    cred = credentials.Certificate(firebase_creds)
+                    firebase_admin.initialize_app(cred)
+                    app.logger.info("Firebase inicializado com sucesso via arquivo")
+                else:
+                    app.logger.warning("FIREBASE_CREDENTIALS não é um JSON válido nem um caminho de arquivo existente")
+        except Exception as e:
+            app.logger.error(f"Erro ao inicializar Firebase: {str(e)}")
     else:
-        app.logger.warning("FIREBASE_CREDENTIALS_PATH não encontrado ou inválido. Notificações push desativadas.")
+        app.logger.warning("FIREBASE_CREDENTIALS não encontrado. Notificações push desativadas.")
     
     # Configurar logging
     handler = logging.handlers.RotatingFileHandler(
