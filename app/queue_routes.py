@@ -108,12 +108,25 @@ def init_queue_routes(app):
     @require_auth
     def suggest_service():
         service = request.args.get('service')
-        user_lat = request.args.get('lat', type=float)
-        user_lon = request.args.get('lon', type=float)
+        user_lat = request.args.get('lat')
+        user_lon = request.args.get('lon')
 
         if not service:
             logger.warning("Parâmetro 'service' não fornecido na requisição de sugestão.")
             return jsonify({'error': "O parâmetro 'service' é obrigatório."}), 400
+
+        if user_lat is not None:
+            try:
+                user_lat = float(user_lat)
+            except (ValueError, TypeError):
+                logger.warning(f"Latitude inválida: {user_lat}")
+                return jsonify({'error': 'Latitude deve ser um número'}), 400
+        if user_lon is not None:
+            try:
+                user_lon = float(user_lon)
+            except (ValueError, TypeError):
+                logger.warning(f"Longitude inválida: {user_lon}")
+                return jsonify({'error': 'Longitude deve ser um número'}), 400
 
         try:
             suggestions = suggest_service_locations(service, user_lat, user_lon)
@@ -128,16 +141,23 @@ def init_queue_routes(app):
     def update_location():
         user_id = request.user_id
         data = request.get_json()
-        latitude = data.get('latitude', type=float)
-        longitude = data.get('longitude', type=float)
+        latitude = data.get('latitude')
+        longitude = data.get('longitude')
+        email = data.get('email')
 
         if latitude is None or longitude is None:
             logger.error(f"Latitude ou longitude não fornecidos por user_id={user_id}")
             return jsonify({'error': 'Latitude e longitude são obrigatórios'}), 400
 
+        try:
+            latitude = float(latitude)
+            longitude = float(longitude)
+        except (ValueError, TypeError):
+            logger.error(f"Latitude ou longitude inválidos: lat={latitude}, lon={longitude}")
+            return jsonify({'error': 'Latitude e longitude devem ser números'}), 400
+
         user = User.query.get(user_id)
         if not user:
-            email = data.get('email')
             if not email:
                 logger.error(f"Email não encontrado para user_id={user_id}")
                 return jsonify({'error': 'Email é obrigatório para criar um novo usuário'}), 400
@@ -508,12 +528,19 @@ def init_queue_routes(app):
         """
         data = request.get_json() or {}
         qr_code = data.get('qr_code')
-        ticket_number = data.get('ticket_number', type=int)
+        ticket_number = data.get('ticket_number')
         queue_id = data.get('queue_id')
 
         if not qr_code and not (ticket_number and queue_id):
             logger.warning("Requisição de validação sem qr_code ou ticket_number/queue_id")
             return jsonify({'error': 'Forneça qr_code ou ticket_number e queue_id'}), 400
+
+        if ticket_number is not None:
+            try:
+                ticket_number = int(ticket_number)
+            except (ValueError, TypeError):
+                logger.warning(f"ticket_number inválido: {ticket_number}")
+                return jsonify({'error': 'ticket_number deve ser um número inteiro'}), 400
 
         try:
             if qr_code:
@@ -721,13 +748,20 @@ def init_queue_routes(app):
     @require_auth
     def calculate_distance():
         data = request.get_json()
-        user_lat = data.get('latitude', type=float)
-        user_lon = data.get('longitude', type=float)
+        user_lat = data.get('latitude')
+        user_lon = data.get('longitude')
         institution_id = data.get('institution_id')
 
         if not all([user_lat, user_lon, institution_id]):
             logger.warning("Requisição de distância sem latitude, longitude ou institution_id")
             return jsonify({'error': 'Latitude, longitude e institution_id são obrigatórios'}), 400
+
+        try:
+            user_lat = float(user_lat)
+            user_lon = float(user_lon)
+        except (ValueError, TypeError):
+            logger.warning(f"Latitude ou longitude inválidos: lat={user_lat}, lon={user_lon}")
+            return jsonify({'error': 'Latitude e longitude devem ser números'}), 400
 
         institution = Institution.query.get(institution_id)
         if not institution:
@@ -798,12 +832,17 @@ def init_queue_routes(app):
                 return jsonify({'error': 'Localização inválida'}), 400
             filters['location'] = location
 
-        max_wait_time = request.args.get('max_wait_time', type=int)
+        max_wait_time = request.args.get('max_wait_time')
         if max_wait_time is not None:
-            if max_wait_time < 0 or max_wait_time > 1440:
+            try:
+                max_wait_time = int(max_wait_time)
+                if max_wait_time < 0 or max_wait_time > 1440:
+                    logger.warning(f"Tempo de espera inválido: {max_wait_time}")
+                    return jsonify({'error': 'Tempo de espera inválido'}), 400
+                filters['max_wait_time'] = max_wait_time
+            except (ValueError, TypeError):
                 logger.warning(f"Tempo de espera inválido: {max_wait_time}")
-                return jsonify({'error': 'Tempo de espera inválido'}), 400
-            filters['max_wait_time'] = max_wait_time
+                return jsonify({'error': 'Tempo de espera deve ser um número inteiro'}), 400
 
         service_name = request.args.get('service_name')
         if service_name:
@@ -815,11 +854,21 @@ def init_queue_routes(app):
         is_open = request.args.get('is_open', 'true').lower() == 'true'
         filters['is_open'] = is_open
 
-        filters['page'] = request.args.get('page', 1, type=int)
-        filters['per_page'] = request.args.get('per_page', 20, type=int)
-        if filters['per_page'] > 100:
-            logger.warning(f"Per_page excede o máximo: {filters['per_page']}")
+        page = request.args.get('page', '1')
+        per_page = request.args.get('per_page', '20')
+        try:
+            page = int(page)
+            per_page = int(per_page)
+        except (ValueError, TypeError):
+            logger.warning(f"Página ou per_page inválidos: page={page}, per_page={per_page}")
+            return jsonify({'error': 'Página e itens por página devem ser números inteiros'}), 400
+
+        if per_page > 100:
+            logger.warning(f"Per_page excede o máximo: {per_page}")
             return jsonify({'error': 'Máximo de itens por página é 100'}), 400
+
+        filters['page'] = page
+        filters['per_page'] = per_page
 
         try:
             result = get_service_search_results(institution_id, filters)
