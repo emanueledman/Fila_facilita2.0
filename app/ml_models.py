@@ -59,7 +59,7 @@ try:
                 start_date = datetime.utcnow() - timedelta(days=days)
                 tickets = Ticket.query.filter(
                     Ticket.queue_id == queue_id,
-                    Ticket.status == 'attended',
+                    Ticket.status == 'Atendido',
                     Ticket.issued_at >= start_date,
                     Ticket.service_time.isnot(None),
                     Ticket.service_time > 0

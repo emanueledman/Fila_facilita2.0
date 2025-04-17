@@ -29,12 +29,31 @@ def populate_initial_data(app):
                                 'sector': 'Saúde',
                                 'queues': [
                                     {
+                                        'id': '80746d76-f7f5-4c79-acd1-4173c1737a5a',
                                         'service': 'Consulta Geral',
                                         'prefix': 'A',
                                         'open_time': time(7, 0),
                                         'end_time': time(17, 0),
                                         'daily_limit': 50,
                                         'num_counters': 5,
+                                        'schedules': [
+                                            {'weekday': Weekday.MONDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                            {'weekday': Weekday.TUESDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                            {'weekday': Weekday.THURSDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                            {'weekday': Weekday.FRIDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                            {'weekday': Weekday.SATURDAY, 'open_time': time(7, 0), 'end_time': time(12, 0), 'is_closed': False},
+                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                        ]
+                                    },
+                                    {
+                                        'id': '21591b32-cbc4-424a-882f-3db65d134040',
+                                        'service': 'Triagem',
+                                        'prefix': 'T',
+                                        'open_time': time(7, 0),
+                                        'end_time': time(17, 0),
+                                        'daily_limit': 50,
+                                        'num_counters': 3,
                                         'schedules': [
                                             {'weekday': Weekday.MONDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
                                             {'weekday': Weekday.TUESDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
@@ -52,6 +71,7 @@ def populate_initial_data(app):
                                 'sector': 'Saúde',
                                 'queues': [
                                     {
+                                        'id': '72282889-e677-481a-9894-1c5bc68c2c44',
                                         'service': 'Urgência',
                                         'prefix': 'B',
                                         'open_time': time(0, 0),
@@ -64,7 +84,7 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.WEDNESDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
                                             {'weekday': Weekday.THURSDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                            {'weekday': Weekday.SATURDAY, 'open_time': time(0, 0), 'end_time': time(23,59), 'is_closed': False},
+                                            {'weekday': Weekday.SATURDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
                                             {'weekday': Weekday.SUNDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False}
                                         ]
                                     }
@@ -75,6 +95,7 @@ def populate_initial_data(app):
                                 'sector': 'Saúde',
                                 'queues': [
                                     {
+                                        'id': '321589c1-1688-4684-b50a-3febdd17ea23',
                                         'service': 'Distribuição de Medicamentos',
                                         'prefix': 'C',
                                         'open_time': time(8, 0),
@@ -107,6 +128,7 @@ def populate_initial_data(app):
                                 'sector': 'Educação',
                                 'queues': [
                                     {
+                                        'id': '066a3c0c-54e1-4c35-81d9-dcff210bd2d5',
                                         'service': 'Matrículas',
                                         'prefix': 'M',
                                         'open_time': time(8, 0),
@@ -124,6 +146,7 @@ def populate_initial_data(app):
                                         ]
                                     },
                                     {
+                                        'id': '06c9b02c-bd01-4bb5-9f98-2bc56cbadf3a',
                                         'service': 'Declarações',
                                         'prefix': 'D',
                                         'open_time': time(8, 0),
@@ -156,6 +179,7 @@ def populate_initial_data(app):
                                 'sector': 'Serviços Públicos',
                                 'queues': [
                                     {
+                                        'id': '1862b78e-b091-4969-882f-c1f91c8dbd97',
                                         'service': 'Autenticação de Documentos',
                                         'prefix': 'N',
                                         'open_time': time(8, 0),
@@ -173,6 +197,7 @@ def populate_initial_data(app):
                                         ]
                                     },
                                     {
+                                        'id': '4f3118f4-8bcb-4339-92c1-d8a81441d87f',
                                         'service': 'Registo Civil',
                                         'prefix': 'R',
                                         'open_time': time(8, 0),
@@ -205,6 +230,7 @@ def populate_initial_data(app):
                                 'sector': 'Saúde',
                                 'queues': [
                                     {
+                                        'id': '9c5fda76-2459-4622-b591-4180a4088d50',
                                         'service': 'Consulta Pediátrica',
                                         'prefix': 'P',
                                         'open_time': time(7, 30),
@@ -228,6 +254,7 @@ def populate_initial_data(app):
                                 'sector': 'Saúde',
                                 'queues': [
                                     {
+                                        'id': 'cccc41b7-60bb-47ff-955e-a5f71ae8827e',
                                         'service': 'Consulta Pré-Natal',
                                         'prefix': 'M',
                                         'open_time': time(8, 0),
@@ -260,6 +287,7 @@ def populate_initial_data(app):
                                 'sector': 'Educação',
                                 'queues': [
                                     {
+                                        'id': str(uuid.uuid4()),  # Fila extra para manter a estrutura original
                                         'service': 'Inscrições',
                                         'prefix': 'I',
                                         'open_time': time(8, 0),
@@ -329,7 +357,7 @@ def populate_initial_data(app):
                                 continue
 
                             queue = Queue(
-                                id=str(uuid.uuid4()),
+                                id=q['id'],
                                 department_id=department.id,
                                 service=q['service'],
                                 prefix=q['prefix'],
@@ -572,13 +600,14 @@ def populate_initial_data(app):
                         queue.current_ticket = 0
 
                 tickets = [
+                    # Tickets existentes, ajustados para consistência
                     {
                         'id': str(uuid.uuid4()),
                         'queue_id': queue_ids.get('Consulta Geral_Consulta Geral'),
                         'user_id': default_user.id,
                         'ticket_number': 1,
                         'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'Pendente',
+                        'status': 'waiting',
                         'priority': 0,
                         'is_physical': False,
                         'counter': None,
@@ -588,10 +617,10 @@ def populate_initial_data(app):
                     {
                         'id': str(uuid.uuid4()),
                         'queue_id': queue_ids.get('Consulta Geral_Consulta Geral'),
-                        'user_id': None,  # Alterado de 'PRESENCIAL' para None
+                        'user_id': None,
                         'ticket_number': 2,
                         'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'Pendente',
+                        'status': 'waiting',
                         'priority': 0,
                         'is_physical': True,
                         'counter': None,
@@ -605,12 +634,13 @@ def populate_initial_data(app):
                         'user_id': default_user.id,
                         'ticket_number': 3,
                         'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'attended',
+                        'status': 'Atendido',
                         'priority': 0,
                         'is_physical': False,
                         'counter': 1,
-                        'issued_at': datetime.utcnow(),
-                        'attended_at': datetime.utcnow(),
+                        'issued_at': datetime.utcnow() - timedelta(days=1),
+                        'attended_at': datetime.utcnow() - timedelta(hours=1),
+                        'service_time': 15.0,
                         'trade_available': False
                     },
                     {
@@ -619,7 +649,7 @@ def populate_initial_data(app):
                         'user_id': default_user.id,
                         'ticket_number': 1,
                         'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'Pendente',
+                        'status': 'waiting',
                         'priority': 0,
                         'is_physical': False,
                         'counter': None,
@@ -629,14 +659,16 @@ def populate_initial_data(app):
                     {
                         'id': str(uuid.uuid4()),
                         'queue_id': queue_ids.get('Urgência_Urgência'),
-                        'user_id': None,  # Alterado de 'PRESENCIAL' para None
+                        'user_id': None,
                         'ticket_number': 2,
                         'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'Pendente',
+                        'status': 'Atendido',
                         'priority': 0,
                         'is_physical': True,
-                        'counter': None,
-                        'issued_at': datetime.utcnow(),
+                        'counter': 1,
+                        'issued_at': datetime.utcnow() - timedelta(days=1),
+                        'attended_at': datetime.utcnow() - timedelta(hours=2),
+                        'service_time': 12.0,
                         'expires_at': datetime.utcnow() + timedelta(hours=4),
                         'trade_available': False
                     },
@@ -646,7 +678,7 @@ def populate_initial_data(app):
                         'user_id': default_user.id,
                         'ticket_number': 1,
                         'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'Pendente',
+                        'status': 'waiting',
                         'priority': 0,
                         'is_physical': False,
                         'counter': None,
@@ -659,7 +691,7 @@ def populate_initial_data(app):
                         'user_id': default_user.id,
                         'ticket_number': 1,
                         'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'Pendente',
+                        'status': 'waiting',
                         'priority': 0,
                         'is_physical': False,
                         'counter': None,
@@ -672,7 +704,7 @@ def populate_initial_data(app):
                         'user_id': default_user.id,
                         'ticket_number': 1,
                         'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'Pendente',
+                        'status': 'waiting',
                         'priority': 0,
                         'is_physical': False,
                         'counter': None,
@@ -685,7 +717,7 @@ def populate_initial_data(app):
                         'user_id': default_user.id,
                         'ticket_number': 1,
                         'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'Pendente',
+                        'status': 'waiting',
                         'priority': 0,
                         'is_physical': False,
                         'counter': None,
@@ -698,7 +730,7 @@ def populate_initial_data(app):
                         'user_id': default_user.id,
                         'ticket_number': 1,
                         'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'Pendente',
+                        'status': 'waiting',
                         'priority': 0,
                         'is_physical': False,
                         'counter': None,
@@ -706,6 +738,36 @@ def populate_initial_data(app):
                         'trade_available': False
                     }
                 ]
+
+                # Adicionar 10 tickets válidos para cada uma das 10 filas dos logs
+                for queue_id in [
+                    '80746d76-f7f5-4c79-acd1-4173c1737a5a',  # Consulta Geral
+                    '72282889-e677-481a-9894-1c5bc68c2c44',  # Urgência
+                    '21591b32-cbc4-424a-882f-3db65d134040',  # Triagem
+                    '066a3c0c-54e1-4c35-81d9-dcff210bd2d5',  # Matrículas
+                    '06c9b02c-bd01-4bb5-9f98-2bc56cbadf3a',  # Declarações
+                    '1862b78e-b091-4969-882f-c1f91c8dbd97',  # Autenticação de Documentos
+                    '321589c1-1688-4684-b50a-3febdd17ea23',  # Distribuição de Medicamentos
+                    '4f3118f4-8bcb-4339-92c1-d8a81441d87f',  # Registo Civil
+                    '9c5fda76-2459-4622-b591-4180a4088d50',  # Consulta Pediátrica
+                    'cccc41b7-60bb-47ff-955e-a5f71ae8827e'   # Consulta Pré-Natal
+                ]:
+                    for i in range(10):
+                        tickets.append({
+                            'id': str(uuid.uuid4()),
+                            'queue_id': queue_id,
+                            'user_id': default_user.id,
+                            'ticket_number': i + 4,  # Evitar conflito com tickets existentes
+                            'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
+                            'status': 'Atendido',
+                            'priority': 0,
+                            'is_physical': False,
+                            'counter': 1,
+                            'issued_at': datetime.utcnow() - timedelta(days=i + 1),
+                            'Atendido_at': datetime.utcnow() - timedelta(days=i + 1, hours=1),
+                            'service_time': 10.0 + i * 2.0,  # Varia entre 10.0 e 28.0 minutos
+                            'trade_available': False
+                        })
 
                 for t in tickets:
                     if not t['queue_id']:
@@ -738,11 +800,12 @@ def populate_initial_data(app):
                         issued_at=t['issued_at'],
                         expires_at=t.get('expires_at'),
                         attended_at=t.get('attended_at'),
+                        service_time=t.get('service_time'),
                         trade_available=t['trade_available']
                     )
                     db.session.add(ticket)
-                    if t['status'] == 'Pendente':
-                        queue.active_tickets += 1  # Incrementar para tickets presenciais e não presenciais
+                    if t['status'] == 'waiting':
+                        queue.active_tickets += 1
             
                 db.session.commit()
                 app.logger.info("Tickets iniciais (físicos e digitais) inseridos com sucesso!")
