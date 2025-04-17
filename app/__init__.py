@@ -100,17 +100,29 @@ def create_app():
             app.logger.info("Dados iniciais inseridos automaticamente")
         except Exception as e:
             app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
+            raise  # Re-lançar para depuração no Render
         
-        # Inicializar modelos de ML (opcional, pode ser comentado se o treinamento for apenas periódico)
-        from .ml_models import wait_time_predictor, service_recommendation_predictor
+        # Inicializar modelos de ML
+        app.logger.debug("Tentando importar preditores de ML")
+        try:
+            from .ml_models import wait_time_predictor, service_recommendation_predictor
+            app.logger.info("Preditores de ML importados com sucesso")
+        except ImportError as e:
+            app.logger.error(f"Erro ao importar preditores de ML: {e}")
+            raise
+        
+        app.logger.debug("Iniciando treinamento dos modelos de ML")
         try:
             queues = Queue.query.all()
             for queue in queues:
+                app.logger.debug(f"Treinando WaitTimePredictor para queue_id={queue.id}")
                 wait_time_predictor.train(queue.id)
+            app.logger.debug("Treinando ServiceRecommendationPredictor")
             service_recommendation_predictor.train()
             app.logger.info("Modelos de ML inicializados na startup")
         except Exception as e:
             app.logger.error(f"Erro ao inicializar modelos de ML: {str(e)}")
+            # Não lançar exceção aqui para permitir que a aplicação continue
     
     # Registrar rotas
     from .routes import init_routes
