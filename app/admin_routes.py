@@ -1,6 +1,6 @@
 from flask import jsonify, request, send_file
 from . import db, socketio
-from .models import User, Queue, Ticket, Department, Institution, UserRole
+from .models import User, Queue, Ticket, Department, Institution, UserRole, QueueSchedule
 from .auth import require_auth
 from .services import QueueService
 import logging
@@ -9,11 +9,26 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 import bcrypt
 import io
+import json
+import re
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def init_admin_routes(app):
+    def emit_dashboard_update(institution_id, queue_id, event_type, data):
+        """Função auxiliar para emitir atualizações ao painel via WebSocket."""
+        try:
+            socketio.emit('dashboard_update', {
+                'institution_id': institution_id,
+                'queue_id': queue_id,
+                'event_type': event_type,
+                'data': data
+            }, namespace='/dashboard')
+            logger.info(f"Atualização de painel emitida: institution_id={institution_id}, event_type={event_type}")
+        except Exception as e:
+            logger.error(f"Erro ao emitir atualização de painel: {str(e)}")
+
     @app.route('/api/admin/institutions', methods=['POST'])
     @require_auth
     def create_institution():
@@ -27,6 +42,17 @@ def init_admin_routes(app):
         if not data or not all(f in data for f in required):
             logger.warning("Campos obrigatórios faltando na criação de instituição")
             return jsonify({'error': 'Campos obrigatórios faltando: name, location, latitude, longitude'}), 400
+
+        # Validações adicionais
+        if not re.match(r'^[A-Za-zÀ-ÿ\s0-9.,-]{1,100}$', data['name']):
+            logger.warning(f"Nome inválido para instituição: {data['name']}")
+            return jsonify({'error': 'Nome da instituição inválido'}), 400
+        if not (-90 <= data['latitude'] <= 90):
+            logger.warning(f"Latitude inválida: {data['latitude']}")
+            return jsonify({'error': 'Latitude deve estar entre -90 e 90'}), 400
+        if not (-180 <= data['longitude'] <= 180):
+            logger.warning(f"Longitude inválida: {data['longitude']}")
+            return jsonify({'error': 'Longitude deve estar entre -180 e 180'}), 400
 
         if Institution.query.filter_by(name=data['name']).first():
             logger.warning(f"Instituição com nome {data['name']} já existe")
@@ -81,6 +107,17 @@ def init_admin_routes(app):
         if not data:
             logger.warning("Nenhum dado fornecido para atualização da instituição")
             return jsonify({'error': 'Nenhum dado fornecido para atualização'}), 400
+
+        # Validações
+        if 'name' in data and not re.match(r'^[A-Za-zÀ-ÿ\s0-9.,-]{1,100}$', data['name']):
+            logger.warning(f"Nome inválido para instituição: {data['name']}")
+            return jsonify({'error': 'Nome da instituição inválido'}), 400
+        if 'latitude' in data and not (-90 <= data['latitude'] <= 90):
+            logger.warning(f"Latitude inválida: {data['latitude']}")
+            return jsonify({'error': 'Latitude deve estar entre -90 e 90'}), 400
+        if 'longitude' in data and not (-180 <= data['longitude'] <= 180):
+            logger.warning(f"Longitude inválida: {data['longitude']}")
+            return jsonify({'error': 'Longitude deve estar entre -180 e 180'}), 400
 
         try:
             institution.name = data.get('name', institution.name)
@@ -169,6 +206,14 @@ def init_admin_routes(app):
             logger.warning("Campos obrigatórios faltando na criação de admin de instituição")
             return jsonify({'error': 'Campos obrigatórios faltando: email, name, password'}), 400
 
+        # Validações
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', data['email']):
+            logger.warning(f"Email inválido: {data['email']}")
+            return jsonify({'error': 'Email inválido'}), 400
+        if len(data['password']) < 8:
+            logger.warning("Senha muito curta fornecida na criação de admin")
+            return jsonify({'error': 'A senha deve ter pelo menos 8 caracteres'}), 400
+
         if User.query.filter_by(email=data['email']).first():
             logger.warning(f"Usuário com email {data['email']} já existe")
             return jsonify({'error': 'Usuário com este email já existe'}), 400
@@ -232,6 +277,14 @@ def init_admin_routes(app):
         if not data:
             logger.warning("Nenhum dado fornecido para atualização do gestor")
             return jsonify({'error': 'Nenhum dado fornecido para atualização'}), 400
+
+        # Validações
+        if 'email' in data and not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', data['email']):
+            logger.warning(f"Email inválido: {data['email']}")
+            return jsonify({'error': 'Email inválido'}), 400
+        if 'password' in data and len(data['password']) < 8:
+            logger.warning("Senha muito curta fornecida na atualização de gestor")
+            return jsonify({'error': 'A senha deve ter pelo menos 8 caracteres'}), 400
 
         try:
             if 'email' in data and data['email'] != target_user.email:
@@ -342,6 +395,14 @@ def init_admin_routes(app):
             logger.warning("Campos obrigatórios faltando na criação de departamento")
             return jsonify({'error': 'Campos obrigatórios faltando: name, sector'}), 400
 
+        # Validação
+        if not re.match(r'^[A-Za-zÀ-ÿ\s0-9.,-]{1,100}$', data['name']):
+            logger.warning(f"Nome inválido para departamento: {data['name']}")
+            return jsonify({'error': 'Nome do departamento inválido'}), 400
+        if not re.match(r'^[A-Za-zÀ-ÿ\s]{1,50}$', data['sector']):
+            logger.warning(f"Setor inválido: {data['sector']}")
+            return jsonify({'error': 'Setor inválido'}), 400
+
         if Department.query.filter_by(institution_id=institution_id, name=data['name']).first():
             logger.warning(f"Departamento com nome {data['name']} já existe na instituição {institution_id}")
             return jsonify({'error': 'Departamento com este nome já existe'}), 400
@@ -398,6 +459,14 @@ def init_admin_routes(app):
             logger.warning("Campos obrigatórios faltando na criação de usuário de departamento")
             return jsonify({'error': 'Campos obrigatórios faltando: email, name, password, role'}), 400
 
+        # Validações
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', data['email']):
+            logger.warning(f"Email inválido: {data['email']}")
+            return jsonify({'error': 'Email inválido'}), 400
+        if len(data['password']) < 8:
+            logger.warning("Senha muito curta fornecida na criação de usuário")
+            return jsonify({'error': 'A senha deve ter pelo menos 8 caracteres'}), 400
+
         role = data['role'].upper()
         if role not in [UserRole.USER.value, UserRole.DEPARTMENT_ADMIN.value]:
             logger.warning(f"Role inválido fornecido: {role}")
@@ -451,6 +520,14 @@ def init_admin_routes(app):
             logger.warning(f"Instituição {institution_id} não encontrada")
             return jsonify({'error': 'Instituição não encontrada'}), 404
 
+        cache_key = f'calls:{institution_id}'
+        try:
+            cached_data = app.redis_client.get(cache_key)
+            if cached_data:
+                return jsonify(json.loads(cached_data))
+        except Exception as e:
+            logger.warning(f"Erro ao acessar Redis para chamadas {institution_id}: {str(e)}")
+
         try:
             departments = Department.query.filter_by(institution_id=institution_id).all()
             department_ids = [d.id for d in departments]
@@ -467,7 +544,7 @@ def init_admin_routes(app):
                 queue = Queue.query.get(ticket.queue_id)
                 if not queue or not queue.department:
                     continue
-                response.append({
+                call_data = {
                     'ticket_id': ticket.id,
                     'ticket_number': f"{queue.prefix}{ticket.ticket_number}",
                     'service': queue.service,
@@ -475,67 +552,32 @@ def init_admin_routes(app):
                     'counter': f"Guichê {ticket.counter:02d}" if ticket.counter else "N/A",
                     'status': ticket.status,
                     'called_at': ticket.attended_at.isoformat() if ticket.attended_at else ticket.issued_at.isoformat()
-                })
+                }
+                response.append(call_data)
+                # Emitir atualização para o painel
+                emit_dashboard_update(
+                    institution_id=institution_id,
+                    queue_id=ticket.queue_id,
+                    event_type='call_status',
+                    data=call_data
+                )
 
-            logger.info(f"Listadas {len(response)} chamadas recentes para instituição {institution_id}")
-            return jsonify({
+            response_data = {
                 'institution_id': institution_id,
                 'institution_name': institution.name,
                 'calls': response
-            }), 200
+            }
+
+            try:
+                app.redis_client.setex(cache_key, 300, json.dumps(response_data))  # Cache por 5 minutos
+            except Exception as e:
+                logger.warning(f"Erro ao salvar cache no Redis para chamadas {institution_id}: {str(e)}")
+
+            logger.info(f"Listadas {len(response)} chamadas recentes para instituição {institution_id}")
+            return jsonify(response_data), 200
         except Exception as e:
             logger.error(f"Erro ao listar chamadas para instituição {institution_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao listar chamadas'}), 500
-
-    @app.route('/api/physical-ticket', methods=['POST'])
-    def generate_physical_ticket():
-        data = request.get_json()
-        required = ['department_id', 'service']
-        if not data or not all(f in data for f in required):
-            logger.warning("Campos obrigatórios faltando na geração de senha física")
-            return jsonify({'error': 'Campos obrigatórios faltando: department_id, service'}), 400
-
-        department = Department.query.get(data['department_id'])
-        if not department:
-            logger.warning(f"Departamento {data['department_id']} não encontrado")
-            return jsonify({'error': 'Departamento não encontrado'}), 404
-
-        queue = Queue.query.filter_by(department_id=data['department_id'], service=data['service']).first()
-        if not queue:
-            logger.warning(f"Fila para serviço {data['service']} não encontrada no departamento {data['department_id']}")
-            return jsonify({'error': 'Fila não encontrada para o serviço especificado'}), 400
-
-        try:
-            ticket, pdf_buffer = QueueService.add_to_queue(
-                service=data['service'],
-                user_id='PRESENCIAL',
-                priority=data.get('priority', 0),
-                is_physical=True,
-                fcm_token=None
-            )
-
-            socketio.emit('ticket_update', {
-                'ticket_id': ticket.id,
-                'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
-                'service': queue.service,
-                'department': department.name,
-                'counter': f"Guichê {ticket.counter:02d}" if ticket.counter else None,
-                'status': ticket.status
-            }, namespace='/tickets')
-
-            logger.info(f"Senha física gerada: {ticket.queue.prefix}{ticket.ticket_number} para serviço {data['service']}")
-            return send_file(
-                pdf_buffer,
-                as_attachment=True,
-                download_name=f"ticket_{ticket.queue.prefix}{ticket.ticket_number}.pdf",
-                mimetype='application/pdf'
-            )
-        except ValueError as e:
-            logger.error(f"Erro ao gerar senha física para serviço {data['service']}: {str(e)}")
-            return jsonify({'error': str(e)}), 400
-        except Exception as e:
-            logger.error(f"Erro interno ao gerar senha física: {str(e)}")
-            return jsonify({'error': 'Erro interno ao gerar senha'}), 500
 
     @app.route('/api/admin/queues', methods=['GET'])
     @require_auth
@@ -545,32 +587,53 @@ def init_admin_routes(app):
             logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
             return jsonify({'error': 'Usuário não encontrado'}), 404
 
-        if user.user_role != UserRole.DEPARTMENT_ADMIN:
-            logger.warning(f"Tentativa de acesso a /api/admin/queues por usuário não dept_admin: {request.user_id}")
-            return jsonify({'error': 'Acesso restrito a administradores de departamento'}), 403
-
-        if not user.department_id:
-            logger.warning(f"Gestor {request.user_id} não vinculado a departamento")
-            return jsonify({'error': 'Gestor não vinculado a um departamento'}), 403
+        if not (user.is_department_admin or user.is_institution_admin or user.is_system_admin):
+            logger.warning(f"Tentativa de acesso a /api/admin/queues por usuário não autorizado: {request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores'}), 403
 
         try:
-            queues = Queue.query.filter_by(department_id=user.department_id).all()
-            response = [{
-                'id': q.id,
-                'service': q.service,
-                'prefix': q.prefix,
-                'institution_name': q.department.institution.name if q.department and q.department.institution else 'N/A',
-                'active_tickets': q.active_tickets,
-                'daily_limit': q.daily_limit,
-                'current_ticket': q.current_ticket,
-                'status': 'Aberto' if q.active_tickets < q.daily_limit else 'Lotado',
-                'institution_id': q.department.institution_id if q.department else None,
-                'department': q.department.name if q.department else 'N/A',
-                'open_time': q.open_time.strftime('%H:%M') if q.open_time else None,
-                'end_time': q.end_time.strftime('%H:%M') if q.end_time else None
-            } for q in queues]
+            now = datetime.now()
+            current_weekday = now.strftime('%A')
+            current_time = now.time()
 
-            logger.info(f"Gestor {user.email} listou {len(response)} filas do departamento {user.department.name if user.department else 'N/A'}")
+            if user.is_system_admin:
+                queues = Queue.query.all()
+            elif user.is_institution_admin:
+                department_ids = [d.id for d in Department.query.filter_by(institution_id=user.institution_id).all()]
+                queues = Queue.query.filter(Queue.department_id.in_(department_ids)).all()
+            else:  # DEPARTMENT_ADMIN
+                if not user.department_id:
+                    logger.warning(f"Gestor {request.user_id} não vinculado a departamento")
+                    return jsonify({'error': 'Gestor não vinculado a um departamento'}), 403
+                queues = Queue.query.filter_by(department_id=user.department_id).all()
+
+            response = []
+            for q in queues:
+                schedule = QueueSchedule.query.filter_by(queue_id=q.id, weekday=current_weekday).first()
+                is_open = False
+                if schedule and not schedule.is_closed:
+                    is_open = (
+                        schedule.open_time and schedule.end_time and
+                        current_time >= schedule.open_time and
+                        current_time <= schedule.end_time and
+                        q.active_tickets < q.daily_limit
+                    )
+                response.append({
+                    'id': q.id,
+                    'service': q.service,
+                    'prefix': q.prefix,
+                    'institution_name': q.department.institution.name if q.department and q.department.institution else 'N/A',
+                    'active_tickets': q.active_tickets,
+                    'daily_limit': q.daily_limit,
+                    'current_ticket': q.current_ticket,
+                    'status': 'Aberto' if is_open else ('Lotado' if q.active_tickets >= q.daily_limit else 'Fechado'),
+                    'institution_id': q.department.institution_id if q.department else None,
+                    'department': q.department.name if q.department else 'N/A',
+                    'open_time': schedule.open_time.strftime('%H:%M') if schedule and schedule.open_time else None,
+                    'end_time': schedule.end_time.strftime('%H:%M') if schedule and schedule.end_time else None
+                })
+
+            logger.info(f"Usuário {user.email} listou {len(response)} filas")
             return jsonify(response), 200
         except Exception as e:
             logger.error(f"Erro ao listar filas para user_id={user.id}: {str(e)}")
@@ -584,22 +647,21 @@ def init_admin_routes(app):
             logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
             return jsonify({'error': 'Usuário não encontrado'}), 404
 
-        if not user.is_department_admin:
-            logger.warning(f"Tentativa de acesso a /api/admin/queue/{queue_id}/call por usuário não administrador: {request.user_id}")
+        if not (user.is_department_admin or user.is_institution_admin or user.is_system_admin):
+            logger.warning(f"Tentativa de acesso a /api/admin/queue/{queue_id}/call por usuário não autorizado: {request.user_id}")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
-
-        if not user.department_id:
-            logger.warning(f"Gestor {request.user_id} não vinculado a departamento")
-            return jsonify({'error': 'Gestor não vinculado a um departamento'}), 403
 
         queue = Queue.query.get(queue_id)
         if not queue:
             logger.warning(f"Fila {queue_id} não encontrada")
             return jsonify({'error': 'Fila não encontrada'}), 404
 
-        if queue.department_id != user.department_id:
+        if user.is_department_admin and queue.department_id != user.department_id:
             logger.warning(f"Gestor {request.user_id} tentou acessar fila {queue_id} fora de seu departamento")
             return jsonify({'error': 'Acesso negado: fila não pertence ao seu departamento'}), 403
+        if user.is_institution_admin and queue.department.institution_id != user.institution_id:
+            logger.warning(f"Admin {request.user_id} tentou acessar fila {queue_id} fora de sua instituição")
+            return jsonify({'error': 'Acesso negado: fila não pertence à sua instituição'}), 403
 
         try:
             ticket = QueueService.call_next(queue.service)
@@ -614,7 +676,17 @@ def init_admin_routes(app):
                 'message': f"Senha {ticket.queue.prefix}{ticket.ticket_number} chamada no guichê {ticket.counter:02d}",
                 'department_id': queue.department_id
             }, namespace='/', room=f"department_{queue.department_id}")
-            logger.info(f"Gestor {user.email} chamou ticket {ticket.id} da fila {queue_id}")
+            emit_dashboard_update(
+                institution_id=queue.department.institution_id,
+                queue_id=queue.id,
+                event_type='new_call',
+                data={
+                    'ticket_number': f"{queue.prefix}{ticket.ticket_number}",
+                    'counter': ticket.counter,
+                    'timestamp': ticket.attended_at.isoformat() if ticket.attended_at else datetime.utcnow().isoformat()
+                }
+            )
+            logger.info(f"Usuário {user.email} chamou ticket {ticket.id} da fila {queue_id}")
             return jsonify(response), 200
         except ValueError as e:
             logger.error(f"Erro ao chamar próxima senha na fila {queue_id}: {str(e)}")
@@ -622,52 +694,6 @@ def init_admin_routes(app):
         except Exception as e:
             logger.error(f"Erro interno ao chamar próxima senha: {str(e)}")
             return jsonify({'error': 'Erro interno ao chamar senha'}), 500
-
-    @app.route('/api/tickets/admin', methods=['GET'])
-    @require_auth
-    def list_admin_tickets():
-        user = User.query.get(request.user_id)
-        if not user:
-            logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
-            return jsonify({'error': 'Usuário não encontrado'}), 404
-
-        if not user.is_department_admin:
-            logger.warning(f"Tentativa de acesso a /api/tickets/admin por usuário não administrador: {request.user_id}")
-            return jsonify({'error': 'Acesso restrito a administradores'}), 403
-
-        if not user.department_id:
-            logger.warning(f"Gestor {request.user_id} não vinculado a departamento")
-            return jsonify({'error': 'Gestor não vinculado a um departamento'}), 403
-
-        try:
-            queues = Queue.query.filter_by(department_id=user.department_id).all()
-            if not queues:
-                logger.info(f"Nenhuma fila encontrada para o gestor {user.email}")
-                return jsonify([]), 200
-
-            queue_ids = [queue.id for queue in queues]
-            tickets = Ticket.query.filter(Ticket.queue_id.in_(queue_ids)).order_by(
-                Ticket.status.asc(),
-                Ticket.issued_at.desc()
-            ).limit(50).all()
-
-            response = [{
-                'id': ticket.id,
-                'number': f"{ticket.queue.prefix}{ticket.ticket_number}" if ticket.queue else ticket.ticket_number,
-                'queue_id': ticket.queue_id,
-                'service': ticket.queue.service if ticket.queue else 'N/A',
-                'status': ticket.status,
-                'issued_at': ticket.issued_at.isoformat() if ticket.issued_at else None,
-                'attended_at': ticket.attended_at.isoformat() if ticket.attended_at else None,
-                'counter': ticket.counter,
-                'user_id': ticket.user_id
-            } for ticket in tickets]
-
-            logger.info(f"Gestor {user.email} listou {len(response)} tickets")
-            return jsonify(response), 200
-        except Exception as e:
-            logger.error(f"Erro ao listar tickets para user_id={user.id}: {str(e)}")
-            return jsonify({'error': 'Erro interno ao listar tickets'}), 500
 
     @app.route('/api/admin/report', methods=['GET'])
     @require_auth
@@ -677,13 +703,9 @@ def init_admin_routes(app):
             logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
             return jsonify({'error': 'Usuário não encontrado'}), 404
 
-        if not user.is_department_admin:
-            logger.warning(f"Tentativa de acesso a /api/admin/report por usuário não administrador: {request.user_id}")
+        if not (user.is_department_admin or user.is_institution_admin or user.is_system_admin):
+            logger.warning(f"Tentativa de acesso a /api/admin/report por usuário não autorizado: {request.user_id}")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
-
-        if not user.department_id:
-            logger.warning(f"Gestor {request.user_id} não vinculado a departamento")
-            return jsonify({'error': 'Gestor não vinculado a um departamento'}), 403
 
         date_str = request.args.get('date')
         try:
@@ -693,13 +715,29 @@ def init_admin_routes(app):
             return jsonify({'error': 'Data inválida. Use o formato AAAA-MM-DD'}), 400
 
         try:
-            queues = Queue.query.filter_by(department_id=user.department_id).all()
+            if user.is_system_admin:
+                queues = Queue.query.all()
+            elif user.is_institution_admin:
+                department_ids = [d.id for d in Department.query.filter_by(institution_id=user.institution_id).all()]
+                queues = Queue.query.filter(Queue.department_id.in_(department_ids)).all()
+            else:  # DEPARTMENT_ADMIN
+                if not user.department_id:
+                    logger.warning(f"Gestor {request.user_id} não vinculado a departamento")
+                    return jsonify({'error': 'Gestor não vinculado a um departamento'}), 403
+                queues = Queue.query.filter_by(department_id=user.department_id).all()
+
             queue_ids = [q.id for q in queues]
             start_time = datetime.combine(report_date, datetime.min.time())
             end_time = start_time + timedelta(days=1)
 
+            # Determinar o dia da semana para verificar QueueSchedule
+            weekday = report_date.strftime('%A')
             report = []
             for queue in queues:
+                schedule = QueueSchedule.query.filter_by(queue_id=queue.id, weekday=weekday).first()
+                if schedule and schedule.is_closed:
+                    continue  # Ignorar filas fechadas no dia
+
                 tickets = Ticket.query.filter(
                     Ticket.queue_id == queue.id,
                     Ticket.issued_at >= start_time,
@@ -732,9 +770,12 @@ def init_admin_routes(app):
     @require_auth
     def list_departments(institution_id):
         user = User.query.get(request.user_id)
-        if not user or user.user_role != UserRole.INSTITUTION_ADMIN or user.institution_id != institution_id:
+        if not user or not (
+            user.user_role == UserRole.SYSTEM_ADMIN or
+            (user.user_role == UserRole.INSTITUTION_ADMIN and user.institution_id == institution_id)
+        ):
             logger.warning(f"Tentativa não autorizada de listar departamentos por user_id={request.user_id}")
-            return jsonify({'error': 'Acesso restrito a administradores da instituição'}), 403
+            return jsonify({'error': 'Acesso restrito a super admins ou admins da instituição'}), 403
 
         try:
             departments = Department.query.filter_by(institution_id=institution_id).all()
@@ -754,9 +795,12 @@ def init_admin_routes(app):
     @require_auth
     def list_managers(institution_id):
         user = User.query.get(request.user_id)
-        if not user or user.user_role != UserRole.INSTITUTION_ADMIN or user.institution_id != institution_id:
+        if not user or not (
+            user.user_role == UserRole.SYSTEM_ADMIN or
+            (user.user_role == UserRole.INSTITUTION_ADMIN and user.institution_id == institution_id)
+        ):
             logger.warning(f"Tentativa não autorizada de listar gestores por user_id={request.user_id}")
-            return jsonify({'error': 'Acesso restrito a administradores da instituição'}), 403
+            return jsonify({'error': 'Acesso restrito a super admins ou admins da instituição'}), 403
 
         try:
             managers = User.query.filter_by(
@@ -781,15 +825,26 @@ def init_admin_routes(app):
     @require_auth
     def create_manager(institution_id):
         user = User.query.get(request.user_id)
-        if not user or user.user_role != UserRole.INSTITUTION_ADMIN or user.institution_id != institution_id:
+        if not user or not (
+            user.user_role == UserRole.SYSTEM_ADMIN or
+            (user.user_role == UserRole.INSTITUTION_ADMIN and user.institution_id == institution_id)
+        ):
             logger.warning(f"Tentativa não autorizada de criar gestor por user_id={request.user_id}")
-            return jsonify({'error': 'Acesso restrito a administradores da instituição'}), 403
+            return jsonify({'error': 'Acesso restrito a super admins ou admins da instituição'}), 403
 
         data = request.get_json()
         required = ['email', 'name', 'password', 'department_id']
         if not data or not all(f in data for f in required):
             logger.warning("Campos obrigatórios faltando na criação de gestor")
             return jsonify({'error': 'Campos obrigatórios faltando: email, name, password, department_id'}), 400
+
+        # Validações
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', data['email']):
+            logger.warning(f"Email inválido: {data['email']}")
+            return jsonify({'error': 'Email inválido'}), 400
+        if len(data['password']) < 8:
+            logger.warning("Senha muito curta fornecida na criação de gestor")
+            return jsonify({'error': 'A senha deve ter pelo menos 8 caracteres'}), 400
 
         department = Department.query.get(data['department_id'])
         if not department or department.institution_id != institution_id:
@@ -836,7 +891,7 @@ def init_admin_routes(app):
             db.session.rollback()
             logger.error(f"Erro ao criar gestor: {str(e)}")
             return jsonify({'error': 'Erro interno ao criar gestor'}), 500
-        
+
     @app.route('/api/admin/user', methods=['GET'])
     @require_auth
     def get_user_info():

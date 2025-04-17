@@ -1,50 +1,44 @@
 import eventlet
 eventlet.monkey_patch()
 
-from app import app, socketio
-from flask_cors import CORS
+from app import app, socketio, db
 from app.ml_models import wait_time_predictor, service_recommendation_predictor
+from app.models import Queue
 import os
+import logging
 
-# Configurar CORS
-CORS(app, resources={r"/api/*": {
-    "origins": [
-        "http://127.0.0.1:5500",
-        "https://frontfa.netlify.app", # Sem barra no final
-        "https://courageous-dolphin-66662b.netlify.app"
-    ],
-    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    "allow_headers": ["Content-Type", "Authorization"],
-    "supports_credentials": True  # Se estiver usando credentials
-}})
-
-# Configurar SocketIO com caminho explícito
-socketio.init_app(
-    app,
-    cors_allowed_origins=[
-        "http://127.0.0.1:5500",
-        "https://frontfa.netlify.app",
-        "https://courageous-dolphin-66662b.netlify.app"
-    ],
-    async_mode='eventlet',
-    path='/tickets',  # Corrige erros 404
-    logger=True,
-    engineio_logger=True
-)
+logger = logging.getLogger(__name__)
 
 def train_ml_model_periodically():
+    """Treina os modelos de ML periodicamente para todas as filas."""
     while True:
         with app.app_context():
             try:
-                app.logger.info("Iniciando treinamento periódico do modelo de previsão de tempo de espera.")
-                wait_time_predictor.train()
-                app.logger.info("Iniciando treinamento periódico do modelo de recomendação de serviços.")
+                logger.info("Iniciando treinamento periódico dos modelos de ML.")
+                # Treinar WaitTimePredictor para cada fila
+                queues = Queue.query.all()
+                for queue in queues:
+                    logger.info(f"Treinando WaitTimePredictor para queue_id={queue.id}")
+                    wait_time_predictor.train(queue.id)
+                # Treinar ServiceRecommendationPredictor
+                logger.info("Treinando ServiceRecommendationPredictor")
                 service_recommendation_predictor.train()
+                logger.info("Treinamento periódico concluído.")
             except Exception as e:
-                app.logger.error(f"Erro ao treinar modelos de ML: {str(e)}")
-        eventlet.sleep(3600)
+                logger.error(f"Erro ao treinar modelos de ML: {str(e)}")
+        eventlet.sleep(3600)  # Treinar a cada hora
 
 if __name__ == "__main__":
+    # Iniciar treinamento periódico apenas em desenvolvimento
     if os.getenv('FLASK_ENV') != 'production':
         eventlet.spawn(train_ml_model_periodically)
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+    
+    # Configurar host e port
+    host = os.getenv('HOST', '0.0.0.0')
+    port = int(os.getenv('PORT', 5000))
+    
+    # Ajustar debug com base no ambiente
+    debug = os.getenv('FLASK_ENV') != 'production'
+    
+    logger.info(f"Iniciando servidor Flask-SocketIO em {host}:{port} (debug={debug})")
+    socketio.run(app, host=host, port=port, debug=debug)

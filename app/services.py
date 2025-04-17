@@ -1,31 +1,20 @@
 import logging
 import uuid
 import numpy as np
-import math
-from datetime import datetime, timedelta
-from flask_socketio import emit
-from . import db, socketio
-from .models import Queue, Ticket, User, Department
+from sqlalchemy import and_, func
+from datetime import datetime, time, timedelta
+from app.models import Queue, QueueSchedule, Ticket, AuditLog, Department, Institution, User
+from app.ml_models import wait_time_predictor, service_recommendation_predictor
+from app import db, redis_client, socketio
 from .utils.pdf_generator import generate_ticket_pdf
 from firebase_admin import messaging
 from sqlalchemy.exc import SQLAlchemyError
-from .ml_models import wait_time_predictor, service_recommendation_predictor
+import json
+from dateutil import parser
+from geopy.distance import geodesic
+from flask_socketio import emit
 
 logger = logging.getLogger(__name__)
-
-def setup_logging():
-    if not logger.handlers:
-        handler = logging.handlers.RotatingFileHandler(
-            'queue_service.log', maxBytes=1024*1024, backupCount=10
-        )
-        handler.setFormatter(logging.Formatter(
-            '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
-        ))
-        handler.setLevel(logging.INFO)
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-
-setup_logging()
 
 class QueueService:
     DEFAULT_EXPIRATION_MINUTES = 30
@@ -89,9 +78,14 @@ class QueueService:
             logger.error(f"Fila não encontrada para queue_id={queue_id}")
             return 0
         
-        if queue.current_ticket == 0:
-            logger.debug(f"Atendimento ainda não começou para queue_id={queue_id}, wait_time='N/A'")
+        if not is_queue_open(queue):
+            logger.warning(f"Fila {queue_id} está fechada para cálculo de wait_time")
             return "N/A"
+
+        if queue.current_ticket == 0:
+            queue.current_ticket = 1  # Inicializar current_ticket
+            db.session.commit()
+            logger.debug(f"Atendimento ainda não começou para queue_id={queue_id}, inicializando current_ticket=1")
 
         position = max(0, ticket_number - queue.current_ticket)
         if position == 0:
@@ -100,7 +94,7 @@ class QueueService:
 
         now = datetime.utcnow()
         hour_of_day = now.hour
-        predicted_time = wait_time_predictor.predict(position, queue.active_tickets, priority, hour_of_day)
+        predicted_time = wait_time_predictor.predict(queue_id, position, queue.active_tickets, priority, hour_of_day)
         
         if predicted_time is not None:
             wait_time = predicted_time
@@ -135,18 +129,14 @@ class QueueService:
             logger.warning(f"Coordenadas incompletas para cálculo de distância: user_lat={user_lat}, user_lon={user_lon}, inst_lat={institution.latitude}, inst_lon={institution.longitude}")
             return None
         
-        lat1, lon1 = math.radians(user_lat), math.radians(user_lon)
-        lat2, lon2 = math.radians(institution.latitude), math.radians(institution.longitude)
-
-        dlat = lat2 - lat1
-        dlon = lon2 - lon1
-
-        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
-        c = 2 * math.asin(math.sqrt(a))
-        r = 6371
-        distance = c * r
-
-        return round(distance, 2)
+        user_location = (user_lat, user_lon)
+        inst_location = (institution.latitude, institution.longitude)
+        try:
+            distance = geodesic(user_location, inst_location).kilometers
+            return round(distance, 2)
+        except Exception as e:
+            logger.error(f"Erro ao calcular distância: {e}")
+            return None
 
     @staticmethod
     def send_notification(fcm_token, message, ticket_id=None, via_websocket=False, user_id=None):
@@ -177,10 +167,10 @@ class QueueService:
         else:
             logger.warning(f"Token FCM não fornecido e não encontrado para user_id {user_id}")
 
-        if via_websocket and socketio:
+        if via_websocket and socketio and user_id:
             try:
-                emit('notification', {'user_id': user_id, 'message': message}, namespace='/', broadcast=True)
-                logger.debug(f"Notificação WebSocket enviada para {user_id}")
+                emit('notification', {'user_id': user_id, 'message': message}, namespace='/', room=str(user_id))
+                logger.debug(f"Notificação WebSocket enviada para user_id={user_id}")
             except Exception as e:
                 logger.error(f"Erro ao enviar notificação via WebSocket: {e}")
 
@@ -191,10 +181,9 @@ class QueueService:
             logger.error(f"Fila não encontrada para o serviço: {service}")
             raise ValueError("Fila não encontrada")
         
-        now = datetime.utcnow().time()
-        if now < queue.open_time:
-            logger.warning(f"Tentativa de emitir senha antes do horário de abertura para serviço {service}. Horário atual: {now}, abertura: {queue.open_time}")
-            raise ValueError(f"A fila {queue.service} ainda não está aberta. Abertura às {queue.open_time.strftime('%H:%M')}.")
+        if not is_queue_open(queue):
+            logger.warning(f"Fila {queue.id} está fechada para emissão de senha")
+            raise ValueError(f"A fila {queue.service} está fechada no momento.")
 
         if queue.active_tickets >= queue.daily_limit:
             logger.warning(f"Fila {service} está cheia: {queue.active_tickets}/{queue.daily_limit}")
@@ -213,7 +202,8 @@ class QueueService:
             qr_code=qr_code,
             priority=priority,
             is_physical=is_physical,
-            expires_at=None
+            expires_at=None,
+            issued_at=datetime.utcnow()
         )
         
         queue.active_tickets += 1
@@ -249,11 +239,103 @@ class QueueService:
         return ticket, pdf_buffer
 
     @staticmethod
+    def generate_physical_ticket_for_totem(queue_id, client_ip):
+        queue = Queue.query.get(queue_id)
+        if not queue:
+            logger.error(f"Fila não encontrada para queue_id={queue_id}")
+            raise ValueError("Fila não encontrada")
+
+        if not is_queue_open(queue):
+            logger.warning(f"Fila {queue_id} está fechada")
+            raise ValueError("Fila está fechada no momento")
+
+        if queue.active_tickets >= queue.daily_limit:
+            logger.warning(f"Fila {queue_id} atingiu o limite diário: {queue.active_tickets}/{queue.daily_limit}")
+            raise ValueError("Limite diário de tickets atingido")
+
+        cache_key = f'ticket_limit:{client_ip}:{queue.department.institution_id}'
+        try:
+            emission_count = redis_client.get(cache_key)
+            emission_count = int(emission_count) if emission_count else 0
+            if emission_count >= 5:
+                logger.warning(f"Limite de emissões atingido para IP {client_ip}")
+                raise ValueError("Limite de emissões por hora atingido. Tente novamente mais tarde.")
+            redis_client.setex(cache_key, 3600, emission_count + 1)
+        except Exception as e:
+            logger.warning(f"Erro ao acessar Redis para limite de emissão ({client_ip}): {e}. Prosseguindo sem limite.")
+
+        ticket_number = queue.active_tickets + 1
+        qr_code = QueueService.generate_qr_code()
+        ticket = Ticket(
+            id=str(uuid.uuid4()),
+            queue_id=queue.id,
+            user_id='PRESENCIAL',
+            ticket_number=ticket_number,
+            qr_code=qr_code,
+            priority=0,
+            is_physical=True,
+            status='Pendente',
+            issued_at=datetime.utcnow(),
+            expires_at=datetime.utcnow() + timedelta(hours=4),
+            receipt_data=None
+        )
+        queue.active_tickets += 1
+        db.session.add(ticket)
+
+        wait_time = QueueService.calculate_wait_time(queue.id, ticket_number, 0)
+        position = max(0, ticket.ticket_number - queue.current_ticket)
+        pdf_buffer = QueueService.generate_pdf_ticket(ticket, position, wait_time)
+        pdf_base64 = pdf_buffer.getvalue().hex()
+
+        ticket.receipt_data = QueueService.generate_receipt(ticket)
+        audit_log = AuditLog(
+            id=str(uuid.uuid4()),
+            user_id=None,
+            action='GENERATE_USER_PHYSICAL_TICKET',
+            resource_type='Ticket',
+            resource_id=ticket.id,
+            details=f"Ticket {qr_code} gerado via mesa digital para fila {queue.service} (IP: {client_ip})",
+            timestamp=datetime.utcnow()
+        )
+        db.session.add(audit_log)
+        db.session.commit()
+
+        if socketio:
+            emit('queue_update', {
+                'queue_id': queue.id,
+                'active_tickets': queue.active_tickets,
+                'current_ticket': queue.current_ticket,
+                'message': f"Nova senha emitida: {queue.prefix}{ticket_number}"
+            }, namespace='/', room=str(queue.id))
+
+        logger.info(f"Ticket físico {ticket.id} gerado via totem para fila {queue_id}")
+        return {
+            'ticket': {
+                'id': ticket.id,
+                'queue_id': ticket.queue_id,
+                'ticket_number': ticket.ticket_number,
+                'qr_code': ticket.qr_code,
+                'status': ticket.status,
+                'issued_at': ticket.issued_at.isoformat(),
+                'expires_at': ticket.expires_at.isoformat()
+            },
+            'pdf': pdf_base64
+        }
+
+    @staticmethod
     def call_next(service):
         queue = Queue.query.filter_by(service=service).first()
-        if not queue or queue.active_tickets == 0:
-            logger.warning(f"Fila {service} está vazia ou não encontrada")
-            raise ValueError("Fila vazia ou não encontrada")
+        if not queue:
+            logger.warning(f"Fila {service} não encontrada")
+            raise ValueError("Fila não encontrada")
+        
+        if not is_queue_open(queue):
+            logger.warning(f"Fila {queue.id} está fechada para chamar próximo")
+            raise ValueError("Fila está fechada no momento")
+
+        if queue.active_tickets == 0:
+            logger.warning(f"Fila {service} está vazia")
+            raise ValueError("Fila vazia")
         
         next_ticket = Ticket.query.filter_by(queue_id=queue.id, status='Pendente')\
             .order_by(Ticket.priority.desc(), Ticket.ticket_number).first()
@@ -300,7 +382,7 @@ class QueueService:
         for queue in queues:
             if not queue.department or not queue.department.institution:
                 continue
-            if (queue.open_time and now < queue.open_time) or (queue.end_time and now > queue.end_time):
+            if not is_queue_open(queue):
                 continue
             if queue.active_tickets >= queue.daily_limit:
                 continue
@@ -339,7 +421,7 @@ class QueueService:
         tickets = Ticket.query.filter_by(status='Pendente').all()
         for ticket in tickets:
             queue = ticket.queue
-            if queue.end_time and now.time() > queue.end_time:
+            if not is_queue_open(queue):
                 ticket.status = 'Cancelado'
                 ticket.queue.active_tickets -= 1
                 db.session.commit()
@@ -425,6 +507,10 @@ class QueueService:
         if not ticket or ticket.status != 'Chamado':
             logger.warning(f"Tentativa inválida de validar presença com QR {qr_code}")
             raise ValueError("Senha inválida ou não chamada")
+        if not is_queue_open(ticket.queue):
+            logger.warning(f"Fila {ticket.queue.id} está fechada para validação de presença")
+            raise ValueError("Fila está fechada no momento")
+        
         ticket.status = 'attended'
         ticket.attended_at = datetime.utcnow()
         
@@ -519,7 +605,7 @@ class QueueService:
             emit('queue_update', {
                 'queue_id': ticket.queue_id,
                 'active_tickets': ticket.queue.active_tickets,
-                'current_ticket': ticket.queue.current_ticket,
+                'current_ticket': ticket.current_ticket,
                 'message': f"Senha {ticket.queue.prefix}{ticket.ticket_number} cancelada"
             }, namespace='/', room=str(ticket.queue_id))
         
@@ -531,15 +617,11 @@ def suggest_service_locations(service, user_lat=None, user_lon=None, max_results
     suggestions = []
     now = datetime.utcnow()
     current_time = now.time()
-    hour_of_day = now.hour
-    day_of_week = now.weekday()
 
     for queue in queues:
         if not queue.department or not queue.department.institution:
             continue
-        if queue.open_time and current_time < queue.open_time:
-            continue
-        if queue.end_time and current_time > queue.end_time:
+        if not is_queue_open(queue):
             continue
         if queue.active_tickets >= queue.daily_limit:
             continue
@@ -560,32 +642,18 @@ def suggest_service_locations(service, user_lat=None, user_lon=None, max_results
             if distance is None:
                 distance = float('inf')
 
+        quality_score = service_recommendation_predictor.predict(queue)
+        speed_label = "Desconhecida"
         tickets = Ticket.query.filter_by(queue_id=queue.id, status='attended').all()
         service_times = [t.service_time for t in tickets if t.service_time is not None and t.service_time > 0]
-        quality_score = None
-        speed_label = "Desconhecida"
         if service_times:
             avg_service_time = np.mean(service_times)
-            std_service_time = np.std(service_times) if len(service_times) > 1 else 0
-            service_time_per_counter = avg_service_time / max(1, queue.num_counters)
-            occupancy_rate = queue.active_tickets / max(1, queue.daily_limit)
-            quality_score = service_recommendation_predictor.predict(
-                avg_service_time, std_service_time, service_time_per_counter, occupancy_rate, hour_of_day, day_of_week
-            )
             if avg_service_time <= 5:
                 speed_label = "Rápida"
             elif avg_service_time <= 15:
                 speed_label = "Moderada"
             else:
                 speed_label = "Lenta"
-        
-        if quality_score is None:
-            quality_score = 0.5
-            if service_times:
-                avg_service_time = np.mean(service_times)
-                std_service_time = np.std(service_times) if len(service_times) > 1 else 0
-                quality_score = (1 / (avg_service_time + 1)) - (std_service_time / (avg_service_time + 1))
-                quality_score = max(0, min(1, quality_score))
 
         wait_time_score = 1 / (wait_time + 1) if wait_time != float('inf') else 0
         distance_score = 1 / (distance + 1) if distance is not None and distance != float('inf') else 0
@@ -594,16 +662,16 @@ def suggest_service_locations(service, user_lat=None, user_lon=None, max_results
 
         suggestions.append({
             'institution': {
-                'id': queue.department.institution.id if queue.department.institution else None,
-                'name': queue.department.institution.name if queue.department.institution else None,
-                'location': queue.department.institution.location if queue.department.institution else None,
-                'latitude': queue.department.institution.latitude if queue.department.institution else None,
-                'longitude': queue.department.institution.longitude if queue.department.institution else None,
+                'id': queue.department.institution.id,
+                'name': queue.department.institution.name,
+                'location': queue.department.institution.location,
+                'latitude': queue.department.institution.latitude,
+                'longitude': queue.department.institution.longitude,
             },
             'queue': {
                 'id': queue.id,
                 'service': queue.service,
-                'sector': queue.department.sector if queue.department else None,
+                'sector': queue.department.sector,
                 'wait_time': wait_time if wait_time != float('inf') else "Aguardando início",
                 'distance': distance if distance is not None else "Desconhecida",
                 'quality_score': quality_score,
@@ -621,3 +689,159 @@ def suggest_service_locations(service, user_lat=None, user_lon=None, max_results
 
     suggestions.sort(key=lambda x: x['score'], reverse=True)
     return suggestions[:max_results]
+
+def is_queue_open(queue, now=None):
+    if not now:
+        now = datetime.utcnow()
+    weekday = now.strftime('%A')
+    
+    schedule = QueueSchedule.query.filter_by(queue_id=queue.id, weekday=weekday).first()
+    if not schedule or schedule.is_closed:
+        return False
+    
+    current_time = now.time()
+    return schedule.open_time <= current_time <= schedule.end_time
+
+def get_service_search_results(institution_id, filters=None):
+    filters = filters or {}
+    page = max(1, filters.get('page', 1))
+    per_page = max(1, min(100, filters.get('per_page', 20)))
+    
+    query = Queue.query.join(Department).filter(Department.institution_id == institution_id)
+    
+    if 'sector' in filters:
+        query = query.filter(Department.sector == filters['sector'])
+    if 'location' in filters:
+        query = query.filter(Department.institution.location.ilike(f'%{filters["location"]}%'))
+    if 'service_name' in filters:
+        query = query.filter(Queue.service.ilike(f'%{filters["service_name"]}%'))
+    if filters.get('is_open', True):
+        query = query.join(QueueSchedule).filter(
+            and_(
+                QueueSchedule.weekday == datetime.utcnow().strftime('%A'),
+                QueueSchedule.is_closed == False,
+                QueueSchedule.open_time <= datetime.utcnow().time(),
+                QueueSchedule.end_time >= datetime.utcnow().time()
+            )
+        )
+    
+    total = query.count()
+    queues = query.order_by(Queue.service.asc()).offset((page - 1) * per_page).limit(per_page).all()
+    
+    now = datetime.utcnow()
+    services = []
+    for queue in queues:
+        schedule = QueueSchedule.query.filter_by(queue_id=queue.id, weekday=now.strftime('%A')).first()
+        is_open = is_queue_open(queue, now)
+        
+        issued_tickets = Ticket.query.filter_by(queue_id=queue.id, status='Pendente').count()
+        available_tickets = max(0, queue.daily_limit - issued_tickets) if queue.daily_limit else None
+        
+        wait_time = QueueService.calculate_wait_time(queue.id, queue.active_tickets + 1, 0) if is_open else None
+        
+        if 'max_wait_time' in filters and wait_time is not None and wait_time != 'N/A':
+            if wait_time > filters['max_wait_time']:
+                continue
+        
+        services.append({
+            'queue_id': queue.id,
+            'name': queue.service,
+            'service': queue.service or 'Atendimento Geral',
+            'sector': queue.department.sector or 'Geral',
+            'location': queue.department.institution.location or 'Não especificado',
+            'description': f'{queue.service} ({queue.department.name})',
+            'is_open': is_open,
+            'open_time': schedule.open_time.strftime('%H:%M') if schedule else None,
+            'end_time': schedule.end_time.strftime('%H:%M') if schedule else None,
+            'daily_limit': queue.daily_limit,
+            'available_tickets': available_tickets,
+            'wait_time': wait_time,
+            'counter': queue.num_counters or 1,
+            'latitude': queue.department.institution.latitude,
+            'longitude': queue.department.institution.longitude
+        })
+    
+    suggestions = []
+    if services and services[0]['latitude'] and services[0]['longitude']:
+        suggestion_data = suggest_service_locations(services[0]['service'], services[0]['latitude'], services[0]['longitude'])
+        suggestions = [
+            {'queue_id': q['queue']['id'], 'location': q['institution']['location'], 'wait_time': q['queue']['wait_time']}
+            for q in suggestion_data[:3]
+        ]
+    
+    result = {
+        'services': services,
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'suggestions': suggestions
+    }
+    
+    try:
+        cache_key = f'services:{institution_id}:{json.dumps(filters, sort_keys=True)}'
+        redis_client.setex(cache_key, 30, json.dumps(result))
+    except Exception as e:
+        logger.warning(f"Erro ao salvar cache no Redis para {cache_key}: {e}")
+    
+    return result
+
+def get_dashboard_data(institution_id):
+    queues = Queue.query.join(Department).filter(Department.institution_id == institution_id).all()
+    result = {'queues': []}
+    
+    for queue in queues:
+        current_ticket = Ticket.query.filter_by(queue_id=queue.id, status='Chamado').order_by(Ticket.attended_at.desc()).first()
+        current_call = None
+        if current_ticket:
+            current_call = {
+                'ticket_number': f"{queue.prefix}{current_ticket.ticket_number}",
+                'counter': current_ticket.counter or queue.last_counter or 1,
+                'timestamp': current_ticket.attended_at.isoformat() if current_ticket.attended_at else None
+            }
+        
+        recent_tickets = Ticket.query.filter_by(queue_id=queue.id, status='attended')\
+            .order_by(Ticket.attended_at.desc()).limit(5).all()
+        recent_calls_data = [
+            {
+                'ticket_number': f"{queue.prefix}{ticket.ticket_number}",
+                'counter': ticket.counter or queue.last_counter or 1,
+                'timestamp': ticket.attended_at.isoformat()
+            } for ticket in recent_tickets
+        ]
+        
+        result['queues'].append({
+            'queue_id': queue.id,
+            'name': queue.service,
+            'service': queue.service or 'Atendimento Geral',
+            'current_call': current_call,
+            'recent_calls': recent_calls_data
+        })
+    
+    try:
+        cache_key = f'dashboard:{institution_id}'
+        redis_client.setex(cache_key, 10, json.dumps(result))
+    except Exception as e:
+        logger.warning(f"Erro ao salvar cache no Redis para {cache_key}: {e}")
+    
+    return result
+
+def emit_dashboard_update(institution_id, queue_id, event_type, data):
+    channel = f'dashboard:{institution_id}'
+    message = {
+        'event': event_type,
+        'queue_id': queue_id,
+        'data': data,
+        'timestamp': datetime.utcnow().isoformat()
+    }
+    try:
+        redis_client.publish(channel, json.dumps(message))
+    except Exception as e:
+        logger.warning(f"Erro ao publicar atualização de dashboard para {channel}: {e}")
+
+def subscribe_to_dashboard(institution_id):
+    pubsub = redis_client.pubsub()
+    try:
+        pubsub.subscribe(f'dashboard:{institution_id}')
+    except Exception as e:
+        logger.error(f"Erro ao subscrever dashboard {institution_id}: {e}")
+    return pubsub

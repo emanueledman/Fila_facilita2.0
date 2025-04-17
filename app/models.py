@@ -1,15 +1,24 @@
-from . import db
-from datetime import datetime
-import bcrypt
-from sqlalchemy import Column, Integer, String, Float, Time, Boolean, DateTime, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, Float, Time, Boolean, DateTime, ForeignKey, Enum, Index, Text
 from sqlalchemy.orm import relationship
 import enum
+from app import db
+from datetime import datetime
+import bcrypt
 
 class UserRole(enum.Enum):
     USER = "user"
     DEPARTMENT_ADMIN = "dept_admin"
     INSTITUTION_ADMIN = "inst_admin"
     SYSTEM_ADMIN = "sys_admin"
+
+class Weekday(enum.Enum):
+    MONDAY = "Monday"
+    TUESDAY = "Tuesday"
+    WEDNESDAY = "Wednesday"
+    THURSDAY = "Thursday"
+    FRIDAY = "Friday"
+    SATURDAY = "Saturday"
+    SUNDAY = "Sunday"
 
 class Institution(db.Model):
     __tablename__ = 'institution'
@@ -29,7 +38,6 @@ class Department(db.Model):
     name = Column(String(50), nullable=False, index=True)
     sector = Column(String(50))
     
-    # Relacionamentos
     institution = relationship('Institution', backref=db.backref('departments', lazy='dynamic'))
     
     def __repr__(self):
@@ -51,8 +59,8 @@ class Queue(db.Model):
     num_counters = Column(Integer, default=1)
     last_counter = Column(Integer, default=0)
     
-    # Relacionamentos
     department = relationship('Department', backref=db.backref('queues', lazy='dynamic'))
+    schedules = relationship('QueueSchedule', back_populates='queue', cascade='all, delete-orphan')
     
     def __repr__(self):
         return f'<Queue {self.service} at {self.department.name}>'
@@ -73,10 +81,9 @@ class Ticket(db.Model):
     cancelled_at = Column(DateTime)
     counter = Column(Integer)
     service_time = Column(Float)
-    receipt_data = Column(db.Text)
+    receipt_data = Column(Text)
     trade_available = Column(Boolean, default=False)
     
-    # Relacionamentos
     queue = relationship('Queue', backref=db.backref('tickets', lazy='dynamic'))
     user = relationship('User', backref=db.backref('tickets', lazy='dynamic'))
     
@@ -99,7 +106,6 @@ class User(db.Model):
     created_at = Column(DateTime, default=datetime.utcnow)
     active = Column(Boolean, default=True)
     
-    # Relacionamentos
     department = relationship('Department', backref=db.backref('users', lazy='dynamic'))
     institution = relationship('Institution', backref=db.backref('admins', lazy='dynamic'))
     
@@ -130,3 +136,27 @@ class User(db.Model):
         
     def __repr__(self):
         return f'<User {self.email} ({self.user_role.value})>'
+
+class QueueSchedule(db.Model):
+    __tablename__ = 'queue_schedules'
+    id = Column(Integer, primary_key=True)
+    queue_id = Column(String(36), ForeignKey('queue.id'), nullable=False)
+    weekday = Column(Enum(Weekday), nullable=False)
+    open_time = Column(Time, nullable=False)
+    end_time = Column(Time, nullable=False)
+    is_closed = Column(Boolean, default=False)
+    queue = relationship('Queue', back_populates='schedules')
+
+class AuditLog(db.Model):
+    __tablename__ = 'audit_logs'
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), nullable=True)
+    action = Column(String, nullable=False)
+    resource_type = Column(String, nullable=False)
+    resource_id = Column(String(36), nullable=False)
+    details = Column(Text, nullable=True)
+    timestamp = Column(DateTime, nullable=False)
+
+Index('idx_queue_institution_id_service', Queue.department_id, Queue.service)
+Index('idx_queue_schedule_queue_id', QueueSchedule.queue_id)
+Index('idx_audit_log_timestamp', AuditLog.timestamp)

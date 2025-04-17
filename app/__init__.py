@@ -20,6 +20,7 @@ limiter = Limiter(key_func=get_remote_address)
 def create_app():
     app = Flask(__name__)
     
+    # Configurações básicas
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', '00974655')
     database_url = os.getenv('DATABASE_URL')
     if not database_url:
@@ -30,6 +31,7 @@ def create_app():
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
+    # Configurar logging
     handler = logging.handlers.RotatingFileHandler(
         'queue_service.log', maxBytes=1024*1024, backupCount=10
     )
@@ -37,14 +39,17 @@ def create_app():
         '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
     ))
     handler.setLevel(logging.INFO)
-    app.logger.handlers = []
-    app.logger.addHandler(handler)
+    # Adicionar handler sem sobrescrever os existentes
+    if not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in app.logger.handlers):
+        app.logger.addHandler(handler)
     app.logger.setLevel(logging.INFO if os.getenv('FLASK_ENV') == 'production' else logging.DEBUG)
     app.logger.info(f"Iniciando com banco de dados: {app.config['SQLALCHEMY_DATABASE_URI']}")
     
+    # Configurações do SocketIO
     app.config['SOCKETIO_LOGGER'] = True
     app.config['SOCKETIO_ENGINEIO_LOGGER'] = True
     
+    # Inicializar extensões
     db.init_app(app)
     socketio.init_app(
         app,
@@ -54,12 +59,13 @@ def create_app():
             "https://courageous-dolphin-66662b.netlify.app"
         ],
         async_mode='eventlet',
-        path='/tickets',  # Corrige erros 404
+        path='/tickets',
         logger=True,
         engineio_logger=True
     )
     limiter.init_app(app)
     
+    # Configurar CORS
     CORS(app, resources={r"/api/*": {
         "origins": [
             "http://127.0.0.1:5500",
@@ -67,22 +73,40 @@ def create_app():
             "https://courageous-dolphin-66662b.netlify.app"
         ],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"]
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True
     }})
     
     with app.app_context():
-        from .models import Institution, Queue, User, Ticket
+        from .models import Institution, Queue, User, Ticket, Department
         
-        # Sempre reiniciar o banco
-        db.drop_all()
-        db.create_all()
-        app.logger.info("Banco limpo e tabelas recriadas")
+        # Reiniciar banco apenas em desenvolvimento ou se explicitamente solicitado
+        reset_db = os.getenv('FLASK_ENV') != 'production' or os.getenv('RESET_DB') == 'true'
+        if reset_db:
+            db.drop_all()
+            db.create_all()
+            app.logger.info("Banco limpo e tabelas recriadas")
+            
+            # Inserir dados iniciais de forma idempotente
+            from .data_init import populate_initial_data
+            try:
+                populate_initial_data(app)
+                app.logger.info("Dados iniciais inseridos automaticamente")
+            except Exception as e:
+                app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
         
-        # Sempre inserir dados iniciais
-        from .data_init import populate_initial_data
-        populate_initial_data(app)
-        app.logger.info("Dados iniciais inseridos automaticamente")
+        # Inicializar modelos de ML (opcional, pode ser comentado se o treinamento for apenas periódico)
+        from .ml_models import wait_time_predictor, service_recommendation_predictor
+        try:
+            queues = Queue.query.all()
+            for queue in queues:
+                wait_time_predictor.train(queue.id)
+            service_recommendation_predictor.train()
+            app.logger.info("Modelos de ML inicializados na startup")
+        except Exception as e:
+            app.logger.error(f"Erro ao inicializar modelos de ML: {str(e)}")
     
+    # Registrar rotas
     from .routes import init_routes
     from .queue_routes import init_queue_routes
     from .user_routes import init_user_routes
