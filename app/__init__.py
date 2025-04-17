@@ -8,8 +8,11 @@ from flask_socketio import SocketIO
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_cors import CORS
+from redis import Redis
 import os
 from dotenv import load_dotenv
+import firebase_admin
+from firebase_admin import credentials
 
 load_dotenv()
 
@@ -31,6 +34,17 @@ def create_app():
         database_url = database_url.replace('postgres://', 'postgresql://')
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    
+    # Configurar Redis
+    app.redis_client = Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379/0'))
+    
+    # Configurar Firebase
+    firebase_cred_path = os.getenv('FIREBASE_CREDENTIALS_PATH')
+    if firebase_cred_path and os.path.exists(firebase_cred_path):
+        cred = credentials.Certificate(firebase_cred_path)
+        firebase_admin.initialize_app(cred)
+    else:
+        app.logger.warning("FIREBASE_CREDENTIALS_PATH não encontrado ou inválido. Notificações push desativadas.")
     
     # Configurar logging
     handler = logging.handlers.RotatingFileHandler(
@@ -76,6 +90,9 @@ def create_app():
         "allow_headers": ["Content-Type", "Authorization"],
         "supports_credentials": True
     }})
+    
+    # Configurar Flask-Limiter com Redis
+    limiter.storage_uri = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
     
     with app.app_context():
         from .models import Institution, Queue, User, Ticket, Department
