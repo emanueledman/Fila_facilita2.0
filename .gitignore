@@ -9,4 +9,3 @@ env/
 .env
 # .gitignore
 .env
-firebase-credentials.json
