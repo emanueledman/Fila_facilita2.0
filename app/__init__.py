@@ -64,23 +64,35 @@ def create_app():
             "https://courageous-dolphin-66662b.netlify.app"
         ],
         async_mode='eventlet',
-        path='/tickets',
+        manage_session=False,  # Evitar conflitos com sessões Flask
         logger=True,
         engineio_logger=True
     )
     limiter.init_app(app)
     
-    # Configurar CORS
-    CORS(app, resources={r"/api/*": {
-        "origins": [
-            "http://127.0.0.1:5500",
-            "https://frontfa.netlify.app",
-            "https://courageous-dolphin-66662b.netlify.app"
-        ],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"],
-        "supports_credentials": True
-    }})
+    # Configurar CORS para APIs e WebSocket
+    CORS(app, resources={
+        r"/api/*": {
+            "origins": [
+                "http://127.0.0.1:5500",
+                "https://frontfa.netlify.app",
+                "https://courageous-dolphin-66662b.netlify.app"
+            ],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization"],
+            "supports_credentials": True
+        },
+        r"/socket.io/*": {
+            "origins": [
+                "http://127.0.0.1:5500",
+                "https://frontfa.netlify.app",
+                "https://courageous-dolphin-66662b.netlify.app"
+            ],
+            "methods": ["GET", "POST"],
+            "allow_headers": ["Content-Type"],
+            "supports_credentials": True
+        }
+    })
     
     # Configurar Flask-Limiter com Redis
     limiter.storage_uri = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
@@ -100,7 +112,7 @@ def create_app():
             app.logger.info("Dados iniciais inseridos automaticamente")
         except Exception as e:
             app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
-            raise  # Re-lançar para depuração no Render
+            raise
         
         # Inicializar modelos de ML
         app.logger.debug("Tentando importar preditores de ML")
@@ -122,7 +134,6 @@ def create_app():
             app.logger.info("Modelos de ML inicializados na startup")
         except Exception as e:
             app.logger.error(f"Erro ao inicializar modelos de ML: {str(e)}")
-            # Não lançar exceção aqui para permitir que a aplicação continue
     
     # Registrar rotas
     from .routes import init_routes

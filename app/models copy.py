@@ -5,7 +5,6 @@ from app import db
 from datetime import datetime
 import bcrypt
 
-# Enums existentes
 class UserRole(enum.Enum):
     USER = "user"
     DEPARTMENT_ADMIN = "dept_admin"
@@ -21,53 +20,13 @@ class Weekday(enum.Enum):
     SATURDAY = "Saturday"
     SUNDAY = "Sunday"
 
-# Nova tabela para categorias de serviços
-class ServiceCategory(db.Model):
-    __tablename__ = 'service_category'
-    id = Column(String(36), primary_key=True, index=True)
-    name = Column(String(100), nullable=False)
-    parent_id = Column(String(36), ForeignKey('service_category.id'), nullable=True, index=True)
-    description = Column(Text, nullable=True)
-    
-    parent = relationship('ServiceCategory', remote_side=[id], backref='subcategories')
-    
-    def __repr__(self):
-        return f'<ServiceCategory {self.name}>'
-
-# Nova tabela para tags de serviços
-class ServiceTag(db.Model):
-    __tablename__ = 'service_tag'
-    id = Column(String(36), primary_key=True, index=True)
-    tag = Column(String(50), nullable=False, index=True)
-    queue_id = Column(String(36), ForeignKey('queue.id'), nullable=False, index=True)
-    
-    queue = relationship('Queue', backref=db.backref('tags', lazy='dynamic'))
-    
-    def __repr__(self):
-        return f'<ServiceTag {self.tag} for Queue {self.queue_id}>'
-
-# Nova tabela para filiais
-class Branch(db.Model):
-    __tablename__ = 'branch'
-    id = Column(String(36), primary_key=True, index=True)
-    institution_id = Column(String(36), ForeignKey('institution.id'), nullable=False, index=True)
-    name = Column(String(100), nullable=False)
-    location = Column(String(200))
-    neighborhood = Column(String(100), nullable=True)  # Ex.: Talatona, Kilamba
-    latitude = Column(Float)
-    longitude = Column(Float)
-    
-    institution = relationship('Institution', backref=db.backref('branches', lazy='dynamic'))
-    
-    def __repr__(self):
-        return f'<Branch {self.name} of {self.institution.name}>'
-
-# Ajustes nas tabelas existentes
 class Institution(db.Model):
     __tablename__ = 'institution'
     id = Column(String(36), primary_key=True, index=True)
-    name = Column(String(100), nullable=False)  # Ex.: Banco BIC
-    description = Column(Text, nullable=True)
+    name = Column(String(100), nullable=False)
+    location = Column(String(200))
+    latitude = Column(Float)
+    longitude = Column(Float)
     
     def __repr__(self):
         return f'<Institution {self.name}>'
@@ -75,21 +34,20 @@ class Institution(db.Model):
 class Department(db.Model):
     __tablename__ = 'department'
     id = Column(String(36), primary_key=True, index=True)
-    branch_id = Column(String(36), ForeignKey('branch.id'), nullable=False, index=True)  # Alterado para branch_id
+    institution_id = Column(String(36), ForeignKey('institution.id'), nullable=False, index=True)
     name = Column(String(50), nullable=False, index=True)
     sector = Column(String(50))
     
-    branch = relationship('Branch', backref=db.backref('departments', lazy='dynamic'))
+    institution = relationship('Institution', backref=db.backref('departments', lazy='dynamic'))
     
     def __repr__(self):
-        return f'<Department {self.name} at {self.branch.name}>'
+        return f'<Department {self.name} at {self.institution.name}>'
 
 class Queue(db.Model):
     __tablename__ = 'queue'
     id = Column(String(36), primary_key=True, index=True)
     department_id = Column(String(36), ForeignKey('department.id'), nullable=False, index=True)
     service = Column(String(50), nullable=False, index=True)
-    category_id = Column(String(36), ForeignKey('service_category.id'), nullable=True, index=True)  # Novo campo
     prefix = Column(String(10), nullable=False)
     end_time = Column(Time, nullable=True)
     open_time = Column(Time, nullable=False)
@@ -102,7 +60,6 @@ class Queue(db.Model):
     last_counter = Column(Integer, default=0)
     
     department = relationship('Department', backref=db.backref('queues', lazy='dynamic'))
-    category = relationship('ServiceCategory', backref=db.backref('queues', lazy='dynamic'))
     schedules = relationship('QueueSchedule', back_populates='queue', cascade='all, delete-orphan')
     
     def __repr__(self):
@@ -112,7 +69,7 @@ class Ticket(db.Model):
     __tablename__ = 'ticket'
     id = Column(String(36), primary_key=True, index=True)
     queue_id = Column(String(36), ForeignKey('queue.id'), nullable=False, index=True)
-    user_id = Column(String(36), ForeignKey('user.id'), nullable=True, index=True)
+    user_id = Column(String(36), ForeignKey('user.id'), nullable=True, index=True)  # Alterado para nullable=True
     ticket_number = Column(Integer, nullable=False)
     qr_code = Column(String(50), nullable=False, unique=True)
     priority = Column(Integer, default=0)
@@ -161,6 +118,22 @@ class User(db.Model):
             return False
         return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8'))
     
+    @property
+    def is_institution_admin(self):
+        return self.user_role == UserRole.INSTITUTION_ADMIN or self.user_role == UserRole.SYSTEM_ADMIN
+    
+    @property
+    def is_department_admin(self):
+        return self.user_role == UserRole.DEPARTMENT_ADMIN or self.is_institution_admin
+    
+    @property
+    def can_manage_institutions(self):
+        return self.user_role == UserRole.SYSTEM_ADMIN or self.user_role == UserRole.INSTITUTION_ADMIN
+    
+    @property
+    def can_manage_departments(self):
+        return self.is_institution_admin or (self.user_role == UserRole.DEPARTMENT_ADMIN and self.department_id is not None)
+        
     def __repr__(self):
         return f'<User {self.email} ({self.user_role.value})>'
 
@@ -184,26 +157,6 @@ class AuditLog(db.Model):
     details = Column(Text, nullable=True)
     timestamp = Column(DateTime, nullable=False)
 
-# Nova tabela para preferências do usuário
-class UserPreference(db.Model):
-    __tablename__ = 'user_preference'
-    id = Column(String(36), primary_key=True, index=True)
-    user_id = Column(String(36), ForeignKey('user.id'), nullable=False, index=True)
-    institution_id = Column(String(36), ForeignKey('institution.id'), nullable=True, index=True)
-    service_category_id = Column(String(36), ForeignKey('service_category.id'), nullable=True, index=True)
-    neighborhood = Column(String(100), nullable=True)
-    
-    user = relationship('User', backref=db.backref('preferences', lazy='dynamic'))
-    institution = relationship('Institution', backref=db.backref('preferred_by', lazy='dynamic'))
-    service_category = relationship('ServiceCategory', backref=db.backref('preferred_by', lazy='dynamic'))
-    
-    def __repr__(self):
-        return f'<UserPreference for User {self.user_id}>'
-
-# Índices
 Index('idx_queue_institution_id_service', Queue.department_id, Queue.service)
 Index('idx_queue_schedule_queue_id', QueueSchedule.queue_id)
 Index('idx_audit_log_timestamp', AuditLog.timestamp)
-Index('idx_service_tag_queue_id', ServiceTag.queue_id)
-Index('idx_branch_institution_id', Branch.institution_id)
-Index('idx_user_preference_user_id', UserPreference.user_id)

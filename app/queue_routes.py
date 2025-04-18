@@ -1,8 +1,9 @@
 from flask import jsonify, request, send_file
+from flask_socketio import join_room, leave_room
 from . import db, socketio
 from .models import Institution, Queue, Ticket, User, Department, UserRole, QueueSchedule, Weekday
 from .auth import require_auth
-from .services import QueueService, suggest_service_locations, get_dashboard_data, subscribe_to_dashboard
+from .services import QueueService, suggest_service_locations, get_dashboard_data
 import uuid
 from datetime import datetime, timedelta
 import io
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 def init_queue_routes(app):
     def emit_ticket_update(ticket):
+        """Emite atualização de ticket via WebSocket no namespace /tickets."""
         try:
             wait_time = QueueService.calculate_wait_time(ticket.queue.id, ticket.ticket_number, ticket.priority)
             socketio.emit('ticket_update', {
@@ -30,18 +32,17 @@ def init_queue_routes(app):
             logger.error(f"Erro ao emitir atualização via WebSocket: {e}")
 
     def emit_dashboard_update(institution_id, queue_id, event_type, data):
-        """Função auxiliar para emitir atualizações ao painel via WebSocket."""
+        """Emite atualização ao painel via WebSocket no namespace /dashboard."""
         try:
             socketio.emit('dashboard_update', {
                 'institution_id': institution_id,
                 'queue_id': queue_id,
                 'event_type': event_type,
                 'data': data
-            }, namespace='/dashboard')
+            }, room=institution_id, namespace='/dashboard')
             logger.info(f"Atualização de painel emitida: institution_id={institution_id}, event_type={event_type}")
         except Exception as e:
             logger.error(f"Erro ao emitir atualização de painel: {str(e)}")
-
 
     @app.route('/api/suggest-service', methods=['GET'])
     @require_auth
@@ -110,7 +111,6 @@ def init_queue_routes(app):
         logger.info(f"Localização atualizada para user_id={user_id}: lat={latitude}, lon={longitude}")
 
         QueueService.check_proximity_notifications(user_id, latitude, longitude)
-
         return jsonify({'message': 'Localização atualizada com sucesso'}), 200
 
     @app.route('/api/queue/create', methods=['POST'])
@@ -127,7 +127,6 @@ def init_queue_routes(app):
             logger.warning("Campos obrigatórios faltando na criação de fila.")
             return jsonify({'error': 'Campos obrigatórios faltando'}), 400
 
-        # Validações adicionais
         if not re.match(r'^[A-Z]$', data['prefix']):
             logger.warning(f"Prefixo inválido: {data['prefix']}")
             return jsonify({'error': 'Prefixo deve ser uma única letra maiúscula'}), 400
@@ -143,7 +142,6 @@ def init_queue_routes(app):
             logger.error(f"Departamento não encontrado: department_id={data['department_id']}")
             return jsonify({'error': 'Departamento não encontrado'}), 404
 
-        # Verificar permissão para o departamento
         if user.is_department_admin and user.department_id != data['department_id']:
             logger.warning(f"Usuário {user.id} não tem permissão para criar fila no departamento {data['department_id']}")
             return jsonify({'error': 'Sem permissão para este departamento'}), 403
@@ -186,7 +184,6 @@ def init_queue_routes(app):
         queue = Queue.query.get_or_404(id)
         data = request.get_json()
 
-        # Verificar permissão
         if user.is_department_admin and queue.department_id != user.department_id:
             logger.warning(f"Usuário {user.id} não tem permissão para atualizar fila {id}")
             return jsonify({'error': 'Sem permissão para esta fila'}), 403
@@ -194,7 +191,6 @@ def init_queue_routes(app):
             logger.warning(f"Usuário {user.id} não tem permissão para atualizar fila na instituição {queue.department.institution_id}")
             return jsonify({'error': 'Sem permissão para esta instituição'}), 403
 
-        # Validações
         if 'prefix' in data and not re.match(r'^[A-Z]$', data['prefix']):
             logger.warning(f"Prefixo inválido: {data['prefix']}")
             return jsonify({'error': 'Prefixo deve ser uma única letra maiúscula'}), 400
@@ -257,12 +253,12 @@ def init_queue_routes(app):
         fcm_token = data.get('fcm_token')
         priority = data.get('priority', 0)
         is_physical = data.get('is_physical', False)
-        
+
         try:
             ticket, pdf_buffer = QueueService.add_to_queue(service, user_id, priority, is_physical, fcm_token)
             emit_ticket_update(ticket)
             wait_time = QueueService.calculate_wait_time(ticket.queue.id, ticket.ticket_number, ticket.priority)
-            
+
             response = {
                 'message': 'Senha emitida',
                 'ticket': {
@@ -276,7 +272,7 @@ def init_queue_routes(app):
                     'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None
                 }
             }
-            
+
             if is_physical and pdf_buffer:
                 return send_file(
                     pdf_buffer,
@@ -284,13 +280,13 @@ def init_queue_routes(app):
                     download_name=f"ticket_{ticket.queue.prefix}{ticket.ticket_number}.pdf",
                     mimetype='application/pdf'
                 )
-            
+
             logger.info(f"Senha emitida: {ticket.queue.prefix}{ticket.ticket_number} para user_id={user_id}")
             return jsonify(response), 201
         except ValueError as e:
             logger.error(f"Erro ao emitir senha para serviço {service}: {str(e)}")
             return jsonify({'error': str(e)}), 400
-        
+
     @app.route('/api/ticket/<ticket_id>/pdf', methods=['GET'])
     @require_auth
     def download_ticket_pdf(ticket_id):
@@ -455,18 +451,7 @@ def init_queue_routes(app):
 
     @app.route('/api/ticket/validate', methods=['POST'])
     def validate_ticket():
-        """
-        Valida a presença de um ticket físico ou virtual usando QR code ou número do ticket e ID da fila.
-        Payload: {
-            'qr_code': str (opcional, para validação por QR code),
-            'ticket_number': int (opcional, para validação manual),
-            'queue_id': str (obrigatório se ticket_number for fornecido)
-        }
-        Resposta: {
-            'message': str,
-            'ticket_id': str
-        }
-        """
+        """Valida a presença de um ticket físico ou virtual usando QR code ou número do ticket e ID da fila."""
         data = request.get_json() or {}
         qr_code = data.get('qr_code')
         ticket_number = data.get('ticket_number')
@@ -485,10 +470,8 @@ def init_queue_routes(app):
 
         try:
             if qr_code:
-                # Validação por QR code (autenticada ou pública)
                 ticket = QueueService.validate_presence(qr_code)
             else:
-                # Validação manual por ticket_number e queue_id
                 if not isinstance(queue_id, str) or not re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', queue_id, re.I):
                     logger.warning(f"queue_id inválido: {queue_id}")
                     return jsonify({'error': 'queue_id deve ser um UUID válido'}), 400
@@ -497,7 +480,6 @@ def init_queue_routes(app):
                     logger.warning(f"ticket_number inválido: {ticket_number}")
                     return jsonify({'error': 'ticket_number deve ser um número inteiro positivo'}), 400
 
-                # Permitir validação de tickets Pendente ou Chamado para maior flexibilidade
                 ticket = Ticket.query.filter_by(queue_id=queue_id, ticket_number=ticket_number).filter(Ticket.status.in_(['Pendente', 'Chamado'])).first()
                 if not ticket:
                     logger.warning(f"Ticket não encontrado ou não está Pendente/Chamado: queue_id={queue_id}, ticket_number={ticket_number}")
@@ -510,11 +492,10 @@ def init_queue_routes(app):
                 last_ticket = Ticket.query.filter_by(queue_id=queue.id, status='attended')\
                     .filter(Ticket.attended_at < ticket.attended_at).order_by(Ticket.attended_at.desc()).first()
                 if last_ticket and last_ticket.attended_at:
-                    ticket.service_time = (ticket.attended_at - last_ticket.attended_at).total_seconds() / 60.0
+                    ticket.service_time = (ticket.attended_at - last_ticket.Atendidoed_at).total_seconds() / 60.0
                     queue.last_service_time = ticket.service_time
 
                 if ticket.status == 'Pendente':
-                    # Se estava Pendente, ajustar contadores da fila
                     queue.active_tickets -= 1
                     queue.current_ticket = ticket.ticket_number
                     ticket.counter = queue.last_counter or 1
@@ -549,24 +530,17 @@ def init_queue_routes(app):
         institutions = Institution.query.all()
         now = datetime.now()
         current_weekday_str = now.strftime('%A')
-        
-        # Converter a string do dia para o enum correto
         current_weekday_enum = getattr(Weekday, current_weekday_str.upper())
-        
         current_time = now.time()
         result = []
-        
+
         for inst in institutions:
             departments = Department.query.filter_by(institution_id=inst.id).all()
             queues = Queue.query.filter(Queue.department_id.in_([d.id for d in departments])).all()
             queue_data = []
-            
+
             for q in queues:
-                # Verificar status com QueueSchedule
-                schedule = QueueSchedule.query.filter_by(
-                    queue_id=q.id, weekday=current_weekday_enum
-                ).first()
-                
+                schedule = QueueSchedule.query.filter_by(queue_id=q.id, weekday=current_weekday_enum).first()
                 is_open = False
                 if schedule and not schedule.is_closed:
                     is_open = (
@@ -575,7 +549,7 @@ def init_queue_routes(app):
                         current_time <= schedule.end_time and
                         q.active_tickets < q.daily_limit
                     )
-                    
+
                 queue_data.append({
                     'id': q.id,
                     'service': q.service,
@@ -591,7 +565,7 @@ def init_queue_routes(app):
                     'num_counters': q.num_counters,
                     'status': 'Aberto' if is_open else 'Fechado'
                 })
-                
+
             result.append({
                 'institution': {
                     'id': inst.id,
@@ -602,11 +576,9 @@ def init_queue_routes(app):
                 },
                 'queues': queue_data
             })
-            
+
         logger.info(f"Lista de filas retornada: {len(result)} instituições encontradas.")
         return jsonify(result), 200
-
-
 
     @app.route('/api/tickets', methods=['GET'])
     @require_auth
@@ -677,7 +649,7 @@ def init_queue_routes(app):
             tickets = Ticket.query.join(Queue).join(Department).filter(
                 Department.institution_id == user.institution_id
             ).all()
-        else:  # DEPARTMENT_ADMIN
+        else:
             tickets = Ticket.query.filter(
                 Ticket.queue_id.in_(
                     db.session.query(Queue.id).filter_by(department_id=user.department_id)
@@ -783,43 +755,7 @@ def init_queue_routes(app):
 
     @app.route('/api/institutions/<string:institution_id>/services/search', methods=['GET'])
     def search_services(institution_id):
-        """
-        Busca serviços disponíveis em uma instituição com filtros.
-        Query Params:
-            - sector: str (ex.: "Saúde")
-            - location: str (ex.: "São Paulo")
-            - max_wait_time: int (minutos)
-            - service_name: str (busca parcial)
-            - is_open: bool (apenas filas abertas)
-            - page: int (página, padrão=1)
-            - per_page: int (itens por página, padrão=20, máx=100)
-        Resposta: {
-            'services': [
-                {
-                    'queue_id': str,
-                    'name': str,
-                    'service': str,
-                    'sector': str,
-                    'location': str,
-                    'description': str,
-                    'is_open': bool,
-                    'open_time': str,
-                    'end_time': str,
-                    'daily_limit': int,
-                    'available_tickets': int,
-                    'wait_time': int,
-                    'counter': int,
-                    'latitude': float,
-                    'longitude': float
-                },
-                ...
-            ],
-            'total': int,
-            'page': int,
-            'per_page': int,
-            'suggestions': [{'queue_id': str, 'location': str, 'wait_time': int}, ...]
-        }
-        """
+        """Busca serviços disponíveis em uma instituição com filtros."""
         institution = Institution.query.get_or_404(institution_id)
 
         filters = {}
@@ -886,25 +822,7 @@ def init_queue_routes(app):
 
     @app.route('/api/institutions/<string:institution_id>/physical-ticket', methods=['POST'])
     def generate_physical_ticket(institution_id):
-        """
-        Gera um ticket físico anônimo para uma fila via mesa digital (totem).
-        Payload: {
-            'queue_id': str (UUID da fila)
-        }
-        Resposta: {
-            'message': str,
-            'ticket': {
-                'id': str,
-                'queue_id': str,
-                'ticket_number': int,
-                'qr_code': str,
-                'status': str,
-                'issued_at': str,
-                'expires_at': str
-            },
-            'pdf': str (base64 do PDF)
-        }
-        """
+        """Gera um ticket físico anônimo para uma fila via mesa digital (totem)."""
         institution = Institution.query.get_or_404(institution_id)
 
         data = request.get_json()
@@ -939,23 +857,7 @@ def init_queue_routes(app):
 
     @app.route('/api/institutions/<string:institution_id>/dashboard', methods=['GET'])
     def get_dashboard(institution_id):
-        """
-        Recupera os dados para o painel de chamadas de uma instituição.
-        Query Params:
-            - refresh: bool (se true, ignora cache)
-        Resposta: {
-            'queues': [
-                {
-                    'queue_id': str,
-                    'name': str,
-                    'service': str,
-                    'current_call': {'ticket_number': str, 'counter': int, 'timestamp': str} | None,
-                    'recent_calls': [{'ticket_number': str, 'counter': int, 'timestamp': str}, ...]
-                },
-                ...
-            ]
-        }
-        """
+        """Recupera os dados para o painel de chamadas de uma instituição."""
         institution = Institution.query.get_or_404(institution_id)
 
         cache_key = f'dashboard:{institution_id}'
@@ -967,35 +869,47 @@ def init_queue_routes(app):
                     return jsonify(json.loads(cached_data))
             except Exception as e:
                 logger.warning(f"Erro ao acessar Redis para dashboard {institution_id}: {str(e)}")
-                # Continuar sem cache
 
         data = get_dashboard_data(institution_id)
         try:
-            app.redis_client.setex(cache_key, 300, json.dumps(data))  # Cache por 5 minutos
+            app.redis_client.setex(cache_key, 300, json.dumps(data))
         except Exception as e:
             logger.warning(f"Erro ao salvar cache no Redis para dashboard {institution_id}: {str(e)}")
         return jsonify(data)
 
-    @socketio.on('connect_dashboard')
+    @socketio.on('connect_dashboard', namespace='/dashboard')
     def handle_dashboard_connect(data):
-        """
-        Conecta o cliente ao canal WebSocket do painel.
-        Payload: {'institution_id': str}
-        """
+        """Conecta o cliente ao canal WebSocket do painel para atualizações em tempo real."""
         institution_id = data.get('institution_id')
         if not institution_id:
             socketio.emit('error', {'message': 'institution_id é obrigatório'}, namespace='/dashboard')
+            logger.warning("Tentativa de conexão ao dashboard sem institution_id")
             return
 
         institution = Institution.query.get(institution_id)
         if not institution:
             socketio.emit('error', {'message': 'Instituição não encontrada'}, namespace='/dashboard')
+            logger.warning(f"Instituição não encontrada: institution_id={institution_id}")
             return
 
-        pubsub = subscribe_to_dashboard(institution_id)
+        join_room(institution_id, namespace='/dashboard')
+        logger.info(f"Cliente conectado ao dashboard: institution_id={institution_id}")
+
+        # Enviar dados iniciais do dashboard
         try:
-            for message in pubsub.listen():
-                if message['type'] == 'message':
-                    socketio.emit('dashboard_update', json.loads(message['data']), namespace='/dashboard')
-        finally:
-            pubsub.unsubscribe()
+            dashboard_data = get_dashboard_data(institution_id)
+            socketio.emit('dashboard_update', {
+                'institution_id': institution_id,
+                'event_type': 'initial_data',
+                'data': dashboard_data
+            }, room=institution_id, namespace='/dashboard')
+            logger.info(f"Dados iniciais do dashboard enviados: institution_id={institution_id}")
+        except Exception as e:
+            logger.error(f"Erro ao enviar dados iniciais do dashboard para institution_id={institution_id}: {str(e)}")
+            socketio.emit('error', {'message': 'Erro ao carregar dados iniciais'}, namespace='/dashboard')
+
+    @socketio.on('disconnect', namespace='/dashboard')
+    def handle_dashboard_disconnect():
+        """Gerencia a desconexão de um cliente do dashboard."""
+        logger.info("Cliente desconectado do namespace /dashboard")
+        # O leave_room é gerenciado automaticamente pelo Flask-SocketIO quando o cliente desconecta

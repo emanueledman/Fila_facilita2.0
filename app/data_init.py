@@ -1,6 +1,6 @@
 import uuid
 from datetime import time, datetime, timedelta
-from .models import Institution, Queue, User, Ticket, Department, UserRole, QueueSchedule, Weekday
+from .models import Branch, Institution, Queue, ServiceTag, User, Ticket, Department, UserPreference, UserRole, QueueSchedule, Weekday
 from . import db
 import os
 from sqlalchemy.exc import SQLAlchemyError
@@ -8,808 +8,575 @@ from sqlalchemy.exc import SQLAlchemyError
 def populate_initial_data(app):
     with app.app_context():
         try:
-            # Desativar autoflush para evitar problemas durante a inserção
             with db.session.no_autoflush:
-                # Verificar se já existem instituições (evita duplicações)
                 if Institution.query.count() > 0:
-                    app.logger.info("Instituições já existem, pulando inicialização de dados.")
+                    app.logger.info("Dados já existem, pulando inicialização.")
                     return
 
-                # Lista de instituições
-                institutions = [
-                    {
-                        'id': str(uuid.uuid4()),
-                        'name': 'Hospital Josina Machel',
-                        'location': 'Luanda, Luanda',
-                        'latitude': -8.8167,
-                        'longitude': 13.2332,
-                        'departments': [
-                            {
-                                'name': 'Consulta Geral',
-                                'sector': 'Saúde',
-                                'queues': [
-                                    {
-                                        'id': '80746d76-f7f5-4c79-acd1-4173c1737a5a',
-                                        'service': 'Consulta Geral',
-                                        'prefix': 'A',
-                                        'open_time': time(7, 0),
-                                        'end_time': time(17, 0),
-                                        'daily_limit': 50,
-                                        'num_counters': 5,
-                                        'schedules': [
-                                            {'weekday': Weekday.MONDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                            {'weekday': Weekday.TUESDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                            {'weekday': Weekday.THURSDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                            {'weekday': Weekday.FRIDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                            {'weekday': Weekday.SATURDAY, 'open_time': time(7, 0), 'end_time': time(12, 0), 'is_closed': False},
-                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
-                                    },
-                                    {
-                                        'id': '21591b32-cbc4-424a-882f-3db65d134040',
-                                        'service': 'Triagem',
-                                        'prefix': 'T',
-                                        'open_time': time(7, 0),
-                                        'end_time': time(17, 0),
-                                        'daily_limit': 50,
-                                        'num_counters': 3,
-                                        'schedules': [
-                                            {'weekday': Weekday.MONDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                            {'weekday': Weekday.TUESDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                            {'weekday': Weekday.THURSDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                            {'weekday': Weekday.FRIDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                            {'weekday': Weekday.SATURDAY, 'open_time': time(7, 0), 'end_time': time(12, 0), 'is_closed': False},
-                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                'name': 'Urgência',
-                                'sector': 'Saúde',
-                                'queues': [
-                                    {
-                                        'id': '72282889-e677-481a-9894-1c5bc68c2c44',
-                                        'service': 'Urgência',
-                                        'prefix': 'B',
-                                        'open_time': time(0, 0),
-                                        'end_time': time(23, 59),
-                                        'daily_limit': 100,
-                                        'num_counters': 8,
-                                        'schedules': [
-                                            {'weekday': Weekday.MONDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                            {'weekday': Weekday.TUESDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                            {'weekday': Weekday.THURSDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                            {'weekday': Weekday.FRIDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                            {'weekday': Weekday.SATURDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                            {'weekday': Weekday.SUNDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False}
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                'name': 'Farmácia',
-                                'sector': 'Saúde',
-                                'queues': [
-                                    {
-                                        'id': '321589c1-1688-4684-b50a-3febdd17ea23',
-                                        'service': 'Distribuição de Medicamentos',
-                                        'prefix': 'C',
-                                        'open_time': time(8, 0),
-                                        'end_time': time(16, 0),
-                                        'daily_limit': 60,
-                                        'num_counters': 3,
-                                        'schedules': [
-                                            {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                            {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                            {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                            {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                            {'weekday': Weekday.SATURDAY, 'is_closed': True},
-                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        'id': str(uuid.uuid4()),
-                        'name': 'Escola Primária Ngola Kiluanje',
-                        'location': 'Viana, Luanda',
-                        'latitude': -8.9035,
-                        'longitude': 13.3741,
-                        'departments': [
-                            {
-                                'name': 'Secretaria Escolar',
-                                'sector': 'Educação',
-                                'queues': [
-                                    {
-                                        'id': '066a3c0c-54e1-4c35-81d9-dcff210bd2d5',
-                                        'service': 'Matrículas',
-                                        'prefix': 'M',
-                                        'open_time': time(8, 0),
-                                        'end_time': time(14, 0),
-                                        'daily_limit': 30,
-                                        'num_counters': 2,
-                                        'schedules': [
-                                            {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                            {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                            {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                            {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                            {'weekday': Weekday.SATURDAY, 'is_closed': True},
-                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
-                                    },
-                                    {
-                                        'id': '06c9b02c-bd01-4bb5-9f98-2bc56cbadf3a',
-                                        'service': 'Declarações',
-                                        'prefix': 'D',
-                                        'open_time': time(8, 0),
-                                        'end_time': time(14, 0),
-                                        'daily_limit': 20,
-                                        'num_counters': 1,
-                                        'schedules': [
-                                            {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                            {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                            {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                            {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
-                                            {'weekday': Weekday.SATURDAY, 'is_closed': True},
-                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        'id': str(uuid.uuid4()),
-                        'name': 'Cartório Notarial de Luanda',
-                        'location': 'Luanda, Luanda',
-                        'latitude': -8.8147,
-                        'longitude': 13.2302,
-                        'departments': [
-                            {
-                                'name': 'Atendimento Notarial',
-                                'sector': 'Serviços Públicos',
-                                'queues': [
-                                    {
-                                        'id': '1862b78e-b091-4969-882f-c1f91c8dbd97',
-                                        'service': 'Autenticação de Documentos',
-                                        'prefix': 'N',
-                                        'open_time': time(8, 0),
-                                        'end_time': time(15, 0),
-                                        'daily_limit': 40,
-                                        'num_counters': 3,
-                                        'schedules': [
-                                            {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                            {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                            {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                            {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                            {'weekday': Weekday.SATURDAY, 'is_closed': True},
-                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
-                                    },
-                                    {
-                                        'id': '4f3118f4-8bcb-4339-92c1-d8a81441d87f',
-                                        'service': 'Registo Civil',
-                                        'prefix': 'R',
-                                        'open_time': time(8, 0),
-                                        'end_time': time(15, 0),
-                                        'daily_limit': 30,
-                                        'num_counters': 2,
-                                        'schedules': [
-                                            {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                            {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                            {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                            {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                            {'weekday': Weekday.SATURDAY, 'is_closed': True},
-                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        'id': str(uuid.uuid4()),
-                        'name': 'Hospital Maria Pia',
-                        'location': 'Luanda, Luanda',
-                        'latitude': -8.8200,
-                        'longitude': 13.2400,
-                        'departments': [
-                            {
-                                'name': 'Pediatria',
-                                'sector': 'Saúde',
-                                'queues': [
-                                    {
-                                        'id': '9c5fda76-2459-4622-b591-4180a4088d50',
-                                        'service': 'Consulta Pediátrica',
-                                        'prefix': 'P',
-                                        'open_time': time(7, 30),
-                                        'end_time': time(16, 30),
-                                        'daily_limit': 40,
-                                        'num_counters': 4,
-                                        'schedules': [
-                                            {'weekday': Weekday.MONDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
-                                            {'weekday': Weekday.TUESDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
-                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
-                                            {'weekday': Weekday.THURSDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
-                                            {'weekday': Weekday.FRIDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
-                                            {'weekday': Weekday.SATURDAY, 'is_closed': True},
-                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                'name': 'Maternidade',
-                                'sector': 'Saúde',
-                                'queues': [
-                                    {
-                                        'id': 'cccc41b7-60bb-47ff-955e-a5f71ae8827e',
-                                        'service': 'Consulta Pré-Natal',
-                                        'prefix': 'M',
-                                        'open_time': time(8, 0),
-                                        'end_time': time(15, 0),
-                                        'daily_limit': 30,
-                                        'num_counters': 2,
-                                        'schedules': [
-                                            {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                            {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                            {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                            {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                            {'weekday': Weekday.SATURDAY, 'is_closed': True},
-                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        'id': str(uuid.uuid4()),
-                        'name': 'Instituto Médio de Saúde de Luanda',
-                        'location': 'Luanda, Luanda',
-                        'latitude': -8.8300,
-                        'longitude': 13.2500,
-                        'departments': [
-                            {
-                                'name': 'Administração Escolar',
-                                'sector': 'Educação',
-                                'queues': [
-                                    {
-                                        'id': str(uuid.uuid4()),  # Fila extra para manter a estrutura original
-                                        'service': 'Inscrições',
-                                        'prefix': 'I',
-                                        'open_time': time(8, 0),
-                                        'end_time': time(13, 0),
-                                        'daily_limit': 25,
-                                        'num_counters': 2,
-                                        'schedules': [
-                                            {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(13, 0), 'is_closed': False},
-                                            {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(13, 0), 'is_closed': False},
-                                            {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(13, 0), 'is_closed': False},
-                                            {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(13, 0), 'is_closed': False},
-                                            {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(13, 0), 'is_closed': False},
-                                            {'weekday': Weekday.SATURDAY, 'is_closed': True},
-                                            {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    }
+                # 1. Categorias de Serviço (expandidas)
+                service_categories = [
+                    # Categorias principais
+                    {'name': 'Saúde', 'description': 'Serviços médicos e hospitalares'},
+                    {'name': 'Bancário', 'description': 'Serviços financeiros'},
+                    {'name': 'Notarial', 'description': 'Serviços cartorários'},
+                    {'name': 'Utilidades', 'description': 'Serviços públicos essenciais'},
+                    {'name': 'Educação', 'description': 'Instituições de ensino'},
+                    {'name': 'Transporte', 'description': 'Serviços de transporte e logística'},
+                    {'name': 'Universidade', 'description': 'Serviços universitários'},
+                    
+                    # Subcategorias de Saúde
+                    {'name': 'Consulta Médica', 'description': 'Consultas gerais e especializadas', 'parent_name': 'Saúde'},
+                    {'name': 'Emergência', 'description': 'Atendimento de urgência', 'parent_name': 'Saúde'},
+                    {'name': 'Exames', 'description': 'Realização de exames', 'parent_name': 'Saúde'},
+                    {'name': 'Farmácia', 'description': 'Dispensação de medicamentos', 'parent_name': 'Saúde'},
+                    
+                    # Subcategorias Bancárias
+                    {'name': 'Atendimento ao Cliente', 'description': 'Atendimento geral bancário', 'parent_name': 'Bancário'},
+                    {'name': 'Crédito', 'description': 'Serviços de empréstimos', 'parent_name': 'Bancário'},
+                    {'name': 'Investimentos', 'description': 'Gestão de investimentos', 'parent_name': 'Bancário'},
+                    
+                    # Subcategorias Notariais
+                    {'name': 'Registro Civil', 'description': 'Certidões e registros', 'parent_name': 'Notarial'},
+                    {'name': 'Autenticações', 'description': 'Autenticação de documentos', 'parent_name': 'Notarial'},
+                    
+                    # Subcategorias de Educação
+                    {'name': 'Matrículas', 'description': 'Processos de matrícula', 'parent_name': 'Educação'},
+                    {'name': 'Secretaria', 'description': 'Serviços administrativos', 'parent_name': 'Educação'},
+                    
+                    # Subcategorias de Transporte
+                    {'name': 'Bilhetes', 'description': 'Venda de bilhetes', 'parent_name': 'Transporte'},
+                    {'name': 'Cargas', 'description': 'Gestão de cargas', 'parent_name': 'Transporte'},
+                    {'name': 'Logística', 'description': 'Gestão logística', 'parent_name': 'Transporte'},
+                    
+                    # Subcategorias Universitárias
+                    {'name': 'Inscrições', 'description': 'Inscrições acadêmicas', 'parent_name': 'Universidade'},
+                    {'name': 'Pagamentos', 'description': 'Pagamento de propinas', 'parent_name': 'Universidade'},
+                    {'name': 'Biblioteca', 'description': 'Serviços de biblioteca', 'parent_name': 'Universidade'}
+                ]
+                
+                # Inserir categorias e mapear IDs
+                category_map = {}
+                for cat in service_categories:
+                    parent_id = None
+                    if 'parent_name' in cat:
+                        parent_id = category_map[cat['parent_name']]
+                    
+                    category = ServiceCategory(
+                        id=str(uuid.uuid4()),
+                        name=cat['name'],
+                        description=cat['description'],
+                        parent_id=parent_id
+                    )
+                    db.session.add(category)
+                    category_map[cat['name']] = category.id
+
+                # 2. Bairros e coordenadas (exemplo para Luanda)
+                neighborhoods = [
+                    {'name': 'Ingombota', 'lat': -8.8167, 'long': 13.2332},
+                    {'name': 'Maianga', 'lat': -8.8147, 'long': 13.2302},
+                    {'name': 'Rangel', 'lat': -8.8300, 'long': 13.2500},
+                    {'name': 'Samba', 'lat': -8.8200, 'long': 13.2400},
+                    {'name': 'Viana', 'lat': -8.9035, 'long': 13.3741},
+                    {'name': 'Talatona', 'lat': -8.9167, 'long': 13.1833},
+                    {'name': 'Kilamba', 'lat': -8.9986, 'long': 13.2669},
+                    {'name': 'Cazenga', 'lat': -8.8500, 'long': 13.2833},
+                    {'name': 'Cacuaco', 'lat': -8.7833, 'long': 13.3667},
+                    {'name': 'Patriota', 'lat': -8.8500, 'long': 13.2333}
                 ]
 
-                queue_ids = {}
+                # 3. Instituições (50 no total)
+                institutions = []
+                
+                # 15 Hospitais (reduzido para dar espaço a outras categorias)
+                hospital_names = [
+                    "Hospital Josina Machel", "Hospital Maria Pia", 
+                    "Hospital Americo Boavida", "Clínica Girassol",
+                    "Hospital Pediatrico", "Hospital Militar",
+                    "Clínica Sagrada Esperança", "Hospital Geral de Luanda",
+                    "Hospital Sanatório", "Clínica Multiperfil",
+                    "Hospital Prenda", "Hospital Cajueiros",
+                    "Clínica Endiama", "Hospital Esperança",
+                    "Centro Médico Luanda"
+                ]
+                for i, name in enumerate(hospital_names):
+                    institutions.append({
+                        'name': name,
+                        'description': f'Hospital público em {neighborhoods[i%10]["name"]}',
+                        'type': 'Saúde',
+                        'branches': []
+                    })
+                
+                # 10 Bancos
+                bank_names = [
+                    "Banco BIC", "Banco BAI", "Banco BCI", 
+                    "Banco Sol", "Banco Económico", "Banco Fomento",
+                    "Banco Millennium", "Banco Atlântico", 
+                    "Banco de Poupança e Crédito", "Banco Keve"
+                ]
+                for i, name in enumerate(bank_names):
+                    institutions.append({
+                        'name': f'{name} {neighborhoods[i%10]["name"]}',
+                        'description': f'Agência bancária do {name}',
+                        'type': 'Bancário',
+                        'branches': []
+                    })
+                
+                # 5 Cartórios
+                for i in range(1, 6):
+                    institutions.append({
+                        'name': f'Cartório Notarial {neighborhoods[i%10]["name"]}',
+                        'description': 'Serviços notariais e de registro',
+                        'type': 'Notarial',
+                        'branches': []
+                    })
+                
+                # 5 Serviços de Alta Demanda
+                high_demand_services = [
+                    'Casa de Repouso Vovó Feliz',
+                    'Centro de Emissão de Passaportes',
+                    'Central de Licenciamento de Veículos',
+                    'Delegacia de Imigração',
+                    'Centro de Atendimento Fiscal'
+                ]
+                for i, service in enumerate(high_demand_services):
+                    institutions.append({
+                        'name': service,
+                        'description': f'Serviço público de alta demanda em {neighborhoods[i%10]["name"]}',
+                        'type': 'Utilidades',
+                        'branches': []
+                    })
+                
+                # 5 Universidades
+                universities = [
+                    "Universidade Agostinho Neto",
+                    "Universidade Católica de Angola",
+                    "Universidade Lusíada",
+                    "Universidade Metodista",
+                    "Universidade Privada de Angola"
+                ]
+                for i, uni in enumerate(universities):
+                    institutions.append({
+                        'name': uni,
+                        'description': f'Instituição de ensino superior em {neighborhoods[i%10]["name"]}',
+                        'type': 'Universidade',
+                        'branches': []
+                    })
+                
+                # 10 Serviços de Transporte/Logística
+                transport_services = [
+                    "Terminal Rodoviário de Luanda",
+                    "Empresa de Caminhões Transafrica",
+                    "Companhia de Táxis City",
+                    "Transportes Colectivos TCUL",
+                    "Logística Angola Express",
+                    "Carga Pesada TransAngola",
+                    "Terminal de Cargas Aéreas",
+                    "Gestão Portuária de Luanda",
+                    "Transportes Marítimos Atlântico",
+                    "Distribuição Logística Nacional"
+                ]
+                for i, service in enumerate(transport_services):
+                    institutions.append({
+                        'name': service,
+                        'description': f'Serviço de transporte em {neighborhoods[i%10]["name"]}',
+                        'type': 'Transporte',
+                        'branches': []
+                    })
+                
+                # Adicionar filiais (1-3 por instituição)
                 for inst in institutions:
-                    # Verificar se a instituição já existe
-                    existing_institution = Institution.query.filter_by(name=inst['name'], location=inst['location']).first()
-                    if existing_institution:
-                        app.logger.info(f"Instituição {inst['name']} já existe, pulando.")
-                        continue
-
+                    inst['id'] = str(uuid.uuid4())
+                    num_branches = 1  # Padrão 1 filial, pode ser aumentado
+                    
+                    for i in range(num_branches):
+                        neighborhood = neighborhoods[i%10]
+                        branch = {
+                            'id': str(uuid.uuid4()),
+                            'name': f'Unidade {neighborhood["name"]}',
+                            'location': f'{neighborhood["name"]}, Luanda',
+                            'neighborhood': neighborhood['name'],
+                            'latitude': neighborhood['lat'],
+                            'longitude': neighborhood['long'],
+                            'departments': []
+                        }
+                        
+                        # Adicionar departamentos (2-5 por filial)
+                        num_departments = 3  # Padrão 3 departamentos
+                        for j in range(num_departments):
+                            if inst['type'] == 'Saúde':
+                                dept_options = [
+                                    ('Consulta Geral', 'Saúde', 'Consulta Médica'),
+                                    ('Emergência', 'Saúde', 'Emergência'),
+                                    ('Pediatria', 'Saúde', 'Consulta Médica'),
+                                    ('Exames', 'Saúde', 'Exames'),
+                                    ('Farmácia', 'Saúde', 'Farmácia')
+                                ]
+                            elif inst['type'] == 'Bancário':
+                                dept_options = [
+                                    ('Atendimento ao Cliente', 'Bancário', 'Atendimento ao Cliente'),
+                                    ('Crédito', 'Bancário', 'Crédito'),
+                                    ('Investimentos', 'Bancário', 'Investimentos')
+                                ]
+                            elif inst['type'] == 'Notarial':
+                                dept_options = [
+                                    ('Registro Civil', 'Notarial', 'Registro Civil'),
+                                    ('Autenticações', 'Notarial', 'Autenticações')
+                                ]
+                            elif inst['type'] == 'Universidade':
+                                dept_options = [
+                                    ('Secretaria Acadêmica', 'Universidade', 'Inscrições'),
+                                    ('Financeiro', 'Universidade', 'Pagamentos'),
+                                    ('Biblioteca', 'Universidade', 'Biblioteca')
+                                ]
+                            elif inst['type'] == 'Transporte':
+                                dept_options = [
+                                    ('Bilhetes', 'Transporte', 'Bilhetes'),
+                                    ('Cargas', 'Transporte', 'Cargas'),
+                                    ('Logística', 'Transporte', 'Logística')
+                                ]
+                            else:  # Utilidades
+                                dept_options = [
+                                    ('Atendimento Geral', 'Utilidades', None),
+                                    ('Licenciamento', 'Utilidades', None),
+                                    ('Documentação', 'Utilidades', None)
+                                ]
+                            
+                            dept_name, sector, category = dept_options[j%len(dept_options)]
+                            
+                            department = {
+                                'id': str(uuid.uuid4()),
+                                'name': dept_name,
+                                'sector': sector,
+                                'queues': []
+                            }
+                            
+                            # Adicionar filas (1-3 por departamento)
+                            num_queues = 2  # Padrão 2 filas por departamento
+                            for k in range(num_queues):
+                                if sector == 'Saúde':
+                                    queue_options = [
+                                        ('Consulta', 'A', ['consulta', 'médico']),
+                                        ('Triagem', 'T', ['triagem', 'urgência']),
+                                        ('Retorno', 'R', ['retorno', 'consulta']),
+                                        ('Exames', 'E', ['exames', 'laboratório'])
+                                    ]
+                                elif sector == 'Bancário':
+                                    queue_options = [
+                                        ('Atendimento', 'A', ['banco', 'atendimento']),
+                                        ('Caixa', 'C', ['caixa', 'depósitos']),
+                                        ('Crédito', 'D', ['crédito', 'empréstimos'])
+                                    ]
+                                elif sector == 'Notarial':
+                                    queue_options = [
+                                        ('Autenticação', 'A', ['documentos', 'autenticação']),
+                                        ('Registro', 'R', ['registro', 'civil'])
+                                    ]
+                                elif sector == 'Universidade':
+                                    queue_options = [
+                                        ('Inscrições', 'I', ['inscrição', 'universidade']),
+                                        ('Pagamentos', 'P', ['pagamento', 'propinas']),
+                                        ('Emissão Documentos', 'E', ['documentos', 'certidões'])
+                                    ]
+                                elif sector == 'Transporte':
+                                    queue_options = [
+                                        ('Bilhetes', 'B', ['bilhetes', 'viagem']),
+                                        ('Cargas', 'C', ['cargas', 'frete']),
+                                        ('Logística', 'L', ['logística', 'planeamento'])
+                                    ]
+                                else:  # Utilidades
+                                    queue_options = [
+                                        ('Atendimento', 'A', ['atendimento', 'serviço']),
+                                        ('Licenças', 'L', ['licença', 'documento']),
+                                        ('Pagamentos', 'P', ['pagamentos', 'taxas'])
+                                    ]
+                                
+                                service, prefix, tags = queue_options[k%len(queue_options)]
+                                
+                                # Definir horários padrão
+                                if sector in ['Saúde', 'Emergência']:
+                                    open_time = time(7, 0)
+                                    end_time = time(17, 0)
+                                elif sector == 'Universidade':
+                                    open_time = time(8, 0)
+                                    end_time = time(15, 0)
+                                else:
+                                    open_time = time(8, 0)
+                                    end_time = time(16, 0)
+                                
+                                queue = {
+                                    'id': str(uuid.uuid4()),
+                                    'service': f'{service} {k+1}',
+                                    'category_id': category_map[category] if category else None,
+                                    'prefix': prefix,
+                                    'open_time': open_time,
+                                    'end_time': end_time,
+                                    'daily_limit': 50,
+                                    'num_counters': 2,
+                                    'tags': tags,
+                                    'schedules': []
+                                }
+                                
+                                # Agendamentos para cada dia da semana
+                                for day in Weekday:
+                                    is_closed = (day == Weekday.SUNDAY)
+                                    
+                                    if is_closed:
+                                        schedule = {
+                                            'weekday': day,
+                                            'is_closed': True
+                                        }
+                                    else:
+                                        # Ajustar horários para sábado
+                                        if day == Weekday.SATURDAY:
+                                            q_open = time(8, 0)
+                                            q_end = time(12, 0)
+                                        else:
+                                            q_open = open_time
+                                            q_end = end_time
+                                        
+                                        schedule = {
+                                            'weekday': day,
+                                            'open_time': q_open,
+                                            'end_time': q_end,
+                                            'is_closed': False
+                                        }
+                                    
+                                    queue['schedules'].append(schedule)
+                                
+                                department['queues'].append(queue)
+                            
+                            branch['departments'].append(department)
+                        
+                        inst['branches'].append(branch)
+                
+                # Inserir todas as instituições, filiais, departamentos e filas no banco de dados
+                for inst in institutions:
                     institution = Institution(
                         id=inst['id'],
                         name=inst['name'],
-                        location=inst['location'],
-                        latitude=inst['latitude'],
-                        longitude=inst['longitude']
+                        description=inst['description']
                     )
                     db.session.add(institution)
-                    db.session.flush()
-
-                    for dept in inst['departments']:
-                        # Verificar se o departamento já existe
-                        existing_department = Department.query.filter_by(
-                            institution_id=inst['id'], name=dept['name']
-                        ).first()
-                        if existing_department:
-                            app.logger.info(f"Departamento {dept['name']} já existe em {inst['name']}, pulando.")
-                            continue
-
-                        department = Department(
-                            id=str(uuid.uuid4()),
+                    
+                    for branch in inst['branches']:
+                        branch_obj = Branch(
+                            id=branch['id'],
                             institution_id=inst['id'],
-                            name=dept['name'],
-                            sector=dept['sector']
+                            name=branch['name'],
+                            location=branch['location'],
+                            neighborhood=branch['neighborhood'],
+                            latitude=branch['latitude'],
+                            longitude=branch['longitude']
                         )
-                        db.session.add(department)
-                        db.session.flush()
-
-                        for q in dept['queues']:
-                            # Verificar se a fila já existe
-                            existing_queue = Queue.query.filter_by(
-                                department_id=department.id, service=q['service']
-                            ).first()
-                            if existing_queue:
-                                app.logger.info(f"Fila {q['service']} já existe em {dept['name']}, pulando.")
-                                queue_ids[f"{dept['name']}_{q['service']}"] = existing_queue.id
-                                continue
-
-                            queue = Queue(
-                                id=q['id'],
-                                department_id=department.id,
-                                service=q['service'],
-                                prefix=q['prefix'],
-                                open_time=q['open_time'],
-                                end_time=q.get('end_time'),
-                                daily_limit=q['daily_limit'],
-                                num_counters=q['num_counters'],
-                                active_tickets=0,
-                                current_ticket=0
+                        db.session.add(branch_obj)
+                        
+                        for dept in branch['departments']:
+                            department = Department(
+                                id=dept['id'],
+                                branch_id=branch['id'],
+                                name=dept['name'],
+                                sector=dept['sector']
                             )
-                            db.session.add(queue)
-                            db.session.flush()
-                            queue_ids[f"{dept['name']}_{q['service']}"] = queue.id
-
-                            # Criar agendamentos para a fila
-                            for schedule in q.get('schedules', []):
-                                queue_schedule = QueueSchedule(
-                                    id=str(uuid.uuid4()),
-                                    queue_id=queue.id,
-                                    weekday=schedule['weekday'],
-                                    open_time=schedule.get('open_time'),
-                                    end_time=schedule.get('end_time'),
-                                    is_closed=schedule.get('is_closed', False)
+                            db.session.add(department)
+                            
+                            for q in dept['queues']:
+                                queue = Queue(
+                                    id=q['id'],
+                                    department_id=dept['id'],
+                                    service=q['service'],
+                                    category_id=q['category_id'],
+                                    prefix=q['prefix'],
+                                    open_time=q['open_time'],
+                                    end_time=q['end_time'],
+                                    daily_limit=q['daily_limit'],
+                                    num_counters=q['num_counters'],
+                                    active_tickets=0,
+                                    current_ticket=0
                                 )
-                                db.session.add(queue_schedule)
-
+                                db.session.add(queue)
+                                
+                                # Adicionar agendamentos
+                                for schedule in q['schedules']:
+                                    queue_schedule = QueueSchedule(
+                                        id=str(uuid.uuid4()),
+                                        queue_id=q['id'],
+                                        weekday=schedule['weekday'],
+                                        open_time=schedule.get('open_time'),
+                                        end_time=schedule.get('end_time'),
+                                        is_closed=schedule.get('is_closed', False)
+                                    )
+                                    db.session.add(queue_schedule)
+                                
+                                # Adicionar tags
+                                for tag in q['tags']:
+                                    service_tag = ServiceTag(
+                                        id=str(uuid.uuid4()),
+                                        queue_id=q['id'],
+                                        tag=tag
+                                    )
+                                    db.session.add(service_tag)
+                
                 db.session.commit()
-                app.logger.info("Dados iniciais de instituições, departamentos, filas e agendamentos inseridos com sucesso!")
-        except SQLAlchemyError as e:
-            db.session.rollback()
-            app.logger.error(f"Erro ao inserir dados iniciais de instituições: {str(e)}")
-            raise
+                app.logger.info("Dados iniciais de instituições inseridos com sucesso!")
 
-        try:
-            # Verificar se o super admin já existe
-            super_admin = User.query.filter_by(email='superadmin@facilita.com').first()
-            if super_admin:
-                app.logger.info("Super admin já existe, pulando inicialização de usuários.")
-                return
-
-            users = [
-                {
-                    'id': str(uuid.uuid4()),
+                # 4. Usuários (400 no total)
+                users = []
+                
+                # 1 Super Admin
+                users.append({
                     'email': 'superadmin@facilita.com',
                     'name': 'Super Admin',
                     'password': os.getenv('SUPERADMIN_PASSWORD', 'superadmin123'),
-                    'user_role': UserRole.SYSTEM_ADMIN,
+                    'role': UserRole.SYSTEM_ADMIN,
                     'institution_id': None,
-                    'department_id': None,
                     'department_name': None
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'email': 'admin.josina@facilita.com',
-                    'name': 'Admin Josina Machel',
-                    'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
-                    'user_role': UserRole.INSTITUTION_ADMIN,
-                    'institution_id': institutions[0]['id'],
-                    'department_id': None,
-                    'department_name': None
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'email': 'gestor.consulta@josina.com',
-                    'name': 'Gestor Consulta Josina',
-                    'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
-                    'user_role': UserRole.DEPARTMENT_ADMIN,
-                    'institution_id': institutions[0]['id'],
-                    'department_id': None,
-                    'department_name': 'Consulta Geral'
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'email': 'gestor.urgencia@josina.com',
-                    'name': 'Gestor Urgência Josina',
-                    'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
-                    'user_role': UserRole.DEPARTMENT_ADMIN,
-                    'institution_id': institutions[0]['id'],
-                    'department_id': None,
-                    'department_name': 'Urgência'
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'email': 'gestor.farmacia@josina.com',
-                    'name': 'Gestor Farmácia Josina',
-                    'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
-                    'user_role': UserRole.DEPARTMENT_ADMIN,
-                    'institution_id': institutions[0]['id'],
-                    'department_id': None,
-                    'department_name': 'Farmácia'
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'email': 'admin.ngola@facilita.com',
-                    'name': 'Admin Ngola Kiluanje',
-                    'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
-                    'user_role': UserRole.INSTITUTION_ADMIN,
-                    'institution_id': institutions[1]['id'],
-                    'department_id': None,
-                    'department_name': None
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'email': 'gestor.secretaria@ngola.com',
-                    'name': 'Gestor Secretaria Ngola',
-                    'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
-                    'user_role': UserRole.DEPARTMENT_ADMIN,
-                    'institution_id': institutions[1]['id'],
-                    'department_id': None,
-                    'department_name': 'Secretaria Escolar'
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'email': 'admin.cartorio@facilita.com',
-                    'name': 'Admin Cartório Luanda',
-                    'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
-                    'user_role': UserRole.INSTITUTION_ADMIN,
-                    'institution_id': institutions[2]['id'],
-                    'department_id': None,
-                    'department_name': None
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'email': 'gestor.notarial@cartorio.com',
-                    'name': 'Gestor Notarial Luanda',
-                    'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
-                    'user_role': UserRole.DEPARTMENT_ADMIN,
-                    'institution_id': institutions[2]['id'],
-                    'department_id': None,
-                    'department_name': 'Atendimento Notarial'
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'email': 'admin.mariapia@facilita.com',
-                    'name': 'Admin Maria Pia',
-                    'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
-                    'user_role': UserRole.INSTITUTION_ADMIN,
-                    'institution_id': institutions[3]['id'],
-                    'department_id': None,
-                    'department_name': None
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'email': 'gestor.pediatria@mariapia.com',
-                    'name': 'Gestor Pediatria Maria Pia',
-                    'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
-                    'user_role': UserRole.DEPARTMENT_ADMIN,
-                    'institution_id': institutions[3]['id'],
-                    'department_id': None,
-                    'department_name': 'Pediatria'
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'email': 'gestor.maternidade@mariapia.com',
-                    'name': 'Gestor Maternidade Maria Pia',
-                    'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
-                    'user_role': UserRole.DEPARTMENT_ADMIN,
-                    'institution_id': institutions[3]['id'],
-                    'department_id': None,
-                    'department_name': 'Maternidade'
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'email': 'admin.ims@facilita.com',
-                    'name': 'Admin IMS Luanda',
-                    'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
-                    'user_role': UserRole.INSTITUTION_ADMIN,
-                    'institution_id': institutions[4]['id'],
-                    'department_id': None,
-                    'department_name': None
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'email': 'gestor.admin@ims.com',
-                    'name': 'Gestor Administração IMS',
-                    'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
-                    'user_role': UserRole.DEPARTMENT_ADMIN,
-                    'institution_id': institutions[4]['id'],
-                    'department_id': None,
-                    'department_name': 'Administração Escolar'
-                },
-                {
-                    'id': str(uuid.uuid4()),
-                    'email': 'default.user@facilita.com',
-                    'name': 'Usuário Padrão',
-                    'password': os.getenv('USER_PASSWORD', 'user123'),
-                    'user_role': UserRole.USER,
-                    'institution_id': institutions[0]['id'],
-                    'department_id': None,
-                    'department_name': 'Consulta Geral'
-                }
-            ]
-
-            for user_data in users:
-                # Verificar se o usuário já existe
-                existing_user = User.query.filter_by(email=user_data['email']).first()
-                if existing_user:
-                    app.logger.info(f"Usuário {user_data['email']} já existe, pulando.")
-                    continue
-
-                department = Department.query.filter_by(
-                    institution_id=user_data['institution_id'],
-                    name=user_data['department_name']
-                ).first() if user_data['department_name'] else None
-                if user_data['department_name'] and not department:
-                    app.logger.warning(f"Departamento {user_data['department_name']} não encontrado para {user_data['email']}")
-                    continue
-
-                user = User(
-                    id=user_data['id'],
-                    email=user_data['email'],
-                    name=user_data['name'],
-                    user_role=user_data['user_role'],
-                    institution_id=user_data['institution_id'],
-                    department_id=department.id if department else None,
-                    active=True
-                )
-                user.set_password(user_data['password'])
-                db.session.add(user)
-            
-            db.session.commit()
-            app.logger.info("Usuários iniciais (super admin, admins, gestores e usuário padrão) inseridos com sucesso!")
-        except SQLAlchemyError as e:
-            db.session.rollback()
-            app.logger.error(f"Erro ao inserir usuários iniciais: {str(e)}")
-            raise
-
-        try:
-            # Desativar autoflush para inserção de tickets
-            with db.session.no_autoflush:
-                default_user = User.query.filter_by(email='default.user@facilita.com').first()
-                if not default_user:
-                    raise ValueError("Usuário padrão não encontrado!")
-
-                # Atualizar active_tickets para cada fila
-                for queue_id in queue_ids.values():
-                    queue = Queue.query.get(queue_id)
-                    if queue:
-                        queue.active_tickets = 0
-                        queue.current_ticket = 0
-
-                tickets = [
-                    # Tickets existentes, ajustados para consistência
-                    {
-                        'id': str(uuid.uuid4()),
-                        'queue_id': queue_ids.get('Consulta Geral_Consulta Geral'),
-                        'user_id': default_user.id,
-                        'ticket_number': 1,
-                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'waiting',
-                        'priority': 0,
-                        'is_physical': False,
-                        'counter': None,
-                        'issued_at': datetime.utcnow(),
-                        'trade_available': False
-                    },
-                    {
-                        'id': str(uuid.uuid4()),
-                        'queue_id': queue_ids.get('Consulta Geral_Consulta Geral'),
-                        'user_id': None,
-                        'ticket_number': 2,
-                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'waiting',
-                        'priority': 0,
-                        'is_physical': True,
-                        'counter': None,
-                        'issued_at': datetime.utcnow(),
-                        'expires_at': datetime.utcnow() + timedelta(hours=4),
-                        'trade_available': False
-                    },
-                    {
-                        'id': str(uuid.uuid4()),
-                        'queue_id': queue_ids.get('Consulta Geral_Consulta Geral'),
-                        'user_id': default_user.id,
-                        'ticket_number': 3,
-                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'Atendido',
-                        'priority': 0,
-                        'is_physical': False,
-                        'counter': 1,
-                        'issued_at': datetime.utcnow() - timedelta(days=1),
-                        'attended_at': datetime.utcnow() - timedelta(hours=1),
-                        'service_time': 15.0,
-                        'trade_available': False
-                    },
-                    {
-                        'id': str(uuid.uuid4()),
-                        'queue_id': queue_ids.get('Urgência_Urgência'),
-                        'user_id': default_user.id,
-                        'ticket_number': 1,
-                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'waiting',
-                        'priority': 0,
-                        'is_physical': False,
-                        'counter': None,
-                        'issued_at': datetime.utcnow(),
-                        'trade_available': False
-                    },
-                    {
-                        'id': str(uuid.uuid4()),
-                        'queue_id': queue_ids.get('Urgência_Urgência'),
-                        'user_id': None,
-                        'ticket_number': 2,
-                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'Atendido',
-                        'priority': 0,
-                        'is_physical': True,
-                        'counter': 1,
-                        'issued_at': datetime.utcnow() - timedelta(days=1),
-                        'attended_at': datetime.utcnow() - timedelta(hours=2),
-                        'service_time': 12.0,
-                        'expires_at': datetime.utcnow() + timedelta(hours=4),
-                        'trade_available': False
-                    },
-                    {
-                        'id': str(uuid.uuid4()),
-                        'queue_id': queue_ids.get('Farmácia_Distribuição de Medicamentos'),
-                        'user_id': default_user.id,
-                        'ticket_number': 1,
-                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'waiting',
-                        'priority': 0,
-                        'is_physical': False,
-                        'counter': None,
-                        'issued_at': datetime.utcnow(),
-                        'trade_available': False
-                    },
-                    {
-                        'id': str(uuid.uuid4()),
-                        'queue_id': queue_ids.get('Secretaria Escolar_Matrículas'),
-                        'user_id': default_user.id,
-                        'ticket_number': 1,
-                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'waiting',
-                        'priority': 0,
-                        'is_physical': False,
-                        'counter': None,
-                        'issued_at': datetime.utcnow(),
-                        'trade_available': False
-                    },
-                    {
-                        'id': str(uuid.uuid4()),
-                        'queue_id': queue_ids.get('Atendimento Notarial_Autenticação de Documentos'),
-                        'user_id': default_user.id,
-                        'ticket_number': 1,
-                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'waiting',
-                        'priority': 0,
-                        'is_physical': False,
-                        'counter': None,
-                        'issued_at': datetime.utcnow(),
-                        'trade_available': False
-                    },
-                    {
-                        'id': str(uuid.uuid4()),
-                        'queue_id': queue_ids.get('Pediatria_Consulta Pediátrica'),
-                        'user_id': default_user.id,
-                        'ticket_number': 1,
-                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'waiting',
-                        'priority': 0,
-                        'is_physical': False,
-                        'counter': None,
-                        'issued_at': datetime.utcnow(),
-                        'trade_available': False
-                    },
-                    {
-                        'id': str(uuid.uuid4()),
-                        'queue_id': queue_ids.get('Administração Escolar_Inscrições'),
-                        'user_id': default_user.id,
-                        'ticket_number': 1,
-                        'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                        'status': 'waiting',
-                        'priority': 0,
-                        'is_physical': False,
-                        'counter': None,
-                        'issued_at': datetime.utcnow(),
-                        'trade_available': False
-                    }
-                ]
-
-                # Adicionar 10 tickets válidos para cada uma das 10 filas dos logs
-                for queue_id in [
-                    '80746d76-f7f5-4c79-acd1-4173c1737a5a',  # Consulta Geral
-                    '72282889-e677-481a-9894-1c5bc68c2c44',  # Urgência
-                    '21591b32-cbc4-424a-882f-3db65d134040',  # Triagem
-                    '066a3c0c-54e1-4c35-81d9-dcff210bd2d5',  # Matrículas
-                    '06c9b02c-bd01-4bb5-9f98-2bc56cbadf3a',  # Declarações
-                    '1862b78e-b091-4969-882f-c1f91c8dbd97',  # Autenticação de Documentos
-                    '321589c1-1688-4684-b50a-3febdd17ea23',  # Distribuição de Medicamentos
-                    '4f3118f4-8bcb-4339-92c1-d8a81441d87f',  # Registo Civil
-                    '9c5fda76-2459-4622-b591-4180a4088d50',  # Consulta Pediátrica
-                    'cccc41b7-60bb-47ff-955e-a5f71ae8827e'   # Consulta Pré-Natal
-                ]:
-                    for i in range(10):
-                        tickets.append({
-                            'id': str(uuid.uuid4()),
-                            'queue_id': queue_id,
-                            'user_id': default_user.id,
-                            'ticket_number': i + 4,  # Evitar conflito com tickets existentes
-                            'qr_code': f"QR-{uuid.uuid4().hex[:10]}",
-                            'status': 'Atendido',
-                            'priority': 0,
-                            'is_physical': False,
-                            'counter': 1,
-                            'issued_at': datetime.utcnow() - timedelta(days=i + 1),
-                            'Atendido_at': datetime.utcnow() - timedelta(days=i + 1, hours=1),
-                            'service_time': 10.0 + i * 2.0,  # Varia entre 10.0 e 28.0 minutos
-                            'trade_available': False
-                        })
-
-                for t in tickets:
-                    if not t['queue_id']:
-                        app.logger.warning(f"Fila não encontrada para ticket: {t}")
-                        continue
-
-                    queue = Queue.query.get(t['queue_id'])
-                    if not queue:
-                        app.logger.warning(f"Fila {t['queue_id']} não encontrada para ticket")
-                        continue
-
-                    # Verificar se o ticket já existe
-                    existing_ticket = Ticket.query.filter_by(
-                        queue_id=t['queue_id'], ticket_number=t['ticket_number']
-                    ).first()
-                    if existing_ticket:
-                        app.logger.info(f"Ticket {t['ticket_number']} na fila {t['queue_id']} já existe, pulando.")
-                        continue
-
-                    ticket = Ticket(
-                        id=t['id'],
-                        queue_id=t['queue_id'],
-                        user_id=t['user_id'],
-                        ticket_number=t['ticket_number'],
-                        qr_code=t['qr_code'],
-                        status=t['status'],
-                        priority=t['priority'],
-                        is_physical=t['is_physical'],
-                        counter=t['counter'],
-                        issued_at=t['issued_at'],
-                        expires_at=t.get('expires_at'),
-                        attended_at=t.get('attended_at'),
-                        service_time=t.get('service_time'),
-                        trade_available=t['trade_available']
+                })
+                
+                # 1 Admin por instituição (50)
+                for inst in institutions:
+                    users.append({
+                        'email': f'admin.{inst["name"].replace(" ", "").lower()}@facilita.com',
+                        'name': f'Admin {inst["name"]}',
+                        'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
+                        'role': UserRole.INSTITUTION_ADMIN,
+                        'institution_id': inst['id'],
+                        'department_name': None
+                    })
+                
+                # 2 Gestores por departamento (~300)
+                for inst in institutions:
+                    for branch in inst['branches']:
+                        for dept in branch['departments']:
+                            for i in range(1, 3):  # 2 gestores por departamento
+                                users.append({
+                                    'email': f'gestor.{dept["name"].replace(" ", "").lower()}.{i}@{inst["name"].replace(" ", "").lower()}.com',
+                                    'name': f'Gestor {dept["name"]} {i}',
+                                    'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
+                                    'role': UserRole.DEPARTMENT_ADMIN,
+                                    'institution_id': inst['id'],
+                                    'department_name': dept['name']
+                                })
+                
+                # 50 Usuários padrão
+                for i in range(1, 51):
+                    inst = institutions[i%len(institutions)]
+                    users.append({
+                        'email': f'user.{i}@facilita.com',
+                        'name': f'Usuário {i}',
+                        'password': os.getenv('USER_PASSWORD', 'user123'),
+                        'role': UserRole.USER,
+                        'institution_id': inst['id'],
+                        'department_name': None
+                    })
+                
+                # Inserir usuários
+                for user_data in users:
+                    # Encontrar departamento se especificado
+                    department = None
+                    if user_data['department_name'] and user_data['institution_id']:
+                        institution = Institution.query.get(user_data['institution_id'])
+                        if institution and institution.branches:
+                            for branch in institution.branches:
+                                department = Department.query.filter_by(
+                                    branch_id=branch.id,
+                                    name=user_data['department_name']
+                                ).first()
+                                if department:
+                                    break
+                    
+                    user = User(
+                        id=str(uuid.uuid4()),
+                        email=user_data['email'],
+                        name=user_data['name'],
+                        user_role=user_data['role'],
+                        institution_id=user_data['institution_id'],
+                        department_id=department.id if department else None,
+                        active=True
                     )
-                    db.session.add(ticket)
-                    if t['status'] == 'waiting':
-                        queue.active_tickets += 1
-            
+                    user.set_password(user_data['password'])
+                    db.session.add(user)
+                
                 db.session.commit()
-                app.logger.info("Tickets iniciais (físicos e digitais) inseridos com sucesso!")
+                app.logger.info("Usuários iniciais inseridos com sucesso!")
+
+                # 5. Preferências de usuário (~100)
+                user_preferences = []
+                regular_users = [u for u in users if u['role'] == UserRole.USER]
+                
+                for user in regular_users:
+                    # 2 preferências por usuário
+                    for _ in range(2):
+                        inst = institutions[int(user['email'].split('.')[1])%len(institutions)]
+                        category_name = ['Saúde', 'Bancário', 'Notarial', 'Universidade', 'Transporte'][_%5]
+                        category_id = category_map[category_name]
+                        neighborhood = neighborhoods[int(user['email'].split('.')[1])%10]['name']
+                        
+                        user_preferences.append({
+                            'user_email': user['email'],
+                            'institution_id': inst['id'],
+                            'service_category_id': category_id,
+                            'neighborhood': neighborhood
+                        })
+                
+                # Inserir preferências
+                for pref in user_preferences:
+                    user = User.query.filter_by(email=pref['user_email']).first()
+                    if user:
+                        preference = UserPreference(
+                            id=str(uuid.uuid4()),
+                            user_id=user.id,
+                            institution_id=pref['institution_id'],
+                            service_category_id=pref['service_category_id'],
+                            neighborhood=pref['neighborhood']
+                        )
+                        db.session.add(preference)
+                
+                db.session.commit()
+                app.logger.info("Preferências de usuário inseridas com sucesso!")
+
+                # 6. Tickets (~3000)
+                all_queues = Queue.query.all()
+                regular_users = User.query.filter_by(user_role=UserRole.USER).all()
+                
+                for queue in all_queues:
+                    # Resetar contadores da fila
+                    queue.active_tickets = 0
+                    queue.current_ticket = 0
+                    
+                    # Criar 5 tickets por fila
+                    for i in range(1, 6):
+                        is_physical = (i % 3 == 0)  # 1 em cada 3 é físico
+                        user = None if is_physical else regular_users[i%len(regular_users)]
+                        status = 'Pendente' if i == 1 else 'Atendido'  # Primeiro ticket pendente
+                        
+                        issued_at = datetime.utcnow() - timedelta(days=i)
+                        
+                        ticket = Ticket(
+                            id=str(uuid.uuid4()),
+                            queue_id=queue.id,
+                            user_id=user.id if user else None,
+                            ticket_number=i,
+                            qr_code=f"QR-{uuid.uuid4().hex[:10]}",
+                            status=status,
+                            priority=0,
+                            is_physical=is_physical,
+                            counter=1 if status == 'Atendido' else None,
+                            issued_at=issued_at,
+                            attended_at=issued_at + timedelta(minutes=30) if status == 'Atendido' else None,
+                            service_time=15.0 if status == 'Atendido' else None,
+                            expires_at=issued_at + timedelta(hours=4) if is_physical else None,
+                            trade_available=False
+                        )
+                        db.session.add(ticket)
+                        
+                        if status == 'Pendente':
+                            queue.active_tickets += 1
+                            queue.current_ticket = max(queue.current_ticket, i)
+                
+                db.session.commit()
+                app.logger.info("Tickets iniciais inseridos com sucesso!")
+
         except SQLAlchemyError as e:
             db.session.rollback()
-            app.logger.error(f"Erro ao inserir tickets iniciais: {str(e)}")
+            app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
             raise
