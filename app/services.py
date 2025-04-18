@@ -3,7 +3,7 @@ import uuid
 import numpy as np
 from sqlalchemy import and_, func
 from datetime import datetime, time, timedelta
-from app.models import Queue, QueueSchedule, Ticket, AuditLog, Department, Institution, User
+from app.models import Queue, QueueSchedule, Ticket, AuditLog, Department, Institution, User, Weekday
 from app.ml_models import wait_time_predictor, service_recommendation_predictor
 from app import db, redis_client, socketio
 from .utils.pdf_generator import generate_ticket_pdf
