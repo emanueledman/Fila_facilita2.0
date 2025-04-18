@@ -257,11 +257,12 @@ def init_queue_routes(app):
         fcm_token = data.get('fcm_token')
         priority = data.get('priority', 0)
         is_physical = data.get('is_physical', False)
-
+        
         try:
             ticket, pdf_buffer = QueueService.add_to_queue(service, user_id, priority, is_physical, fcm_token)
             emit_ticket_update(ticket)
             wait_time = QueueService.calculate_wait_time(ticket.queue.id, ticket.ticket_number, ticket.priority)
+            
             response = {
                 'message': 'Senha emitida',
                 'ticket': {
@@ -275,7 +276,7 @@ def init_queue_routes(app):
                     'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None
                 }
             }
-
+            
             if is_physical and pdf_buffer:
                 return send_file(
                     pdf_buffer,
@@ -283,12 +284,13 @@ def init_queue_routes(app):
                     download_name=f"ticket_{ticket.queue.prefix}{ticket.ticket_number}.pdf",
                     mimetype='application/pdf'
                 )
+            
             logger.info(f"Senha emitida: {ticket.queue.prefix}{ticket.ticket_number} para user_id={user_id}")
             return jsonify(response), 201
         except ValueError as e:
             logger.error(f"Erro ao emitir senha para serviço {service}: {str(e)}")
             return jsonify({'error': str(e)}), 400
-
+        
     @app.route('/api/ticket/<ticket_id>/pdf', methods=['GET'])
     @require_auth
     def download_ticket_pdf(ticket_id):

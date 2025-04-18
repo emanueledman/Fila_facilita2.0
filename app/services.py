@@ -184,14 +184,15 @@ class QueueService:
         if not is_queue_open(queue):
             logger.warning(f"Fila {queue.id} está fechada para emissão de senha")
             raise ValueError(f"A fila {queue.service} está fechada no momento.")
-
+        
         if queue.active_tickets >= queue.daily_limit:
             logger.warning(f"Fila {service} está cheia: {queue.active_tickets}/{queue.daily_limit}")
             raise ValueError("Limite diário atingido")
+        
         if Ticket.query.filter_by(user_id=user_id, queue_id=queue.id, status='Pendente').first():
             logger.warning(f"Usuário {user_id} já possui uma senha ativa na fila {queue.id}")
             raise ValueError("Você já possui uma senha ativa")
-
+        
         ticket_number = queue.active_tickets + 1
         qr_code = QueueService.generate_qr_code()
         ticket = Ticket(
@@ -209,21 +210,20 @@ class QueueService:
         queue.active_tickets += 1
         db.session.add(ticket)
         db.session.commit()
-
         db.session.refresh(ticket)
+        
         if not ticket.queue:
             logger.error(f"Relação ticket.queue não carregada para ticket {ticket.id}")
             raise ValueError("Erro ao carregar a fila associada ao ticket")
-
+        
         ticket.receipt_data = QueueService.generate_receipt(ticket) if is_physical else None
-
         wait_time = QueueService.calculate_wait_time(queue.id, ticket_number, priority)
         position = max(0, ticket.ticket_number - queue.current_ticket)
-        
         pdf_buffer = None
+        
         if is_physical:
             pdf_buffer = QueueService.generate_pdf_ticket(ticket, position, wait_time)
-
+        
         message = f"Senha {queue.prefix}{ticket_number} emitida. QR: {qr_code}. Espera: {wait_time if wait_time != 'N/A' else 'Aguardando início'}"
         QueueService.send_notification(fcm_token, message, ticket.id, via_websocket=True, user_id=user_id)
         
@@ -237,7 +237,7 @@ class QueueService:
         
         logger.info(f"Ticket {ticket.id} adicionado à fila {service}")
         return ticket, pdf_buffer
-
+    
     @staticmethod
     def generate_physical_ticket_for_totem(queue_id, client_ip):
         queue = Queue.query.get(queue_id)
@@ -693,15 +693,27 @@ def suggest_service_locations(service, user_lat=None, user_lon=None, max_results
 def is_queue_open(queue, now=None):
     if not now:
         now = datetime.utcnow()
-    weekday = now.strftime('%A')
     
-    schedule = QueueSchedule.query.filter_by(queue_id=queue.id, weekday=weekday).first()
-    if not schedule or schedule.is_closed:
+    weekday_str = now.strftime('%A')
+    
+    # Converte a string do dia da semana para o objeto Enum
+    try:
+        weekday_enum = Weekday[weekday_str.upper()]
+        
+        # Use o objeto enum em vez da string na consulta
+        schedule = QueueSchedule.query.filter_by(
+            queue_id=queue.id, 
+            weekday=weekday_enum
+        ).first()
+        
+        if not schedule or schedule.is_closed:
+            return False
+        
+        current_time = now.time()
+        return schedule.open_time <= current_time <= schedule.end_time
+    except KeyError:
+        logger.error(f"Dia da semana inválido: {weekday_str}")
         return False
-    
-    current_time = now.time()
-    return schedule.open_time <= current_time <= schedule.end_time
-
 def get_service_search_results(institution_id, filters=None):
     filters = filters or {}
     page = max(1, filters.get('page', 1))

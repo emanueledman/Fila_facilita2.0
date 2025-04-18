@@ -82,14 +82,17 @@ def require_auth(f):
                     logger.warning(f"Falha Firebase: {str(firebase_error)}")
                     # Continuar para tentar JWT local
             
-            # 2. Tentativa com JWT local
+            # 2. Tentativa com JWT local - MODIFICADO PARA ESPECIFICAR APENAS HS256
             try:
-                # Tentar apenas com HS256 para simplificar
+                # Restringir explicitamente aos algoritmos permitidos
                 payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
                 request.user_id = payload.get('user_id')
                 request.user_tipo = payload.get('user_tipo', 'user')
                 logger.info(f"Autenticado via JWT - User ID: {request.user_id}")
                 return f(*args, **kwargs)
+            except jwt.InvalidAlgorithmError:
+                logger.warning("Token JWT inválido: The specified alg value is not allowed")
+                return jsonify({'error': 'Algoritmo de token inválido'}), 401
             except jwt.ExpiredSignatureError:
                 logger.warning("Token JWT expirado")
                 return jsonify({'error': 'Token expirado'}), 401
@@ -101,4 +104,4 @@ def require_auth(f):
             logger.error(f"Erro de autenticação: {str(e)}")
             return jsonify({'error': 'Falha na autenticação'}), 401
             
-    return decorated
+    return decorated 
