@@ -5,16 +5,11 @@ from .models import Institution, Branch, Queue, ServiceCategory, ServiceTag, Use
 from . import db
 import os
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
 
 def populate_initial_data(app):
     with app.app_context():
         try:
             with db.session.no_autoflush:
-                if Institution.query.count() > 0:
-                    app.logger.info("Instituições já existem, pulando inicialização de dados.")
-                    return
-
                 # 1. Categorias de Serviço
                 service_categories = [
                     {'name': 'Saúde Pública', 'description': 'Hospitais e clínicas públicas', 'parent_id': None},
@@ -40,29 +35,7 @@ def populate_initial_data(app):
                     db.session.flush()
                     category_map[cat['name']] = category.id
 
-                # 2. Tags de Serviço
-                service_tags = [
-                    {'name': 'Urgente', 'category_id': category_map['Saúde Pública']},
-                    {'name': 'Premium', 'category_id': category_map['Saúde Privada']},
-                    {'name': 'Depósito', 'category_id': category_map['Bancário']},
-                    {'name': 'Matrícula', 'category_id': category_map['Educação']},
-                    {'name': 'Notarial', 'category_id': category_map['Serviços Públicos']},
-                ]
-                tag_map = {}
-                for tag in service_tags:
-                    if ServiceTag.query.filter_by(name=tag['name']).first():
-                        app.logger.warning(f"Tag {tag['name']} já existe, pulando.")
-                        continue
-                    service_tag = ServiceTag(
-                        id=str(uuid.uuid4()),
-                        name=tag['name'],
-                        category_id=tag['category_id']
-                    )
-                    db.session.add(service_tag)
-                    db.session.flush()
-                    tag_map[tag['name']] = service_tag.id
-
-                # 3. Instituições e Filiais
+                # 2. Instituições e Filiais
                 neighborhoods = [
                     'Ingombota', 'Maianga', 'Samba', 'Viana', 'Rangel', 'Cazenga', 'Kilamba', 'Talatona',
                     'Mutamba', 'Prenda', 'Alvalade', 'Patriota', 'Zango', 'Cacuaco', 'Benfica'
@@ -95,7 +68,8 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'open_time': time(7, 0), 'end_time': time(12, 0), 'is_closed': False},
                                             {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
+                                        ],
+                                        'tags': ['Consulta']
                                     },
                                     {
                                         'id': '21591b32-cbc4-424a-882f-3db65d134040',
@@ -114,7 +88,8 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'open_time': time(7, 0), 'end_time': time(12, 0), 'is_closed': False},
                                             {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
+                                        ],
+                                        'tags': ['Triagem']
                                     }
                                 ]
                             },
@@ -138,7 +113,8 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
                                             {'weekday': Weekday.SUNDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False}
-                                        ]
+                                        ],
+                                        'tags': ['Urgente']
                                     }
                                 ]
                             },
@@ -162,7 +138,8 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'is_closed': True},
                                             {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
+                                        ],
+                                        'tags': ['Farmácia']
                                     }
                                 ]
                             }
@@ -194,7 +171,8 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(18, 0), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'open_time': time(8, 0), 'end_time': time(12, 0), 'is_closed': False},
                                             {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
+                                        ],
+                                        'tags': ['Premium']
                                     }
                                 ]
                             },
@@ -217,7 +195,8 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(7, 0), 'end_time': time(16, 0), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'is_closed': True},
                                             {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
+                                        ],
+                                        'tags': ['Diagnóstico']
                                     }
                                 ]
                             }
@@ -249,7 +228,8 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'is_closed': True},
                                             {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
+                                        ],
+                                        'tags': ['Depósito']
                                     },
                                     {
                                         'service': 'Levantamento',
@@ -267,7 +247,8 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'is_closed': True},
                                             {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
+                                        ],
+                                        'tags': ['Levantamento']
                                     }
                                 ]
                             },
@@ -290,7 +271,8 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(9, 0), 'end_time': time(14, 0), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'is_closed': True},
                                             {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
+                                        ],
+                                        'tags': ['Crédito']
                                     }
                                 ]
                             }
@@ -323,7 +305,8 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'is_closed': True},
                                             {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
+                                        ],
+                                        'tags': ['Matrícula']
                                     },
                                     {
                                         'id': '06c9b02c-bd01-4bb5-9f98-2bc56cbadf3a',
@@ -342,7 +325,8 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'is_closed': True},
                                             {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
+                                        ],
+                                        'tags': ['Declaração']
                                     }
                                 ]
                             }
@@ -375,7 +359,8 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'is_closed': True},
                                             {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
+                                        ],
+                                        'tags': ['Notarial']
                                     },
                                     {
                                         'id': '4f3118f4-8bcb-4339-92c1-d8a81441d87f',
@@ -394,7 +379,8 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'is_closed': True},
                                             {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
+                                        ],
+                                        'tags': ['Registo']
                                     }
                                 ]
                             }
@@ -427,7 +413,8 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'is_closed': True},
                                             {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
+                                        ],
+                                        'tags': ['Pediatria']
                                     }
                                 ]
                             },
@@ -451,7 +438,8 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'is_closed': True},
                                             {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
+                                        ],
+                                        'tags': ['Maternidade']
                                     }
                                 ]
                             }
@@ -468,7 +456,6 @@ def populate_initial_data(app):
                                 'name': 'Administração Escolar',
                                 'queues': [
                                     {
-                                        'id': str(uuid.uuid4()),
                                         'service': 'Inscrições',
                                         'prefix': 'I',
                                         'open_time': time(8, 0),
@@ -484,7 +471,8 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(13, 0), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'is_closed': True},
                                             {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
+                                        ],
+                                        'tags': ['Inscrição']
                                     }
                                 ]
                             }
@@ -516,7 +504,8 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'is_closed': True},
                                             {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
+                                        ],
+                                        'tags': ['Faturação']
                                     }
                                 ]
                             }
@@ -548,7 +537,8 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(6, 0), 'end_time': time(20, 0), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'open_time': time(6, 0), 'end_time': time(14, 0), 'is_closed': False},
                                             {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
+                                        ],
+                                        'tags': ['Bilhete']
                                     }
                                 ]
                             }
@@ -580,12 +570,13 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(14, 0), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'is_closed': True},
                                             {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
+                                        ],
+                                        'tags': ['Inscrição']
                                     }
                                 ]
                             }
                         ]
-                    },
+                    }
                 ]
 
                 # Gerar mais 40 instituições dinamicamente
@@ -628,7 +619,8 @@ def populate_initial_data(app):
                                             {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
                                             {'weekday': Weekday.SATURDAY, 'is_closed': True},
                                             {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                        ]
+                                        ],
+                                        'tags': [f"{dept_name}"]
                                     }
                                 ]
                             } for dept_name in random.sample(dept_names, random.randint(1, len(dept_names)))
@@ -719,6 +711,18 @@ def populate_initial_data(app):
                                 db.session.flush()
                                 queue_ids[f"{dept_data['name']}_{q['service']}"] = queue.id
 
+                                # Criar Tags de Serviço associadas à fila
+                                for tag_name in q.get('tags', []):
+                                    if ServiceTag.query.filter_by(tag=tag_name, queue_id=queue.id).first():
+                                        app.logger.warning(f"Tag {tag_name} já existe para fila {queue.id}, pulando.")
+                                        continue
+                                    service_tag = ServiceTag(
+                                        id=str(uuid.uuid4()),
+                                        tag=tag_name,
+                                        queue_id=queue.id
+                                    )
+                                    db.session.add(service_tag)
+
                                 for schedule in q.get('schedules', []):
                                     queue_schedule = QueueSchedule(
                                         id=str(uuid.uuid4()),
@@ -731,9 +735,9 @@ def populate_initial_data(app):
                                     db.session.add(queue_schedule)
 
                 db.session.commit()
-                app.logger.info("Instituições, filiais, departamentos, filas e agendamentos inseridos com sucesso!")
+                app.logger.info("Instituições, filiais, departamentos, filas, tags e agendamentos inseridos com sucesso!")
 
-                # 4. Usuários
+                # 3. Usuários
                 users = [
                     {
                         'email': 'superadmin@facilita.com',
@@ -741,20 +745,21 @@ def populate_initial_data(app):
                         'password': os.getenv('SUPERADMIN_PASSWORD', 'superadmin123'),
                         'user_role': UserRole.SYSTEM_ADMIN,
                         'institution_id': None,
-                        'branch_id': None,
-                        'department_name': None
+                        'department_id': None
                     }
                 ]
                 for inst_data in institutions_data:
-                    inst_id = Institution.query.filter_by(name=inst_data['name']).first().id
+                    inst = Institution.query.filter_by(name=inst_data['name']).first()
+                    if not inst:
+                        continue
+                    inst_id = inst.id
                     users.append({
                         'email': f"admin.{inst_data['name'].lower().replace(' ', '')}@facilita.com",
                         'name': f"Admin {inst_data['name']}",
                         'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
                         'user_role': UserRole.INSTITUTION_ADMIN,
                         'institution_id': inst_id,
-                        'branch_id': None,
-                        'department_name': None
+                        'department_id': None
                     })
                     branches = Branch.query.filter_by(institution_id=inst_id).all()
                     for branch in branches:
@@ -766,19 +771,18 @@ def populate_initial_data(app):
                                 'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
                                 'user_role': UserRole.DEPARTMENT_ADMIN,
                                 'institution_id': inst_id,
-                                'branch_id': branch.id,
-                                'department_name': dept.name
+                                'department_id': dept.id
                             })
 
                 for i in range(50):
+                    inst = random.choice([Institution.query.filter_by(name=inst['name']).first() for inst in institutions_data if Institution.query.filter_by(name=inst['name']).first()])
                     users.append({
                         'email': f"user{i+1}@facilita.com",
                         'name': f"Usuário {i+1}",
                         'password': os.getenv('USER_PASSWORD', 'user123'),
                         'user_role': UserRole.USER,
-                        'institution_id': random.choice([inst['id'] for inst in institutions_data]),
-                        'branch_id': None,
-                        'department_name': None
+                        'institution_id': inst.id,
+                        'department_id': None
                     })
 
                 for user_data in users:
@@ -786,23 +790,13 @@ def populate_initial_data(app):
                         app.logger.info(f"Usuário {user_data['email']} já existe, pulando.")
                         continue
 
-                    department = None
-                    if user_data['department_name'] and user_data['branch_id']:
-                        department = Department.query.filter_by(
-                            branch_id=user_data['branch_id'],
-                            name=user_data['department_name']
-                        ).first()
-                        if not department:
-                            app.logger.warning(f"Departamento {user_data['department_name']} não encontrado para {user_data['email']}")
-                            continue
-
                     user = User(
                         id=str(uuid.uuid4()),
                         email=user_data['email'],
                         name=user_data['name'],
                         user_role=user_data['user_role'],
                         institution_id=user_data['institution_id'],
-                        department_id=department.id if department else None,
+                        department_id=user_data['department_id'],
                         active=True
                     )
                     user.set_password(user_data['password'])
@@ -811,16 +805,16 @@ def populate_initial_data(app):
                 db.session.commit()
                 app.logger.info("Usuários inseridos com sucesso!")
 
-                # 5. Preferências de Usuário
+                # 4. Preferências de Usuário
                 regular_users = User.query.filter_by(user_role=UserRole.USER).all()
                 user_preferences = []
                 for user in regular_users:
                     for _ in range(random.randint(1, 3)):
-                        inst = random.choice(institutions_data)
+                        inst = random.choice([Institution.query.filter_by(name=inst['name']).first() for inst in institutions_data if Institution.query.filter_by(name=inst['name']).first()])
                         user_preferences.append({
                             'user_id': user.id,
-                            'institution_id': Institution.query.filter_by(name=inst['name']).first().id,
-                            'service_category_id': inst['category_id'],
+                            'institution_id': inst.id,
+                            'service_category_id': inst_data['category_id'],
                             'neighborhood': random.choice(neighborhoods)
                         })
 
@@ -837,7 +831,7 @@ def populate_initial_data(app):
                 db.session.commit()
                 app.logger.info("Preferências de usuário inseridas com sucesso!")
 
-                # 6. Tickets
+                # 5. Tickets
                 with db.session.no_autoflush:
                     default_user = User.query.filter_by(email='user1@facilita.com').first()
                     if not default_user:
