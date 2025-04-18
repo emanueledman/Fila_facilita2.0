@@ -34,6 +34,10 @@ def create_app():
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
+    # Configurar Flask-Limiter com Redis
+    app.config['RATELIMIT_STORAGE_URI'] = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+    limiter.storage_uri = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+    
     # Atribuir redis_client ao app
     app.redis_client = redis_client
     
@@ -64,13 +68,13 @@ def create_app():
             "https://courageous-dolphin-66662b.netlify.app"
         ],
         async_mode='eventlet',
-        manage_session=False,  # Evitar conflitos com sessões Flask
+        path='/tickets',
         logger=True,
         engineio_logger=True
     )
     limiter.init_app(app)
     
-    # Configurar CORS para APIs e WebSocket
+    # Configurar CORS
     CORS(app, resources={
         r"/api/*": {
             "origins": [
@@ -82,7 +86,7 @@ def create_app():
             "allow_headers": ["Content-Type", "Authorization"],
             "supports_credentials": True
         },
-        r"/socket.io/*": {
+        r"/tickets/*": {
             "origins": [
                 "http://127.0.0.1:5500",
                 "https://frontfa.netlify.app",
@@ -93,9 +97,6 @@ def create_app():
             "supports_credentials": True
         }
     })
-    
-    # Configurar Flask-Limiter com Redis
-    limiter.storage_uri = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
     
     with app.app_context():
         from .models import Institution, Queue, User, Ticket, Department
@@ -134,6 +135,7 @@ def create_app():
             app.logger.info("Modelos de ML inicializados na startup")
         except Exception as e:
             app.logger.error(f"Erro ao inicializar modelos de ML: {str(e)}")
+            # Não lançar exceção aqui para permitir que a aplicação continue
     
     # Registrar rotas
     from .routes import init_routes
