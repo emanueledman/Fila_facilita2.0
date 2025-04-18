@@ -42,7 +42,7 @@ def init_queue_routes(app):
         except Exception as e:
             logger.error(f"Erro ao emitir atualização de painel: {str(e)}")
 
- 
+
     @app.route('/api/suggest-service', methods=['GET'])
     @require_auth
     def suggest_service():
@@ -541,6 +541,70 @@ def init_queue_routes(app):
             db.session.rollback()
             logger.error(f"Erro inesperado ao validar ticket: {str(e)}")
             return jsonify({'error': f'Erro ao validar ticket: {str(e)}'}), 500
+
+    @app.route('/api/queues', methods=['GET'])
+    def list_queues():
+        institutions = Institution.query.all()
+        now = datetime.now()
+        current_weekday_str = now.strftime('%A')
+        
+        # Converter a string do dia para o enum correto
+        current_weekday_enum = getattr(Weekday, current_weekday_str.upper())
+        
+        current_time = now.time()
+        result = []
+        
+        for inst in institutions:
+            departments = Department.query.filter_by(institution_id=inst.id).all()
+            queues = Queue.query.filter(Queue.department_id.in_([d.id for d in departments])).all()
+            queue_data = []
+            
+            for q in queues:
+                # Verificar status com QueueSchedule
+                schedule = QueueSchedule.query.filter_by(
+                    queue_id=q.id, weekday=current_weekday_enum
+                ).first()
+                
+                is_open = False
+                if schedule and not schedule.is_closed:
+                    is_open = (
+                        schedule.open_time and schedule.end_time and
+                        current_time >= schedule.open_time and
+                        current_time <= schedule.end_time and
+                        q.active_tickets < q.daily_limit
+                    )
+                    
+                queue_data.append({
+                    'id': q.id,
+                    'service': q.service,
+                    'prefix': q.prefix,
+                    'sector': q.department.sector if q.department else None,
+                    'department': q.department.name if q.department else None,
+                    'institution': q.department.institution.name if q.department and q.department.institution else None,
+                    'open_time': schedule.open_time.strftime('%H:%M') if schedule and schedule.open_time else None,
+                    'end_time': schedule.end_time.strftime('%H:%M') if schedule and schedule.end_time else None,
+                    'daily_limit': q.daily_limit,
+                    'active_tickets': q.active_tickets,
+                    'avg_wait_time': q.avg_wait_time,
+                    'num_counters': q.num_counters,
+                    'status': 'Aberto' if is_open else 'Fechado'
+                })
+                
+            result.append({
+                'institution': {
+                    'id': inst.id,
+                    'name': inst.name,
+                    'location': inst.location,
+                    'latitude': inst.latitude,
+                    'longitude': inst.longitude
+                },
+                'queues': queue_data
+            })
+            
+        logger.info(f"Lista de filas retornada: {len(result)} instituições encontradas.")
+        return jsonify(result), 200
+
+
 
     @app.route('/api/tickets', methods=['GET'])
     @require_auth
