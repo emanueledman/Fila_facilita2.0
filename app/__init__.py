@@ -105,25 +105,17 @@ def create_app():
     with app.app_context():
         from .models import Institution, Queue, User, Ticket, Department
         
-        # Comportamento diferente em produção vs desenvolvimento
-        if os.getenv('FLASK_ENV') == 'production':
-            # Em produção, apenas cria as tabelas se não existirem
+        # Apagar e recriar o banco de dados
+        try:
+            app.logger.info("Apagando e recriando o banco de dados...")
+            db.drop_all()
             db.create_all()
-            app.logger.info("Tabelas verificadas/criadas (modo produção)")
-        else:
-            # Em desenvolvimento, recria o banco de dados completamente
-            try:
-                # Desativa verificação de chaves estrangeiras temporariamente
-                db.session.execute('SET session_replication_role = replica;')
-                db.drop_all()
-                db.session.execute('SET session_replication_role = origin;')
-                db.create_all()
-                app.logger.info("Banco limpo e tabelas recriadas (modo desenvolvimento)")
-            except Exception as e:
-                app.logger.error(f"Erro ao recriar banco de dados: {str(e)}")
-                raise
+            app.logger.info("Banco de dados limpo e tabelas recriadas")
+        except Exception as e:
+            app.logger.error(f"Erro ao apagar/recriar banco de dados: {str(e)}")
+            raise
         
-        # Inserir dados iniciais de forma idempotente
+        # Inserir dados iniciais
         from .data_init import populate_initial_data
         try:
             populate_initial_data(app)
