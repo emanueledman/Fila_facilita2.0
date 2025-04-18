@@ -13,6 +13,7 @@ from flask_migrate import Migrate
 from redis import Redis
 import os
 from dotenv import load_dotenv
+from sqlalchemy import text
 
 load_dotenv()
 
@@ -108,6 +109,8 @@ def create_app():
         # Apagar e recriar o banco de dados
         try:
             app.logger.info("Apagando e recriando o banco de dados...")
+            # Dropar o tipo ENUM 'userrole' explicitamente
+            db.session.execute(text("DROP TYPE IF EXISTS userrole CASCADE;"))
             db.drop_all()
             db.create_all()
             app.logger.info("Banco de dados limpo e tabelas recriadas")
@@ -116,9 +119,9 @@ def create_app():
             raise
         
         # Inserir dados iniciais
-        from .data_init import populate_initial_data
+        from .data_init import DataInitializer
         try:
-            populate_initial_data(app)
+            DataInitializer.initialize_data(app)
             app.logger.info("Dados iniciais inseridos automaticamente")
         except Exception as e:
             app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
