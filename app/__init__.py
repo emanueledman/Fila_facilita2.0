@@ -1,5 +1,4 @@
 import logging
-import logging.handlers
 import eventlet
 eventlet.monkey_patch()
 
@@ -9,11 +8,9 @@ from flask_socketio import SocketIO
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_cors import CORS
-from flask_migrate import Migrate
 from redis import Redis
 import os
 from dotenv import load_dotenv
-from sqlalchemy import text
 
 load_dotenv()
 
@@ -21,7 +18,6 @@ db = SQLAlchemy()
 socketio = SocketIO()
 limiter = Limiter(key_func=get_remote_address)
 redis_client = Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379/0'))
-migrate = Migrate()
 
 def create_app():
     app = Flask(__name__)
@@ -37,10 +33,6 @@ def create_app():
         database_url = database_url.replace('postgres://', 'postgresql://')
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    
-    # Configurar Flask-Limiter com Redis
-    app.config['RATELIMIT_STORAGE_URI'] = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
-    limiter.storage_uri = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
     
     # Atribuir redis_client ao app
     app.redis_client = redis_client
@@ -64,7 +56,6 @@ def create_app():
     
     # Inicializar extensões
     db.init_app(app)
-    migrate.init_app(app, db)
     socketio.init_app(
         app,
         cors_allowed_origins=[
@@ -80,44 +71,36 @@ def create_app():
     limiter.init_app(app)
     
     # Configurar CORS
-    CORS(app, resources={
-        r"/api/*": {
-            "origins": [
-                "http://127.0.0.1:5500",
-                "https://frontfa.netlify.app",
-                "https://courageous-dolphin-66662b.netlify.app"
-            ],
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type", "Authorization"],
-            "supports_credentials": True
-        },
-        r"/tickets/*": {
-            "origins": [
-                "http://127.0.0.1:5500",
-                "https://frontfa.netlify.app",
-                "https://courageous-dolphin-66662b.netlify.app"
-            ],
-            "methods": ["GET", "POST"],
-            "allow_headers": ["Content-Type"],
-            "supports_credentials": True
-        }
-    })
+    CORS(app, resources={r"/api/*": {
+        "origins": [
+            "http://127.0.0.1:5500",
+            "https://frontfa.netlify.app",
+            "https://courageous-dolphin-66662b.netlify.app"
+        ],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True
+    }})
+    
+    # Configurar Flask-Limiter com Redis
+    limiter.storage_uri = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
     
     with app.app_context():
         from .models import Institution, Queue, User, Ticket, Department
         
-        # Apagar e recriar o banco de dados
+        # SEMPRE reiniciar o banco de dados
+        db.drop_all()
+        db.create_all()
+        app.logger.info("Banco limpo e tabelas recriadas automaticamente")
+        
+        # Inserir dados iniciais de forma idempotente
+        from .data_init import populate_initial_data
         try:
-            app.logger.info("Apagando e recriando o banco de dados...")
-            # Dropar o tipo ENUM 'userrole' explicitamente
-            db.session.execute(text("DROP TYPE IF EXISTS userrole CASCADE;"))
-            db.drop_all()
-            db.create_all()
-            app.logger.info("Banco de dados limpo e tabelas recriadas")
+            populate_initial_data(app)
+            app.logger.info("Dados iniciais inseridos automaticamente")
         except Exception as e:
-            app.logger.error(f"Erro ao apagar/recriar banco de dados: {str(e)}")
-            raise
-   
+            app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
+            raise  # Re-lançar para depuração no Render
         
         # Inicializar modelos de ML
         app.logger.debug("Tentando importar preditores de ML")

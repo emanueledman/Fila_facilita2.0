@@ -8,16 +8,10 @@ import logging
 app = create_app()
 logger = logging.getLogger(__name__)
 
-# Configuração específica para o Render
-def create_wsgi_app():
+if __name__ == "__main__":
     host = os.getenv('HOST', '0.0.0.0')
     port = int(os.getenv('PORT', 5000))
     debug = os.getenv('FLASK_ENV') != 'production'
     
-    logger.info(f"Configurando aplicação Socket.IO em {host}:{port}")
-    return socketio.WSGIServer((host, port), app)
-
-if __name__ == "__main__":
-    wsgi_app = create_wsgi_app()
-    logger.info("Servidor Socket.IO iniciado")
-    wsgi_app.serve_forever()
+    logger.info(f"Iniciando servidor WSGI em {host}:{port} (debug={debug})")
+    socketio.run(app, host=host, port=port, debug=debug)

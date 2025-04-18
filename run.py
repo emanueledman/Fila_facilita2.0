@@ -1,5 +1,6 @@
 import eventlet
 eventlet.monkey_patch()
+
 from app import app, socketio, db
 from app.ml_models import wait_time_predictor, service_recommendation_predictor
 from app.models import Queue
@@ -36,5 +37,6 @@ if __name__ == "__main__":
     
     # Ajustar debug com base no ambiente
     debug = os.getenv('FLASK_ENV') != 'production'
+    
     logger.info(f"Iniciando servidor Flask-SocketIO em {host}:{port} (debug={debug})")
     socketio.run(app, host=host, port=port, debug=debug)
