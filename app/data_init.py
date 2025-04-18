@@ -1,6 +1,6 @@
 import uuid
 from datetime import time, datetime, timedelta
-from .models import Branch, Institution, Queue, ServiceTag, User, Ticket, Department, UserPreference, UserRole, QueueSchedule, Weekday
+from .models import Branch, Institution, Queue, ServiceCategory, ServiceTag, User, Ticket, Department, UserPreference, UserRole, QueueSchedule, Weekday
 from . import db
 import os
 from sqlalchemy.exc import SQLAlchemyError
