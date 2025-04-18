@@ -1,4 +1,5 @@
 import logging
+import logging.handlers
 import eventlet
 eventlet.monkey_patch()
 
@@ -8,6 +9,7 @@ from flask_socketio import SocketIO
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_cors import CORS
+from flask_migrate import Migrate
 from redis import Redis
 import os
 from dotenv import load_dotenv
@@ -18,6 +20,7 @@ db = SQLAlchemy()
 socketio = SocketIO()
 limiter = Limiter(key_func=get_remote_address)
 redis_client = Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379/0'))
+migrate = Migrate()
 
 def create_app():
     app = Flask(__name__)
@@ -60,6 +63,7 @@ def create_app():
     
     # Inicializar extensões
     db.init_app(app)
+    migrate.init_app(app, db)
     socketio.init_app(
         app,
         cors_allowed_origins=[
@@ -101,10 +105,23 @@ def create_app():
     with app.app_context():
         from .models import Institution, Queue, User, Ticket, Department
         
-        # SEMPRE reiniciar o banco de dados
-        db.drop_all()
-        db.create_all()
-        app.logger.info("Banco limpo e tabelas recriadas automaticamente")
+        # Comportamento diferente em produção vs desenvolvimento
+        if os.getenv('FLASK_ENV') == 'production':
+            # Em produção, apenas cria as tabelas se não existirem
+            db.create_all()
+            app.logger.info("Tabelas verificadas/criadas (modo produção)")
+        else:
+            # Em desenvolvimento, recria o banco de dados completamente
+            try:
+                # Desativa verificação de chaves estrangeiras temporariamente
+                db.session.execute('SET session_replication_role = replica;')
+                db.drop_all()
+                db.session.execute('SET session_replication_role = origin;')
+                db.create_all()
+                app.logger.info("Banco limpo e tabelas recriadas (modo desenvolvimento)")
+            except Exception as e:
+                app.logger.error(f"Erro ao recriar banco de dados: {str(e)}")
+                raise
         
         # Inserir dados iniciais de forma idempotente
         from .data_init import populate_initial_data
