@@ -117,15 +117,7 @@ def create_app():
         except Exception as e:
             app.logger.error(f"Erro ao apagar/recriar banco de dados: {str(e)}")
             raise
-        
-        # Inserir dados iniciais
-        from .data_init import DataInitializer
-        try:
-            DataInitializer.initialize_data(app)
-            app.logger.info("Dados iniciais inseridos automaticamente")
-        except Exception as e:
-            app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
-            raise
+   
         
         # Inicializar modelos de ML
         app.logger.debug("Tentando importar preditores de ML")
