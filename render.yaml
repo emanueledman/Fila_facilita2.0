@@ -14,4 +14,20 @@ services:
       - key: DATABASE_URL
         value: postgresql://emanueledman:wwt4ykZKu99j21QptPwLZf65kaao3QTl@dpg-cvr2dm95pdvs73e8sph0-a.frankfurt-postgres.render.com/fila_online_g9tm
       - key: JWT_SECRET_KEY
-        value: 974655  # Substitua por uma chave mais segura
+        value: 974655  # Substitua por uma chave mais seguraservices:
+  - type: web
+    name: facilita-api
+    env: python
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --worker-class eventlet -w 1 --timeout 120 --keep-alive 65 wsgi:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: FLASK_ENV
+        value: production
+      - key: DATABASE_URL
+        value: postgresql://emanueledman:wwt4ykZKu99j21QptPwLZf65kaao3QTl@dpg-cvr2dm95pdvs73e8sph0-a.frankfurt-postgres.render.com/fila_online_g9tm
+      - key: JWT_SECRET_KEY
+        value: a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0
