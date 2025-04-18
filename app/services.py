@@ -3,7 +3,7 @@ import uuid
 import numpy as np
 from sqlalchemy import and_, func
 from datetime import datetime, time, timedelta
-from app.models import Queue, QueueSchedule, Ticket, AuditLog, Department, Institution, User
+from app.models import Queue, QueueSchedule, Ticket, AuditLog, Department, Institution, User, Weekday
 from app.ml_models import wait_time_predictor, service_recommendation_predictor
 from app import db, redis_client, socketio
 from .utils.pdf_generator import generate_ticket_pdf
@@ -731,7 +731,15 @@ def get_service_search_results(institution_id, filters=None):
     now = datetime.utcnow()
     services = []
     for queue in queues:
-        schedule = QueueSchedule.query.filter_by(queue_id=queue.id, weekday=now.strftime('%A')).first()
+        
+        try:
+            current_weekday_enum = Weekday[current_weekday_str.upper()]
+            # Agora use o enum na consulta
+            schedule = QueueSchedule.query.filter_by(queue_id=queue.id, weekday=current_weekday_enum).first()
+        except KeyError:
+            # Lidar com o caso em que não há correspondência no enum
+            logger.error(f"Não foi possível mapear o dia da semana: {current_weekday_str}")
+            # Talvez definir schedule como None ou tomar outra ação apropriada
         is_open = is_queue_open(queue, now)
         
         issued_tickets = Ticket.query.filter_by(queue_id=queue.id, status='Pendente').count()
