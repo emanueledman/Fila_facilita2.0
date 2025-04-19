@@ -99,7 +99,7 @@ def create_app():
 
     if os.getenv('FLASK_ENV') == 'production':
         app.config['DEBUG'] = False
-        app.logger.info("Aplicação configurada para modo de produção")
+        app.logger.info("Aplicação, configurada para modo de produção")
     else:
         app.config['DEBUG'] = True
         app.logger.info("Aplicação configurada para modo de desenvolvimento")
