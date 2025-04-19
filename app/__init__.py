@@ -105,10 +105,8 @@ def create_app():
         # Inicializar modelos de ML
         app.logger.debug("Tentando importar preditores de ML")
         try:
-            from .ml_models import wait_time_predictor, service_recommendation_predictor, initialize_models
+            from .ml_models import wait_time_predictor, service_recommendation_predictor
             app.logger.info("Preditores de ML importados com sucesso")
-            # Inicializar os modelos dentro do contexto da aplicação
-            initialize_models(app)
         except ImportError as e:
             app.logger.error(f"Erro ao importar preditores de ML: {e}")
             raise
