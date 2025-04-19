@@ -5,21 +5,12 @@ from . import db
 import os
 from sqlalchemy.exc import SQLAlchemyError
 
-from sqlalchemy import Column, Integer, String, Float, Time, Boolean, DateTime, ForeignKey, Enum, Index, Text
-from sqlalchemy.orm import relationship
-import enum
-from app import db
-from datetime import datetime, time, timedelta
-import uuid
-import bcrypt
-
 def populate_initial_data(app):
     """
-    Popula o banco de dados com dados iniciais para testes, seguindo rigorosamente o models.py.
-    Gera ~50 instituições, ~100 filiais, ~300 departamentos, ~600 filas, ~400 usuários, ~3000 tickets, ~1800 tags e ~100 preferências.
-    Distribuído por setores (hospitais, bancos, cartórios, serviços de alta demanda) e bairros de Luanda.
-    Mantém idempotência, logs em português, IDs fixos e compatibilidade com init_queue_routes e __init__.py.
-    Usa bcrypt para senhas e respeita todos os campos e relacionamentos do models.py.
+    Popula o banco de dados com dados iniciais para testes, incluindo apenas Bancos e Hospitais.
+    Cada instituição tem 3 filiais em diferentes bairros de Luanda, com 15 senhas por fila.
+    Mantém idempotência, logs em português, IDs fixos para filas principais, e compatibilidade com models.py.
+    Usa bcrypt para senhas e respeita todos os relacionamentos.
     """
     with app.app_context():
         try:
@@ -37,20 +28,20 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_service_categories():
                     """
-                    Cria categorias de serviço com hierarquia.
+                    Cria categorias de serviço necessárias (Saúde, Consulta Médica, Bancário).
                     Retorna um mapa de nomes para IDs.
                     """
                     categories = [
                         {'name': 'Saúde', 'description': 'Serviços de saúde e atendimento médico', 'parent_id': None},
                         {'name': 'Consulta Médica', 'description': 'Consultas gerais e especializadas', 'parent_id': None},
                         {'name': 'Bancário', 'description': 'Serviços financeiros e bancários', 'parent_id': None},
-                        {'name': 'Notarial', 'description': 'Serviços notariais e de registro', 'parent_id': None},
-                        {'name': 'Serviços Públicos', 'description': 'Serviços governamentais e administrativos', 'parent_id': None},
-                        {'name': 'Utilidades', 'description': 'Serviços de água, energia e telecomunicações', 'parent_id': None},
-                        {'name': 'Educação', 'description': 'Serviços educacionais e administrativos', 'parent_id': None},
                     ]
                     category_map = {}
                     for cat in categories:
+                        existing_cat = ServiceCategory.query.filter_by(name=cat['name']).first()
+                        if existing_cat:
+                            category_map[cat['name']] = existing_cat.id
+                            continue
                         category = ServiceCategory(
                             id=str(uuid.uuid4()),
                             name=cat['name'],
@@ -76,12 +67,12 @@ def populate_initial_data(app):
                 neighborhoods = [
                     {'name': 'Ingombota', 'latitude': -8.8167, 'longitude': 13.2332},
                     {'name': 'Maianga', 'latitude': -8.8147, 'longitude': 13.2302},
-                    {'name': 'Rangel', 'latitude': -8.8300, 'longitude': 13.2500},
-                    {'name': 'Samba', 'latitude': -8.8200, 'longitude': 13.2400},
-                    {'name': 'Viana', 'latitude': -8.9035, 'longitude': 13.3741},
                     {'name': 'Talatona', 'latitude': -8.9167, 'longitude': 13.1833},
+                    {'name': 'Samba', 'latitude': -8.8200, 'longitude': 13.2400},
+                    {'name': 'Rangel', 'latitude': -8.8300, 'longitude': 13.2500},
                     {'name': 'Kilamba', 'latitude': -8.9333, 'longitude': 13.2667},
                     {'name': 'Cazenga', 'latitude': -8.8500, 'longitude': 13.2833},
+                    {'name': 'Viana', 'latitude': -8.9035, 'longitude': 13.3741},
                     {'name': 'Cacuaco', 'latitude': -8.7667, 'longitude': 13.3667},
                     {'name': 'Patriota', 'latitude': -8.9000, 'longitude': 13.2000}
                 ]
@@ -93,6 +84,11 @@ def populate_initial_data(app):
                     """
                     Cria uma fila com agendamentos e tags, conforme models.py.
                     """
+                    existing_queue = Queue.query.filter_by(department_id=department_id, service=queue_data['service']).first()
+                    if existing_queue:
+                        app.logger.info(f"Fila {queue_data['service']} já existe no departamento, pulando.")
+                        return existing_queue
+
                     queue = Queue(
                         id=queue_data['id'],
                         department_id=department_id,
@@ -114,6 +110,9 @@ def populate_initial_data(app):
 
                     # Criar agendamentos
                     for schedule in queue_data['schedules']:
+                        existing_schedule = QueueSchedule.query.filter_by(queue_id=queue.id, weekday=schedule['weekday']).first()
+                        if existing_schedule:
+                            continue
                         queue_schedule = QueueSchedule(
                             id=str(uuid.uuid4()),
                             queue_id=queue.id,
@@ -126,6 +125,9 @@ def populate_initial_data(app):
 
                     # Criar tags
                     for tag_name in queue_data['tags']:
+                        existing_tag = ServiceTag.query.filter_by(queue_id=queue.id, tag=tag_name).first()
+                        if existing_tag:
+                            continue
                         tag = ServiceTag(
                             id=str(uuid.uuid4()),
                             queue_id=queue.id,
@@ -139,6 +141,11 @@ def populate_initial_data(app):
                     """
                     Cria um departamento com suas filas.
                     """
+                    existing_dept = Department.query.filter_by(branch_id=branch_id, name=dept_data['name']).first()
+                    if existing_dept:
+                        app.logger.info(f"Departamento {dept_data['name']} já existe na filial, pulando.")
+                        return existing_dept
+
                     department = Department(
                         id=str(uuid.uuid4()),
                         branch_id=branch_id,
@@ -157,6 +164,11 @@ def populate_initial_data(app):
                     """
                     Cria uma filial com seus departamentos.
                     """
+                    existing_branch = Branch.query.filter_by(institution_id=institution_id, name=branch_data['name']).first()
+                    if existing_branch:
+                        app.logger.info(f"Filial {branch_data['name']} já existe na instituição, pulando.")
+                        return existing_branch
+
                     branch = Branch(
                         id=str(uuid.uuid4()),
                         institution_id=institution_id,
@@ -178,6 +190,11 @@ def populate_initial_data(app):
                     """
                     Cria uma instituição com suas filiais.
                     """
+                    existing_inst = Institution.query.filter_by(name=inst_data['name']).first()
+                    if existing_inst:
+                        app.logger.info(f"Instituição {inst_data['name']} já existe, pulando.")
+                        return existing_inst
+
                     institution = Institution(
                         id=inst_data['id'],
                         name=inst_data['name'],
@@ -195,15 +212,15 @@ def populate_initial_data(app):
                 # Dados das Instituições
                 # --------------------------------------
                 institutions_data = [
-                    # Hospitais (20)
+                    # Hospitais (2)
                     {
                         'id': str(uuid.uuid4()),
                         'name': 'Hospital Josina Machel',
                         'description': 'Hospital público de referência em Luanda',
                         'branches': [
                             {
-                                'name': 'Unidade Central',
-                                'location': 'Luanda, Luanda',
+                                'name': 'Unidade Ingombota',
+                                'location': 'Ingombota, Luanda',
                                 'neighborhood': 'Ingombota',
                                 'latitude': -8.8167,
                                 'longitude': 13.2332,
@@ -222,26 +239,6 @@ def populate_initial_data(app):
                                                 'daily_limit': 50,
                                                 'num_counters': 5,
                                                 'tags': ['consulta', 'geral', 'saúde'],
-                                                'schedules': [
-                                                    {'weekday': Weekday.MONDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.SATURDAY, 'open_time': time(7, 0), 'end_time': time(12, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                                ]
-                                            },
-                                            {
-                                                'id': '21591b32-cbc4-424a-882f-3db65d134040',
-                                                'service': 'Triagem',
-                                                'category_id': category_map['Saúde'],
-                                                'prefix': 'T',
-                                                'open_time': time(7, 0),
-                                                'end_time': time(17, 0),
-                                                'daily_limit': 50,
-                                                'num_counters': 3,
-                                                'tags': ['triagem', 'saúde'],
                                                 'schedules': [
                                                     {'weekday': Weekday.MONDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
                                                     {'weekday': Weekday.TUESDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
@@ -279,32 +276,6 @@ def populate_initial_data(app):
                                                 ]
                                             }
                                         ]
-                                    },
-                                    {
-                                        'name': 'Farmácia',
-                                        'sector': 'Saúde',
-                                        'queues': [
-                                            {
-                                                'id': '321589c1-1688-4684-b50a-3febdd17ea23',
-                                                'service': 'Distribuição de Medicamentos',
-                                                'category_id': category_map['Saúde'],
-                                                'prefix': 'C',
-                                                'open_time': time(8, 0),
-                                                'end_time': time(16, 0),
-                                                'daily_limit': 60,
-                                                'num_counters': 3,
-                                                'tags': ['farmácia', 'medicamentos', 'saúde'],
-                                                'schedules': [
-                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
-                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                                ]
-                                            }
-                                        ]
                                     }
                                 ]
                             },
@@ -316,27 +287,114 @@ def populate_initial_data(app):
                                 'longitude': 13.1833,
                                 'departments': [
                                     {
-                                        'name': 'Consulta Externa',
+                                        'name': 'Consulta Geral',
                                         'sector': 'Saúde',
                                         'queues': [
                                             {
                                                 'id': str(uuid.uuid4()),
-                                                'service': 'Consulta Especializada',
+                                                'service': 'Consulta Geral',
                                                 'category_id': category_map['Consulta Médica'],
-                                                'prefix': 'E',
-                                                'open_time': time(8, 0),
-                                                'end_time': time(16, 0),
-                                                'daily_limit': 40,
-                                                'num_counters': 4,
-                                                'tags': ['consulta', 'especializada', 'saúde'],
+                                                'prefix': 'A',
+                                                'open_time': time(7, 0),
+                                                'end_time': time(17, 0),
+                                                'daily_limit': 50,
+                                                'num_counters': 5,
+                                                'tags': ['consulta', 'geral', 'saúde'],
                                                 'schedules': [
-                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'open_time': time(7, 0), 'end_time': time(12, 0), 'is_closed': False},
                                                     {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'name': 'Urgência',
+                                        'sector': 'Saúde',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Urgência',
+                                                'category_id': category_map['Saúde'],
+                                                'prefix': 'B',
+                                                'open_time': time(0, 0),
+                                                'end_time': time(23, 59),
+                                                'daily_limit': 100,
+                                                'num_counters': 8,
+                                                'tags': ['urgência', 'emergência', 'saúde'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
+                                                    {'weekday': Weekday.SUNDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False}
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'name': 'Unidade Kilamba',
+                                'location': 'Kilamba, Luanda',
+                                'neighborhood': 'Kilamba',
+                                'latitude': -8.9333,
+                                'longitude': 13.2667,
+                                'departments': [
+                                    {
+                                        'name': 'Consulta Geral',
+                                        'sector': 'Saúde',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Consulta Geral',
+                                                'category_id': category_map['Consulta Médica'],
+                                                'prefix': 'A',
+                                                'open_time': time(7, 0),
+                                                'end_time': time(17, 0),
+                                                'daily_limit': 50,
+                                                'num_counters': 5,
+                                                'tags': ['consulta', 'geral', 'saúde'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'open_time': time(7, 0), 'end_time': time(12, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'name': 'Urgência',
+                                        'sector': 'Saúde',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Urgência',
+                                                'category_id': category_map['Saúde'],
+                                                'prefix': 'B',
+                                                'open_time': time(0, 0),
+                                                'end_time': time(23, 59),
+                                                'daily_limit': 100,
+                                                'num_counters': 8,
+                                                'tags': ['urgência', 'emergência', 'saúde'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
+                                                    {'weekday': Weekday.SUNDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False}
                                                 ]
                                             }
                                         ]
@@ -351,8 +409,8 @@ def populate_initial_data(app):
                         'description': 'Hospital especializado em pediatria e maternidade',
                         'branches': [
                             {
-                                'name': 'Unidade Principal',
-                                'location': 'Luanda, Luanda',
+                                'name': 'Unidade Samba',
+                                'location': 'Samba, Luanda',
                                 'neighborhood': 'Samba',
                                 'latitude': -8.8200,
                                 'longitude': 13.2400,
@@ -410,90 +468,140 @@ def populate_initial_data(app):
                                         ]
                                     }
                                 ]
+                            },
+                            {
+                                'name': 'Unidade Rangel',
+                                'location': 'Rangel, Luanda',
+                                'neighborhood': 'Rangel',
+                                'latitude': -8.8300,
+                                'longitude': 13.2500,
+                                'departments': [
+                                    {
+                                        'name': 'Pediatria',
+                                        'sector': 'Saúde',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Consulta Pediátrica',
+                                                'category_id': category_map['Consulta Médica'],
+                                                'prefix': 'P',
+                                                'open_time': time(7, 30),
+                                                'end_time': time(16, 30),
+                                                'daily_limit': 40,
+                                                'num_counters': 4,
+                                                'tags': ['pediatria', 'consulta', 'saúde'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'name': 'Maternidade',
+                                        'sector': 'Saúde',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Consulta Pré-Natal',
+                                                'category_id': category_map['Consulta Médica'],
+                                                'prefix': 'M',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 30,
+                                                'num_counters': 2,
+                                                'tags': ['maternidade', 'pré-natal', 'saúde'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'name': 'Unidade Cazenga',
+                                'location': 'Cazenga, Luanda',
+                                'neighborhood': 'Cazenga',
+                                'latitude': -8.8500,
+                                'longitude': 13.2833,
+                                'departments': [
+                                    {
+                                        'name': 'Pediatria',
+                                        'sector': 'Saúde',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Consulta Pediátrica',
+                                                'category_id': category_map['Consulta Médica'],
+                                                'prefix': 'P',
+                                                'open_time': time(7, 30),
+                                                'end_time': time(16, 30),
+                                                'daily_limit': 40,
+                                                'num_counters': 4,
+                                                'tags': ['pediatria', 'consulta', 'saúde'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(7, 30), 'end_time': time(16, 30), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'name': 'Maternidade',
+                                        'sector': 'Saúde',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Consulta Pré-Natal',
+                                                'category_id': category_map['Consulta Médica'],
+                                                'prefix': 'M',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 30,
+                                                'num_counters': 2,
+                                                'tags': ['maternidade', 'pré-natal', 'saúde'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
                             }
                         ]
                     },
-                    # Outros 18 hospitais
-                    *[
-                        {
-                            'id': str(uuid.uuid4()),
-                            'name': f'Hospital Municipal {i}',
-                            'description': f'Hospital municipal em {neighborhoods[i % len(neighborhoods)]["name"]}',
-                            'branches': [
-                                {
-                                    'name': f'Unidade {neighborhoods[i % len(neighborhoods)]["name"]}',
-                                    'location': f'{neighborhoods[i % len(neighborhoods)]["name"]}, Luanda',
-                                    'neighborhood': neighborhoods[i % len(neighborhoods)]['name'],
-                                    'latitude': neighborhoods[i % len(neighborhoods)]['latitude'],
-                                    'longitude': neighborhoods[i % len(neighborhoods)]['longitude'],
-                                    'departments': [
-                                        {
-                                            'name': 'Consulta Geral',
-                                            'sector': 'Saúde',
-                                            'queues': [
-                                                {
-                                                    'id': str(uuid.uuid4()),
-                                                    'service': 'Consulta Geral',
-                                                    'category_id': category_map['Consulta Médica'],
-                                                    'prefix': 'A',
-                                                    'open_time': time(7, 0),
-                                                    'end_time': time(17, 0),
-                                                    'daily_limit': 50,
-                                                    'num_counters': 4,
-                                                    'tags': ['consulta', 'geral', 'saúde'],
-                                                    'schedules': [
-                                                        {'weekday': Weekday.MONDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.TUESDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.WEDNESDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.THURSDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.FRIDAY, 'open_time': time(7, 0), 'end_time': time(17, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.SATURDAY, 'is_closed': True},
-                                                        {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                                    ]
-                                                }
-                                            ]
-                                        },
-                                        {
-                                            'name': 'Urgência',
-                                            'sector': 'Saúde',
-                                            'queues': [
-                                                {
-                                                    'id': str(uuid.uuid4()),
-                                                    'service': 'Urgência',
-                                                    'category_id': category_map['Saúde'],
-                                                    'prefix': 'U',
-                                                    'open_time': time(0, 0),
-                                                    'end_time': time(23, 59),
-                                                    'daily_limit': 80,
-                                                    'num_counters': 6,
-                                                    'tags': ['urgência', 'emergência', 'saúde'],
-                                                    'schedules': [
-                                                        {'weekday': Weekday.MONDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                                        {'weekday': Weekday.TUESDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                                        {'weekday': Weekday.WEDNESDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                                        {'weekday': Weekday.THURSDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                                        {'weekday': Weekday.FRIDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                                        {'weekday': Weekday.SATURDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False},
-                                                        {'weekday': Weekday.SUNDAY, 'open_time': time(0, 0), 'end_time': time(23, 59), 'is_closed': False}
-                                                    ]
-                                                }
-                                            ]
-                                        }
-                                    ]
-                                }
-                            ]
-                        }
-                        for i in range(18)
-                    ],
-                    # Bancos (15)
+                    # Bancos (5)
                     {
                         'id': str(uuid.uuid4()),
-                        'name': 'Banco de Fomento Angola (BFA)',
-                        'description': 'Banco comercial líder em Angola',
+                        'name': 'Banco BCI',
+                        'description': 'Banco comercial em Angola',
                         'branches': [
                             {
                                 'name': 'Agência Ingombota',
-                                'location': 'Luanda, Luanda',
+                                'location': 'Ingombota, Luanda',
                                 'neighborhood': 'Ingombota',
                                 'latitude': -8.8167,
                                 'longitude': 13.2332,
@@ -504,14 +612,14 @@ def populate_initial_data(app):
                                         'queues': [
                                             {
                                                 'id': str(uuid.uuid4()),
-                                                'service': 'Depósitos e Levantamentos',
+                                                'service': 'Atendimento',
                                                 'category_id': category_map['Bancário'],
-                                                'prefix': 'D',
+                                                'prefix': 'A',
                                                 'open_time': time(8, 0),
                                                 'end_time': time(15, 0),
                                                 'daily_limit': 60,
                                                 'num_counters': 5,
-                                                'tags': ['depósito', 'levantamento', 'banco'],
+                                                'tags': ['banco', 'atendimento'],
                                                 'schedules': [
                                                     {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
                                                     {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
@@ -521,17 +629,274 @@ def populate_initial_data(app):
                                                     {'weekday': Weekday.SATURDAY, 'is_closed': True},
                                                     {'weekday': Weekday.SUNDAY, 'is_closed': True}
                                                 ]
-                                            },
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'name': 'Crédito',
+                                        'sector': 'Bancário',
+                                        'queues': [
                                             {
                                                 'id': str(uuid.uuid4()),
-                                                'service': 'Abertura de Conta',
+                                                'service': 'Atendimento',
                                                 'category_id': category_map['Bancário'],
-                                                'prefix': 'A',
+                                                'prefix': 'C',
                                                 'open_time': time(8, 0),
                                                 'end_time': time(15, 0),
                                                 'daily_limit': 30,
                                                 'num_counters': 2,
-                                                'tags': ['conta', 'banco'],
+                                                'tags': ['banco', 'crédito'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'name': 'Agência Maianga',
+                                'location': 'Maianga, Luanda',
+                                'neighborhood': 'Maianga',
+                                'latitude': -8.8147,
+                                'longitude': 13.2302,
+                                'departments': [
+                                    {
+                                        'name': 'Atendimento ao Cliente',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'A',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 60,
+                                                'num_counters': 5,
+                                                'tags': ['banco', 'atendimento'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'name': 'Crédito',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'C',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 30,
+                                                'num_counters': 2,
+                                                'tags': ['banco', 'crédito'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'name': 'Agência Talatona',
+                                'location': 'Talatona, Luanda',
+                                'neighborhood': 'Talatona',
+                                'latitude': -8.9167,
+                                'longitude': 13.1833,
+                                'departments': [
+                                    {
+                                        'name': 'Atendimento ao Cliente',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'A',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 60,
+                                                'num_counters': 5,
+                                                'tags': ['banco', 'atendimento'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'name': 'Crédito',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'C',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 30,
+                                                'num_counters': 2,
+                                                'tags': ['banco', 'crédito'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'id': str(uuid.uuid4()),
+                        'name': 'Banco Atlântico',
+                        'description': 'Banco comercial em Angola',
+                        'branches': [
+                            {
+                                'name': 'Agência Samba',
+                                'location': 'Samba, Luanda',
+                                'neighborhood': 'Samba',
+                                'latitude': -8.8200,
+                                'longitude': 13.2400,
+                                'departments': [
+                                    {
+                                        'name': 'Atendimento ao Cliente',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'A',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 60,
+                                                'num_counters': 5,
+                                                'tags': ['banco', 'atendimento'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'name': 'Crédito',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'C',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 30,
+                                                'num_counters': 2,
+                                                'tags': ['banco', 'crédito'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'name': 'Agência Rangel',
+                                'location': 'Rangel, Luanda',
+                                'neighborhood': 'Rangel',
+                                'latitude': -8.8300,
+                                'longitude': 13.2500,
+                                'departments': [
+                                    {
+                                        'name': 'Atendimento ao Cliente',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'A',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 60,
+                                                'num_counters': 5,
+                                                'tags': ['banco', 'atendimento'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'name': 'Crédito',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'C',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 30,
+                                                'num_counters': 2,
+                                                'tags': ['banco', 'crédito'],
                                                 'schedules': [
                                                     {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
                                                     {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
@@ -554,128 +919,45 @@ def populate_initial_data(app):
                                 'longitude': 13.2667,
                                 'departments': [
                                     {
+                                        'name': 'Atendimento ao Cliente',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'A',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 60,
+                                                'num_counters': 5,
+                                                'tags': ['banco', 'atendimento'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
                                         'name': 'Crédito',
                                         'sector': 'Bancário',
                                         'queues': [
                                             {
                                                 'id': str(uuid.uuid4()),
-                                                'service': 'Empréstimos',
+                                                'service': 'Atendimento',
                                                 'category_id': category_map['Bancário'],
-                                                'prefix': 'E',
-                                                'open_time': time(8, 0),
-                                                'end_time': time(15, 0),
-                                                'daily_limit': 20,
-                                                'num_counters': 2,
-                                                'tags': ['empréstimo', 'crédito', 'banco'],
-                                                'schedules': [
-                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
-                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                                ]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    # Outros 14 bancos
-                    *[
-                        {
-                            'id': str(uuid.uuid4()),
-                            'name': f'Banco {["Standard Bank", "Banco BIC", "Banco Millennium Atlântico", "Banco Sol"][i % 4]} {i}',
-                            'description': f'Banco comercial em {neighborhoods[i % len(neighborhoods)]["name"]}',
-                            'branches': [
-                                {
-                                    'name': f'Agência {neighborhoods[i % len(neighborhoods)]["name"]}',
-                                    'location': f'{neighborhoods[i % len(neighborhoods)]["name"]}, Luanda',
-                                    'neighborhood': neighborhoods[i % len(neighborhoods)]['name'],
-                                    'latitude': neighborhoods[i % len(neighborhoods)]['latitude'],
-                                    'longitude': neighborhoods[i % len(neighborhoods)]['longitude'],
-                                    'departments': [
-                                        {
-                                            'name': 'Atendimento ao Cliente',
-                                            'sector': 'Bancário',
-                                            'queues': [
-                                                {
-                                                    'id': str(uuid.uuid4()),
-                                                    'service': 'Depósitos e Levantamentos',
-                                                    'category_id': category_map['Bancário'],
-                                                    'prefix': 'D',
-                                                    'open_time': time(8, 0),
-                                                    'end_time': time(15, 0),
-                                                    'daily_limit': 60,
-                                                    'num_counters': 5,
-                                                    'tags': ['depósito', 'levantamento', 'banco'],
-                                                    'schedules': [
-                                                        {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.SATURDAY, 'is_closed': True},
-                                                        {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                                    ]
-                                                }
-                                            ]
-                                        }
-                                    ]
-                                }
-                            ]
-                        }
-                        for i in range(14)
-                    ],
-                    # Cartórios (10)
-                    {
-                        'id': str(uuid.uuid4()),
-                        'name': 'Cartório Notarial de Luanda',
-                        'description': 'Cartório para serviços notariais',
-                        'branches': [
-                            {
-                                'name': 'Sede Maianga',
-                                'location': 'Luanda, Luanda',
-                                'neighborhood': 'Maianga',
-                                'latitude': -8.8147,
-                                'longitude': 13.2302,
-                                'departments': [
-                                    {
-                                        'name': 'Atendimento Notarial',
-                                        'sector': 'Notarial',
-                                        'queues': [
-                                            {
-                                                'id': '1862b78e-b091-4969-882f-c1f91c8dbd97',
-                                                'service': 'Autenticação de Documentos',
-                                                'category_id': category_map['Notarial'],
-                                                'prefix': 'N',
-                                                'open_time': time(8, 0),
-                                                'end_time': time(15, 0),
-                                                'daily_limit': 40,
-                                                'num_counters': 3,
-                                                'tags': ['notarial', 'autenticação', 'documentos'],
-                                                'schedules': [
-                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
-                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                                ]
-                                            },
-                                            {
-                                                'id': '4f3118f4-8bcb-4339-92c1-d8a81441d87f',
-                                                'service': 'Registo Civil',
-                                                'category_id': category_map['Notarial'],
-                                                'prefix': 'R',
+                                                'prefix': 'C',
                                                 'open_time': time(8, 0),
                                                 'end_time': time(15, 0),
                                                 'daily_limit': 30,
                                                 'num_counters': 2,
-                                                'tags': ['notarial', 'registro', 'civil'],
+                                                'tags': ['banco', 'crédito'],
                                                 'schedules': [
                                                     {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
                                                     {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
@@ -692,57 +974,10 @@ def populate_initial_data(app):
                             }
                         ]
                     },
-                    # Outros 9 cartórios
-                    *[
-                        {
-                            'id': str(uuid.uuid4()),
-                            'name': f'Cartório Notarial {neighborhoods[i % len(neighborhoods)]["name"]} {i}',
-                            'description': f'Serviços notariais em {neighborhoods[i % len(neighborhoods)]["name"]}',
-                            'branches': [
-                                {
-                                    'name': f'Sede {neighborhoods[i % len(neighborhoods)]["name"]}',
-                                    'location': f'{neighborhoods[i % len(neighborhoods)]["name"]}, Luanda',
-                                    'neighborhood': neighborhoods[i % len(neighborhoods)]['name'],
-                                    'latitude': neighborhoods[i % len(neighborhoods)]['latitude'],
-                                    'longitude': neighborhoods[i % len(neighborhoods)]['longitude'],
-                                    'departments': [
-                                        {
-                                            'name': 'Atendimento Notarial',
-                                            'sector': 'Notarial',
-                                            'queues': [
-                                                {
-                                                    'id': str(uuid.uuid4()),
-                                                    'service': 'Autenticação de Documentos',
-                                                    'category_id': category_map['Notarial'],
-                                                    'prefix': 'N',
-                                                    'open_time': time(8, 0),
-                                                    'end_time': time(15, 0),
-                                                    'daily_limit': 40,
-                                                    'num_counters': 3,
-                                                    'tags': ['notarial', 'autenticação', 'documentos'],
-                                                    'schedules': [
-                                                        {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.SATURDAY, 'is_closed': True},
-                                                        {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                                    ]
-                                                }
-                                            ]
-                                        }
-                                    ]
-                                }
-                            ]
-                        }
-                        for i in range(9)
-                    ],
-                    # Serviços de Alta Demanda (5)
                     {
                         'id': str(uuid.uuid4()),
-                        'name': 'EPAL - Empresa Pública de Águas',
-                        'description': 'Serviços de fornecimento de água',
+                        'name': 'Banco BFA',
+                        'description': 'Banco comercial em Angola',
                         'branches': [
                             {
                                 'name': 'Agência Cazenga',
@@ -753,24 +988,172 @@ def populate_initial_data(app):
                                 'departments': [
                                     {
                                         'name': 'Atendimento ao Cliente',
-                                        'sector': 'Utilidades',
+                                        'sector': 'Bancário',
                                         'queues': [
                                             {
                                                 'id': str(uuid.uuid4()),
-                                                'service': 'Reclamações de Fatura',
-                                                'category_id': category_map['Utilidades'],
-                                                'prefix': 'F',
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'A',
                                                 'open_time': time(8, 0),
-                                                'end_time': time(16, 0),
-                                                'daily_limit': 50,
-                                                'num_counters': 4,
-                                                'tags': ['água', 'fatura', 'reclamação'],
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 60,
+                                                'num_counters': 5,
+                                                'tags': ['banco', 'atendimento'],
                                                 'schedules': [
-                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'name': 'Crédito',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'C',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 30,
+                                                'num_counters': 2,
+                                                'tags': ['banco', 'crédito'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'name': 'Agência Viana',
+                                'location': 'Viana, Luanda',
+                                'neighborhood': 'Viana',
+                                'latitude': -8.9035,
+                                'longitude': 13.3741,
+                                'departments': [
+                                    {
+                                        'name': 'Atendimento ao Cliente',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'A',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 60,
+                                                'num_counters': 5,
+                                                'tags': ['banco', 'atendimento'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'name': 'Crédito',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'C',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 30,
+                                                'num_counters': 2,
+                                                'tags': ['banco', 'crédito'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'name': 'Agência Cacuaco',
+                                'location': 'Cacuaco, Luanda',
+                                'neighborhood': 'Cacuaco',
+                                'latitude': -8.7667,
+                                'longitude': 13.3667,
+                                'departments': [
+                                    {
+                                        'name': 'Atendimento ao Cliente',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'A',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 60,
+                                                'num_counters': 5,
+                                                'tags': ['banco', 'atendimento'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'name': 'Crédito',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'C',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 30,
+                                                'num_counters': 2,
+                                                'tags': ['banco', 'crédito'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
                                                     {'weekday': Weekday.SATURDAY, 'is_closed': True},
                                                     {'weekday': Weekday.SUNDAY, 'is_closed': True}
                                                 ]
@@ -783,9 +1166,70 @@ def populate_initial_data(app):
                     },
                     {
                         'id': str(uuid.uuid4()),
-                        'name': 'ENDE - Empresa Nacional de Distribuição de Electricidade',
-                        'description': 'Serviços de fornecimento de energia',
+                        'name': 'Banco Sol',
+                        'description': 'Banco comercial em Angola',
                         'branches': [
+                            {
+                                'name': 'Agência Patriota',
+                                'location': 'Patriota, Luanda',
+                                'neighborhood': 'Patriota',
+                                'latitude': -8.9000,
+                                'longitude': 13.2000,
+                                'departments': [
+                                    {
+                                        'name': 'Atendimento ao Cliente',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'A',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 60,
+                                                'num_counters': 5,
+                                                'tags': ['banco', 'atendimento'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'name': 'Crédito',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'C',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 30,
+                                                'num_counters': 2,
+                                                'tags': ['banco', 'crédito'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
                             {
                                 'name': 'Agência Kilamba',
                                 'location': 'Kilamba, Luanda',
@@ -795,24 +1239,111 @@ def populate_initial_data(app):
                                 'departments': [
                                     {
                                         'name': 'Atendimento ao Cliente',
-                                        'sector': 'Utilidades',
+                                        'sector': 'Bancário',
                                         'queues': [
                                             {
                                                 'id': str(uuid.uuid4()),
-                                                'service': 'Pagamentos de Fatura',
-                                                'category_id': category_map['Utilidades'],
-                                                'prefix': 'P',
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'A',
                                                 'open_time': time(8, 0),
-                                                'end_time': time(16, 0),
+                                                'end_time': time(15, 0),
                                                 'daily_limit': 60,
                                                 'num_counters': 5,
-                                                'tags': ['energia', 'fatura', 'pagamento'],
+                                                'tags': ['banco', 'atendimento'],
                                                 'schedules': [
-                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'name': 'Crédito',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'C',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 30,
+                                                'num_counters': 2,
+                                                'tags': ['banco', 'crédito'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'name': 'Agência Ingombota',
+                                'location': 'Ingombota, Luanda',
+                                'neighborhood': 'Ingombota',
+                                'latitude': -8.8167,
+                                'longitude': 13.2332,
+                                'departments': [
+                                    {
+                                        'name': 'Atendimento ao Cliente',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'A',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 60,
+                                                'num_counters': 5,
+                                                'tags': ['banco', 'atendimento'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'name': 'Crédito',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'C',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 30,
+                                                'num_counters': 2,
+                                                'tags': ['banco', 'crédito'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
                                                     {'weekday': Weekday.SATURDAY, 'is_closed': True},
                                                     {'weekday': Weekday.SUNDAY, 'is_closed': True}
                                                 ]
@@ -823,52 +1354,196 @@ def populate_initial_data(app):
                             }
                         ]
                     },
-                    # Outros 3 serviços de alta demanda
-                    *[
-                        {
-                            'id': str(uuid.uuid4()),
-                            'name': f'Serviço {["Unitel", "Multitel", "Angola Telecom"][i % 3]}',
-                            'description': f'Serviço de telecomunicações em {neighborhoods[i % len(neighborhoods)]["name"]}',
-                            'branches': [
-                                {
-                                    'name': f'Agência {neighborhoods[i % len(neighborhoods)]["name"]}',
-                                    'location': f'{neighborhoods[i % len(neighborhoods)]["name"]}, Luanda',
-                                    'neighborhood': neighborhoods[i % len(neighborhoods)]['name'],
-                                    'latitude': neighborhoods[i % len(neighborhoods)]['latitude'],
-                                    'longitude': neighborhoods[i % len(neighborhoods)]['longitude'],
-                                    'departments': [
-                                        {
-                                            'name': 'Atendimento ao Cliente',
-                                            'sector': 'Utilidades',
-                                            'queues': [
-                                                {
-                                                    'id': str(uuid.uuid4()),
-                                                    'service': 'Atendimento Geral',
-                                                    'category_id': category_map['Utilidades'],
-                                                    'prefix': 'G',
-                                                    'open_time': time(8, 0),
-                                                    'end_time': time(16, 0),
-                                                    'daily_limit': 50,
-                                                    'num_counters': 4,
-                                                    'tags': ['telecomunicações', 'atendimento'],
-                                                    'schedules': [
-                                                        {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(16, 0), 'is_closed': False},
-                                                        {'weekday': Weekday.SATURDAY, 'is_closed': True},
-                                                        {'weekday': Weekday.SUNDAY, 'is_closed': True}
-                                                    ]
-                                                }
-                                            ]
-                                        }
-                                    ]
-                                }
-                            ]
-                        }
-                        for i in range(3)
-                    ]
+                    {
+                        'id': str(uuid.uuid4()),
+                        'name': 'Banco Yetu',
+                        'description': 'Banco comercial em Angola',
+                        'branches': [
+                            {
+                                'name': 'Agência Viana',
+                                'location': 'Viana, Luanda',
+                                'neighborhood': 'Viana',
+                                'latitude': -8.9035,
+                                'longitude': 13.3741,
+                                'departments': [
+                                    {
+                                        'name': 'Atendimento ao Cliente',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'A',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 60,
+                                                'num_counters': 5,
+                                                'tags': ['banco', 'atendimento'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'name': 'Crédito',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'C',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 30,
+                                                'num_counters': 2,
+                                                'tags': ['banco', 'crédito'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'name': 'Agência Cacuaco',
+                                'location': 'Cacuaco, Luanda',
+                                'neighborhood': 'Cacuaco',
+                                'latitude': -8.7667,
+                                'longitude': 13.3667,
+                                'departments': [
+                                    {
+                                        'name': 'Atendimento ao Cliente',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'A',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 60,
+                                                'num_counters': 5,
+                                                'tags': ['banco', 'atendimento'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'name': 'Crédito',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'C',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 30,
+                                                'num_counters': 2,
+                                                'tags': ['banco', 'crédito'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'name': 'Agência Patriota',
+                                'location': 'Patriota, Luanda',
+                                'neighborhood': 'Patriota',
+                                'latitude': -8.9000,
+                                'longitude': 13.2000,
+                                'departments': [
+                                    {
+                                        'name': 'Atendimento ao Cliente',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'A',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 60,
+                                                'num_counters': 5,
+                                                'tags': ['banco', 'atendimento'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'name': 'Crédito',
+                                        'sector': 'Bancário',
+                                        'queues': [
+                                            {
+                                                'id': str(uuid.uuid4()),
+                                                'service': 'Atendimento',
+                                                'category_id': category_map['Bancário'],
+                                                'prefix': 'C',
+                                                'open_time': time(8, 0),
+                                                'end_time': time(15, 0),
+                                                'daily_limit': 30,
+                                                'num_counters': 2,
+                                                'tags': ['banco', 'crédito'],
+                                                'schedules': [
+                                                    {'weekday': Weekday.MONDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.TUESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.WEDNESDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.THURSDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.FRIDAY, 'open_time': time(8, 0), 'end_time': time(15, 0), 'is_closed': False},
+                                                    {'weekday': Weekday.SATURDAY, 'is_closed': True},
+                                                    {'weekday': Weekday.SUNDAY, 'is_closed': True}
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
                 ]
 
                 # Criar instituições
@@ -882,46 +1557,50 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_users():
                     """
-                    Cria ~400 usuários: 1 SYSTEM_ADMIN, 1 INSTITUTION_ADMIN por instituição,
-                    1-2 DEPARTMENT_ADMIN por departamento, 50 USER.
+                    Cria ~60 usuários: 1 SYSTEM_ADMIN, 1 INSTITUTION_ADMIN por instituição (7),
+                    1 DEPARTMENT_ADMIN por departamento (42), 10 USER.
                     Usa User.set_password com bcrypt.
                     """
                     users = []
                     # SYSTEM_ADMIN
-                    super_admin = User(
-                        id=str(uuid.uuid4()),
-                        email='sysadmin@queue.com',
-                        name='Sistema Admin',
-                        user_role=UserRole.SYSTEM_ADMIN,
-                        created_at=datetime.utcnow(),
-                        active=True
-                    )
-                    super_admin.set_password('sysadmin123')
-                    db.session.add(super_admin)
-                    users.append(super_admin)
-
-                    # INSTITUTION_ADMIN (~50)
-                    for inst in Institution.query.all():
-                        admin = User(
+                    if not User.query.filter_by(email='sysadmin@queue.com').first():
+                        super_admin = User(
                             id=str(uuid.uuid4()),
-                            email=f'admin_{inst.name.lower().replace(" ", "_")}@queue.com',
-                            name=f'Admin {inst.name}',
-                            user_role=UserRole.INSTITUTION_ADMIN,
-                            institution_id=inst.id,
+                            email='sysadmin@queue.com',
+                            name='Sistema Admin',
+                            user_role=UserRole.SYSTEM_ADMIN,
                             created_at=datetime.utcnow(),
                             active=True
                         )
-                        admin.set_password('admin123')
-                        db.session.add(admin)
-                        users.append(admin)
+                        super_admin.set_password('sysadmin123')
+                        db.session.add(super_admin)
+                        users.append(super_admin)
 
-                    # DEPARTMENT_ADMIN (~300 departamentos x 2 = ~600)
+                    # INSTITUTION_ADMIN (7)
+                    for inst in Institution.query.all():
+                        email = f'admin_{inst.name.lower().replace(" ", "_")}@queue.com'
+                        if not User.query.filter_by(email=email).first():
+                            admin = User(
+                                id=str(uuid.uuid4()),
+                                email=email,
+                                name=f'Admin {inst.name}',
+                                user_role=UserRole.INSTITUTION_ADMIN,
+                                institution_id=inst.id,
+                                created_at=datetime.utcnow(),
+                                active=True
+                            )
+                            admin.set_password('admin123')
+                            db.session.add(admin)
+                            users.append(admin)
+
+                    # DEPARTMENT_ADMIN (42)
                     for dept in Department.query.all():
-                        for i in range(2):
+                        email = f'manager_{dept.name.lower().replace(" ", "_")}@queue.com'
+                        if not User.query.filter_by(email=email).first():
                             manager = User(
                                 id=str(uuid.uuid4()),
-                                email=f'manager_{dept.name.lower().replace(" ", "_")}_{i}@queue.com',
-                                name=f'Gerente {dept.name} {i+1}',
+                                email=email,
+                                name=f'Gerente {dept.name}',
                                 user_role=UserRole.DEPARTMENT_ADMIN,
                                 department_id=dept.id,
                                 institution_id=dept.branch.institution_id,
@@ -932,19 +1611,21 @@ def populate_initial_data(app):
                             db.session.add(manager)
                             users.append(manager)
 
-                    # USER (50)
-                    for i in range(50):
-                        user = User(
-                            id=str(uuid.uuid4()),
-                            email=f'user_{i}@queue.com',
-                            name=f'Usuário {i+1}',
-                            user_role=UserRole.USER,
-                            created_at=datetime.utcnow(),
-                            active=True
-                        )
-                        user.set_password('user123')
-                        db.session.add(user)
-                        users.append(user)
+                    # USER (10)
+                    for i in range(10):
+                        email = f'user_{i}@queue.com'
+                        if not User.query.filter_by(email=email).first():
+                            user = User(
+                                id=str(uuid.uuid4()),
+                                email=email,
+                                name=f'Usuário {i+1}',
+                                user_role=UserRole.USER,
+                                created_at=datetime.utcnow(),
+                                active=True
+                            )
+                            user.set_password('user123')
+                            db.session.add(user)
+                            users.append(user)
 
                     db.session.flush()
                     app.logger.info("Usuários criados com sucesso.")
@@ -957,18 +1638,21 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_user_preferences():
                     """
-                    Cria ~100 preferências (~2 por usuário USER).
+                    Cria 20 preferências (2 por usuário USER).
                     """
-                    for user in User.query.filter_by(user_role=UserRole.USER).limit(50).all():
-                        categories = ServiceCategory.query.limit(2).all()
-                        for category in categories:
-                            preference = UserPreference(
-                                id=str(uuid.uuid4()),
-                                user_id=user.id,
-                                service_category_id=category.id,
-                                neighborhood=neighborhoods[i % len(neighborhoods)]['name']
-                            )
-                            db.session.add(preference)
+                    user_list = User.query.filter_by(user_role=UserRole.USER).limit(10).all()
+                    for user in user_list:
+                        categories = ServiceCategory.query.filter(ServiceCategory.name.in_(['Saúde', 'Bancário'])).all()
+                        for category in categories[:2]:
+                            existing_pref = UserPreference.query.filter_by(user_id=user.id, service_category_id=category.id).first()
+                            if not existing_pref:
+                                preference = UserPreference(
+                                    id=str(uuid.uuid4()),
+                                    user_id=user.id,
+                                    service_category_id=category.id,
+                                    neighborhood=neighborhoods[i % len(neighborhoods)]['name']
+                                )
+                                db.session.add(preference)
                     db.session.flush()
                     app.logger.info("Preferências de usuário criadas com sucesso.")
 
@@ -979,13 +1663,18 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_tickets():
                     """
-                    Cria ~3000 tickets (~5 por fila), com ticket_number e qr_code.
+                    Cria 15 tickets por fila (total ~630), com ticket_number e qr_code.
                     """
                     now = datetime.utcnow()
                     for queue in Queue.query.all():
-                        for i in range(15):
+                        existing_tickets = Ticket.query.filter_by(queue_id=queue.id).count()
+                        if existing_tickets >= 15:
+                            app.logger.info(f"Fila {queue.service} já tem 15 tickets, pulando.")
+                            continue
+                        for i in range(15 - existing_tickets):
                             ticket_number = i + 1
                             qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}"
+                            status = 'Pendente' if i % 2 == 0 else 'Atendido'  # Alterna para simular
                             ticket = Ticket(
                                 id=str(uuid.uuid4()),
                                 queue_id=queue.id,
@@ -994,11 +1683,11 @@ def populate_initial_data(app):
                                 qr_code=qr_code,
                                 priority=0,
                                 is_physical=False,
-                                status='Pendente',
+                                status=status,
                                 issued_at=now - timedelta(days=i),
                                 expires_at=now + timedelta(days=1),
                                 counter=None,
-                                service_time=0.0,
+                                service_time=0.0 if status == 'Pendente' else 300.0,  # Simula 5 minutos
                                 trade_available=False
                             )
                             db.session.add(ticket)
@@ -1012,20 +1701,22 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_audit_logs():
                     """
-                    Cria logs de auditoria para simular ações.
+                    Cria logs de auditoria para criação de usuários.
                     """
                     now = datetime.utcnow()
                     for user in User.query.limit(10).all():
-                        audit_log = AuditLog(
-                            id=str(uuid.uuid4()),
-                            user_id=user.id,
-                            action='CREATE',
-                            resource_type='USER',
-                            resource_id=user.id,
-                            details=f'Usuário {user.email} criado.',
-                            timestamp=now
-                        )
-                        db.session.add(audit_log)
+                        existing_log = AuditLog.query.filter_by(user_id=user.id, action='CREATE', resource_id=user.id).first()
+                        if not existing_log:
+                            audit_log = AuditLog(
+                                id=str(uuid.uuid4()),
+                                user_id=user.id,
+                                action='CREATE',
+                                resource_type='USER',
+                                resource_id=user.id,
+                                details=f'Usuário {user.email} criado.',
+                                timestamp=now
+                            )
+                            db.session.add(audit_log)
                     db.session.flush()
                     app.logger.info("Logs de auditoria criados com sucesso.")
 
@@ -1042,5 +1733,3 @@ def populate_initial_data(app):
             db.session.rollback()
             app.logger.error(f"Erro ao popular dados: {str(e)}")
             raise
-
-# FIM DO ARQUIVO
