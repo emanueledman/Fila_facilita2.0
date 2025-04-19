@@ -32,7 +32,7 @@ if __name__ == "__main__":
     
     # Configurar host e port
     host = os.getenv('HOST', '0.0.0.0')
-    port = int(os.getenv('PORT', 5000))
+    port = int(os.getenv('PORT', 10000))
     
     # Ajustar debug com base no ambiente
     debug = os.getenv('FLASK_ENV') != 'production'
