@@ -61,7 +61,7 @@ def create_app():
         cors_allowed_origins=[
             "http://127.0.0.1:5500",
             "https://frontfa.netlify.app",
-            "https://courageous-dolphin-66662b.netlify.app"
+            "https://fila-facilita2-0-4uzw.onrender.com"
         ],
         async_mode='eventlet',
         path='/tickets',
@@ -75,7 +75,7 @@ def create_app():
         "origins": [
             "http://127.0.0.1:5500",
             "https://frontfa.netlify.app",
-            "https://courageous-dolphin-66662b.netlify.app"
+            "https://fila-facilita2-0-4uzw.onrender.com"
         ],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],

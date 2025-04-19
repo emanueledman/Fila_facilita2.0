@@ -983,7 +983,7 @@ def populate_initial_data(app):
                     """
                     now = datetime.utcnow()
                     for queue in Queue.query.all():
-                        for i in range(5):
+                        for i in range(15):
                             ticket_number = i + 1
                             qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}"
                             ticket = Ticket(
