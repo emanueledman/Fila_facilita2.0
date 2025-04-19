@@ -85,7 +85,45 @@ def create_app():
     # Configurar Flask-Limiter com Redis
     limiter.storage_uri = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
     
-
+    with app.app_context():
+        from .models import Institution, Queue, User, Ticket, Department
+        
+        # SEMPRE reiniciar o banco de dados
+        db.drop_all()
+        db.create_all()
+        app.logger.info("Banco limpo e tabelas recriadas automaticamente")
+        
+        # Inserir dados iniciais de forma idempotente
+        from .data_init import populate_initial_data
+        try:
+            populate_initial_data(app)
+            app.logger.info("Dados iniciais inseridos automaticamente")
+        except Exception as e:
+            app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
+            raise  # Re-lançar para depuração no Render
+        
+        # Inicializar modelos de ML
+        app.logger.debug("Tentando importar preditores de ML")
+        try:
+            from .ml_models import wait_time_predictor, service_recommendation_predictor
+            app.logger.info("Preditores de ML importados com sucesso")
+        except ImportError as e:
+            app.logger.error(f"Erro ao importar preditores de ML: {e}")
+            raise
+        
+        app.logger.debug("Iniciando treinamento dos modelos de ML")
+        try:
+            queues = Queue.query.all()
+            for queue in queues:
+                app.logger.debug(f"Treinando WaitTimePredictor para queue_id={queue.id}")
+                wait_time_predictor.train(queue.id)
+            app.logger.debug("Treinando ServiceRecommendationPredictor")
+            service_recommendation_predictor.train()
+            app.logger.info("Modelos de ML inicializados na startup")
+        except Exception as e:
+            app.logger.error(f"Erro ao inicializar modelos de ML: {str(e)}")
+            # Não lançar exceção aqui para permitir que a aplicação continue
+    
     # Registrar rotas
     from .routes import init_routes
     from .queue_routes import init_queue_routes
@@ -99,7 +137,7 @@ def create_app():
 
     if os.getenv('FLASK_ENV') == 'production':
         app.config['DEBUG'] = False
-        app.logger.info("Aplicação, configurada para modo de produção")
+        app.logger.info("Aplicação configurada para modo de produção")
     else:
         app.config['DEBUG'] = True
         app.logger.info("Aplicação configurada para modo de desenvolvimento")
