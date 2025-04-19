@@ -88,10 +88,9 @@ def create_app():
     with app.app_context():
         from .models import Institution, Queue, User, Ticket, Department
         
-        # SEMPRE reiniciar o banco de dados
-        db.drop_all()
+        # Criar tabelas apenas se não existirem
         db.create_all()
-        app.logger.info("Banco limpo e tabelas recriadas automaticamente")
+        app.logger.info("Tabelas criadas ou verificadas no banco de dados")
         
         # Inserir dados iniciais de forma idempotente
         from .data_init import populate_initial_data
@@ -105,8 +104,10 @@ def create_app():
         # Inicializar modelos de ML
         app.logger.debug("Tentando importar preditores de ML")
         try:
-            from .ml_models import wait_time_predictor, service_recommendation_predictor
+            from .ml_models import wait_time_predictor, service_recommendation_predictor, initialize_models
             app.logger.info("Preditores de ML importados com sucesso")
+            # Inicializar os modelos dentro do contexto da aplicação
+            initialize_models(app)
         except ImportError as e:
             app.logger.error(f"Erro ao importar preditores de ML: {e}")
             raise

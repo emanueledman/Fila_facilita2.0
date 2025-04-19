@@ -9,11 +9,7 @@ def populate_initial_data(app):
     with app.app_context():
         try:
             with db.session.no_autoflush:
-                if Institution.query.count() > 0:
-                    app.logger.info("Dados já existem, pulando inicialização.")
-                    return
-
-                # 1. Categorias de Serviço (reduzidas)
+                # 1. Categorias de Serviço
                 service_categories = [
                     {'name': 'Saúde', 'description': 'Serviços médicos'},
                     {'name': 'Bancário', 'description': 'Serviços financeiros'},
@@ -23,9 +19,14 @@ def populate_initial_data(app):
                     {'name': 'Registro Civil', 'description': 'Registros', 'parent_name': 'Notarial'},
                 ]
                 
-                # Inserir categorias e mapear IDs
                 category_map = {}
                 for cat in service_categories:
+                    # Verificar se a categoria já existe
+                    existing_category = ServiceCategory.query.filter_by(name=cat['name']).first()
+                    if existing_category:
+                        category_map[cat['name']] = existing_category.id
+                        continue
+                    
                     parent_id = None
                     if 'parent_name' in cat:
                         parent_id = category_map[cat['parent_name']]
@@ -39,14 +40,14 @@ def populate_initial_data(app):
                     db.session.add(category)
                     category_map[cat['name']] = category.id
 
-                # 2. Bairros (reduzido para 3)
+                # 2. Bairros
                 neighborhoods = [
                     {'name': 'Ingombota', 'lat': -8.8167, 'long': 13.2332},
                     {'name': 'Maianga', 'lat': -8.8147, 'long': 13.2302},
                     {'name': 'Talatona', 'lat': -8.9167, 'long': 13.1833},
                 ]
 
-                # 3. Instituições (reduzido para 6)
+                # 3. Instituições
                 institutions = [
                     {
                         'name': 'Hospital Josina Machel',
@@ -86,144 +87,188 @@ def populate_initial_data(app):
                     },
                 ]
 
-                # Adicionar filiais (1 por instituição)
+                # Adicionar filiais (2 por instituição)
                 for inst in institutions:
-                    inst['id'] = str(uuid.uuid4())
-                    neighborhood = neighborhoods[len(inst['branches']) % 3]
-                    branch = {
-                        'id': str(uuid.uuid4()),
-                        'name': f'Unidade {neighborhood["name"]}',
-                        'location': f'{neighborhood["name"]}, Luanda',
-                        'neighborhood': neighborhood['name'],
-                        'latitude': neighborhood['lat'],
-                        'longitude': neighborhood['long'],
-                        'departments': []
-                    }
+                    # Verificar se a instituição já existe
+                    existing_inst = Institution.query.filter_by(name=inst['name']).first()
+                    if existing_inst:
+                        inst['id'] = existing_inst.id
+                    else:
+                        inst['id'] = str(uuid.uuid4())
 
-                    # Adicionar departamentos (2 por filial)
-                    for j in range(2):
-                        if inst['type'] == 'Saúde':
-                            dept_options = [
-                                ('Consulta Geral', 'Saúde', 'Consulta Médica'),
-                                ('Emergência', 'Saúde', 'Consulta Médica'),
-                            ]
-                        elif inst['type'] == 'Bancário':
-                            dept_options = [
-                                ('Atendimento ao Cliente', 'Bancário', 'Atendimento ao Cliente'),
-                                ('Crédito', 'Bancário', 'Atendimento ao Cliente'),
-                            ]
-                        elif inst['type'] == 'Notarial':
-                            dept_options = [
-                                ('Registro Civil', 'Notarial', 'Registro Civil'),
-                                ('Autenticações', 'Notarial', 'Registro Civil'),
-                            ]
-                        else:  # Utilidades
-                            dept_options = [
-                                ('Atendimento Geral', 'Utilidades', None),
-                                ('Documentação', 'Utilidades', None),
-                            ]
+                    # Adicionar 2 filiais, se não existirem
+                    for i in range(2):
+                        neighborhood = neighborhoods[i % len(neighborhoods)]
+                        branch_name = f'Unidade {neighborhood["name"]}'
+                        # Verificar se a filial já existe para essa instituição
+                        existing_branch = Branch.query.filter_by(institution_id=inst['id'], name=branch_name).first()
+                        if existing_branch:
+                            continue
 
-                        dept_name, sector, category = dept_options[j % len(dept_options)]
-                        department = {
+                        branch = {
                             'id': str(uuid.uuid4()),
-                            'name': dept_name,
-                            'sector': sector,
-                            'queues': []
+                            'name': branch_name,
+                            'location': f'{neighborhood["name"]}, Luanda',
+                            'neighborhood': neighborhood['name'],
+                            'latitude': neighborhood['lat'],
+                            'longitude': neighborhood['long'],
+                            'departments': []
                         }
 
-                        # Adicionar filas (1 por departamento)
-                        if sector == 'Saúde':
-                            queue_options = [('Consulta', 'A', ['consulta', 'médico'])]
-                        elif sector == 'Bancário':
-                            queue_options = [('Atendimento', 'A', ['banco', 'atendimento'])]
-                        elif sector == 'Notarial':
-                            queue_options = [('Registro', 'R', ['registro', 'civil'])]
-                        else:
-                            queue_options = [('Atendimento', 'A', ['atendimento', 'serviço'])]
+                        # Adicionar departamentos (2 por filial)
+                        for j in range(2):
+                            if inst['type'] == 'Saúde':
+                                dept_options = [
+                                    ('Consulta Geral', 'Saúde', 'Consulta Médica'),
+                                    ('Emergência', 'Saúde', 'Consulta Médica'),
+                                ]
+                            elif inst['type'] == 'Bancário':
+                                dept_options = [
+                                    ('Atendimento ao Cliente', 'Bancário', 'Atendimento ao Cliente'),
+                                    ('Crédito', 'Bancário', 'Atendimento ao Cliente'),
+                                ]
+                            elif inst['type'] == 'Notarial':
+                                dept_options = [
+                                    ('Registro Civil', 'Notarial', 'Registro Civil'),
+                                    ('Autenticações', 'Notarial', 'Registro Civil'),
+                                ]
+                            else:  # Utilidades
+                                dept_options = [
+                                    ('Atendimento Geral', 'Utilidades', None),
+                                    ('Documentação', 'Utilidades', None),
+                                ]
 
-                        service, prefix, tags = queue_options[0]
-                        open_time = time(8, 0)
-                        end_time = time(16, 0) if sector != 'Saúde' else time(17, 0)
+                            dept_name, sector, category = dept_options[j % len(dept_options)]
+                            # Verificar se o departamento já existe
+                            existing_dept = Department.query.filter_by(branch_id=branch['id'], name=dept_name).first()
+                            if existing_dept:
+                                continue
 
-                        queue = {
-                            'id': str(uuid.uuid4()),
-                            'service': service,
-                            'category_id': category_map[category] if category else None,
-                            'prefix': prefix,
-                            'open_time': open_time,
-                            'end_time': end_time,
-                            'daily_limit': 20,
-                            'num_counters': 1,
-                            'tags': tags,
-                            'schedules': []
-                        }
+                            department = {
+                                'id': str(uuid.uuid4()),
+                                'name': dept_name,
+                                'sector': sector,
+                                'queues': []
+                            }
 
-                        # Agendamentos para dias da semana
-                        for day in Weekday:
-                            is_closed = (day == Weekday.SUNDAY)
-                            if is_closed:
-                                schedule = {'weekday': day, 'is_closed': True}
+                            # Adicionar filas (1 por departamento)
+                            if sector == 'Saúde':
+                                queue_options = [('Consulta', 'A', ['consulta', 'médico'])]
+                            elif sector == 'Bancário':
+                                queue_options = [('Atendimento', 'A', ['banco', 'atendimento'])]
+                            elif sector == 'Notarial':
+                                queue_options = [('Registro', 'R', ['registro', 'civil'])]
                             else:
-                                q_open = time(8, 0) if day != Weekday.SATURDAY else time(8, 0)
-                                q_end = time(16, 0) if day != Weekday.SATURDAY else time(12, 0)
-                                schedule = {
-                                    'weekday': day,
-                                    'open_time': q_open,
-                                    'end_time': q_end,
-                                    'is_closed': False
-                                }
-                            queue['schedules'].append(schedule)
+                                queue_options = [('Atendimento', 'A', ['atendimento', 'serviço'])]
 
-                        department['queues'].append(queue)
-                        branch['departments'].append(department)
+                            service, prefix, tags = queue_options[0]
+                            open_time = time(8, 0)
+                            end_time = time(16, 0) if sector != 'Saúde' else time(17, 0)
 
-                    inst['branches'].append(branch)
+                            # Verificar se a fila já existe
+                            existing_queue = Queue.query.filter_by(department_id=department['id'], service=service).first()
+                            if existing_queue:
+                                continue
+
+                            queue = {
+                                'id': str(uuid.uuid4()),
+                                'service': service,
+                                'category_id': category_map[category] if category else None,
+                                'prefix': prefix,
+                                'open_time': open_time,
+                                'end_time': end_time,
+                                'daily_limit': 20,
+                                'num_counters': 1,
+                                'tags': tags,
+                                'schedules': []
+                            }
+
+                            # Agendamentos para dias da semana
+                            for day in Weekday:
+                                is_closed = (day == Weekday.SUNDAY)
+                                if is_closed:
+                                    schedule = {'weekday': day, 'is_closed': True}
+                                else:
+                                    q_open = time(8, 0) if day != Weekday.SATURDAY else time(8, 0)
+                                    q_end = time(16, 0) if day != Weekday.SATURDAY else time(12, 0)
+                                    schedule = {
+                                        'weekday': day,
+                                        'open_time': q_open,
+                                        'end_time': q_end,
+                                        'is_closed': False
+                                    }
+                                queue['schedules'].append(schedule)
+
+                            department['queues'].append(queue)
+                            branch['departments'].append(department)
+
+                        inst['branches'].append(branch)
 
                 # Inserir instituições, filiais, departamentos e filas
                 for inst in institutions:
-                    institution = Institution(id=inst['id'], name=inst['name'], description=inst['description'])
-                    db.session.add(institution)
+                    # Inserir instituição se não existir
+                    existing_inst = Institution.query.filter_by(id=inst['id']).first()
+                    if not existing_inst:
+                        institution = Institution(id=inst['id'], name=inst['name'], description=inst['description'])
+                        db.session.add(institution)
 
                     for branch in inst['branches']:
-                        branch_obj = Branch(
-                            id=branch['id'], institution_id=inst['id'], name=branch['name'],
-                            location=branch['location'], neighborhood=branch['neighborhood'],
-                            latitude=branch['latitude'], longitude=branch['longitude']
-                        )
-                        db.session.add(branch_obj)
+                        # Inserir filial se não existir
+                        existing_branch = Branch.query.filter_by(id=branch['id']).first()
+                        if not existing_branch:
+                            branch_obj = Branch(
+                                id=branch['id'], institution_id=inst['id'], name=branch['name'],
+                                location=branch['location'], neighborhood=branch['neighborhood'],
+                                latitude=branch['latitude'], longitude=branch['longitude']
+                            )
+                            db.session.add(branch_obj)
 
                         for dept in branch['departments']:
-                            department = Department(
-                                id=dept['id'], branch_id=branch['id'], name=dept['name'], sector=dept['sector']
-                            )
-                            db.session.add(department)
+                            # Inserir departamento se não existir
+                            existing_dept = Department.query.filter_by(id=dept['id']).first()
+                            if not existing_dept:
+                                department = Department(
+                                    id=dept['id'], branch_id=branch['id'], name=dept['name'], sector=dept['sector']
+                                )
+                                db.session.add(department)
 
                             for q in dept['queues']:
-                                queue = Queue(
-                                    id=q['id'], department_id=dept['id'], service=q['service'],
-                                    category_id=q['category_id'], prefix=q['prefix'],
-                                    open_time=q['open_time'], end_time=q['end_time'],
-                                    daily_limit=q['daily_limit'], num_counters=q['num_counters'],
-                                    active_tickets=0, current_ticket=0
-                                )
-                                db.session.add(queue)
-
-                                for schedule in q['schedules']:
-                                    queue_schedule = QueueSchedule(
-                                        id=str(uuid.uuid4()), queue_id=q['id'], weekday=schedule['weekday'],
-                                        open_time=schedule.get('open_time'), end_time=schedule.get('end_time'),
-                                        is_closed=schedule.get('is_closed', False)
+                                # Inserir fila se não existir
+                                existing_queue = Queue.query.filter_by(id=q['id']).first()
+                                if not existing_queue:
+                                    queue = Queue(
+                                        id=q['id'], department_id=dept['id'], service=q['service'],
+                                        category_id=q['category_id'], prefix=q['prefix'],
+                                        open_time=q['open_time'], end_time=q['end_time'],
+                                        daily_limit=q['daily_limit'], num_counters=q['num_counters'],
+                                        active_tickets=0, current_ticket=0
                                     )
-                                    db.session.add(queue_schedule)
+                                    db.session.add(queue)
 
-                                for tag in q['tags']:
-                                    service_tag = ServiceTag(id=str(uuid.uuid4()), queue_id=q['id'], tag=tag)
-                                    db.session.add(service_tag)
+                                    for schedule in q['schedules']:
+                                        # Verificar se o agendamento já existe
+                                        existing_schedule = QueueSchedule.query.filter_by(
+                                            queue_id=q['id'], weekday=schedule['weekday']
+                                        ).first()
+                                        if not existing_schedule:
+                                            queue_schedule = QueueSchedule(
+                                                id=str(uuid.uuid4()), queue_id=q['id'], weekday=schedule['weekday'],
+                                                open_time=schedule.get('open_time'), end_time=schedule.get('end_time'),
+                                                is_closed=schedule.get('is_closed', False)
+                                            )
+                                            db.session.add(queue_schedule)
+
+                                    for tag in q['tags']:
+                                        # Verificar se a tag já existe
+                                        existing_tag = ServiceTag.query.filter_by(queue_id=q['id'], tag=tag).first()
+                                        if not existing_tag:
+                                            service_tag = ServiceTag(id=str(uuid.uuid4()), queue_id=q['id'], tag=tag)
+                                            db.session.add(service_tag)
 
                 db.session.commit()
                 app.logger.info("Dados iniciais de instituições inseridos com sucesso!")
 
-                # 4. Usuários (reduzido para 10)
+                # 4. Usuários
                 users = [
                     {
                         'email': 'superadmin@facilita.com',
@@ -237,41 +282,49 @@ def populate_initial_data(app):
 
                 # 1 Admin por instituição (6)
                 for inst in institutions:
-                    users.append({
-                        'email': f'admin.{inst["name"].replace(" ", "").lower()}@facilita.com',
-                        'name': f'Admin {inst["name"]}',
-                        'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
-                        'role': UserRole.INSTITUTION_ADMIN,
-                        'institution_id': inst['id'],
-                        'department_name': None
-                    })
+                    email = f'admin.{inst["name"].replace(" ", "").lower()}@facilita.com'
+                    if not User.query.filter_by(email=email).first():
+                        users.append({
+                            'email': email,
+                            'name': f'Admin {inst["name"]}',
+                            'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
+                            'role': UserRole.INSTITUTION_ADMIN,
+                            'institution_id': inst['id'],
+                            'department_name': None
+                        })
 
                 # 1 Usuário padrão
                 inst = institutions[0]
-                users.append({
-                    'email': 'user.1@facilita.com',
-                    'name': 'Usuário 1',
-                    'password': os.getenv('USER_PASSWORD', 'user123'),
-                    'role': UserRole.USER,
-                    'institution_id': inst['id'],
-                    'department_name': None
-                })
+                if not User.query.filter_by(email='user.1@facilita.com').first():
+                    users.append({
+                        'email': 'user.1@facilita.com',
+                        'name': 'Usuário 1',
+                        'password': os.getenv('USER_PASSWORD', 'user123'),
+                        'role': UserRole.USER,
+                        'institution_id': inst['id'],
+                        'department_name': None
+                    })
 
                 # 1 Gestor por departamento (selecionar alguns)
                 for inst in institutions[:2]:  # Apenas 2 instituições
                     for branch in inst['branches']:
                         for dept in branch['departments'][:1]:  # Apenas 1 departamento
-                            users.append({
-                                'email': f'gestor.{dept["name"].replace(" ", "").lower()}@facilita.com',
-                                'name': f'Gestor {dept["name"]}',
-                                'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
-                                'role': UserRole.DEPARTMENT_ADMIN,
-                                'institution_id': inst['id'],
-                                'department_name': dept['name']
-                            })
+                            email = f'gestor.{dept["name"].replace(" ", "").lower()}@facilita.com'
+                            if not User.query.filter_by(email=email).first():
+                                users.append({
+                                    'email': email,
+                                    'name': f'Gestor {dept["name"]}',
+                                    'password': os.getenv('ADMIN_PASSWORD', 'admin123'),
+                                    'role': UserRole.DEPARTMENT_ADMIN,
+                                    'institution_id': inst['id'],
+                                    'department_name': dept['name']
+                                })
 
                 # Inserir usuários
                 for user_data in users:
+                    if User.query.filter_by(email=user_data['email']).first():
+                        continue
+
                     department = None
                     if user_data['department_name'] and user_data['institution_id']:
                         institution = Institution.query.get(user_data['institution_id'])
@@ -294,22 +347,30 @@ def populate_initial_data(app):
                 db.session.commit()
                 app.logger.info("Usuários iniciais inseridos com sucesso!")
 
-                # 5. Preferências de usuário (reduzido para 2)
+                # 5. Preferências de usuário
                 user_preferences = []
                 regular_users = [u for u in users if u['role'] == UserRole.USER]
                 for user in regular_users:
                     inst = institutions[0]
-                    user_preferences.append({
-                        'user_email': user['email'],
-                        'institution_id': inst['id'],
-                        'service_category_id': category_map['Saúde'],
-                        'neighborhood': neighborhoods[0]['name']
-                    })
+                    if not UserPreference.query.filter_by(
+                        user_id=User.query.filter_by(email=user['email']).first().id,
+                        institution_id=inst['id'],
+                        service_category_id=category_map['Saúde']
+                    ).first():
+                        user_preferences.append({
+                            'user_email': user['email'],
+                            'institution_id': inst['id'],
+                            'service_category_id': category_map['Saúde'],
+                            'neighborhood': neighborhoods[0]['name']
+                        })
 
                 # Inserir preferências
                 for pref in user_preferences:
                     user = User.query.filter_by(email=pref['user_email']).first()
-                    if user:
+                    if user and not UserPreference.query.filter_by(
+                        user_id=user.id, institution_id=pref['institution_id'],
+                        service_category_id=pref['service_category_id']
+                    ).first():
                         preference = UserPreference(
                             id=str(uuid.uuid4()), user_id=user.id, institution_id=pref['institution_id'],
                             service_category_id=pref['service_category_id'], neighborhood=pref['neighborhood']
@@ -319,20 +380,24 @@ def populate_initial_data(app):
                 db.session.commit()
                 app.logger.info("Preferências de usuário inseridas com sucesso!")
 
-                # 6. Tickets (reduzido para 10)
+                # 6. Tickets
                 all_queues = Queue.query.all()
                 regular_users = User.query.filter_by(user_role=UserRole.USER).all()
                 for queue in all_queues[:2]:  # Apenas 2 filas
                     queue.active_tickets = 0
                     queue.current_ticket = 0
                     for i in range(1, 6):  # 5 tickets por fila
+                        qr_code = f"QR-{uuid.uuid4().hex[:10]}"
+                        if Ticket.query.filter_by(qr_code=qr_code).first():
+                            continue
+
                         is_physical = (i % 2 == 0)
                         user = None if is_physical else regular_users[0]
                         status = 'Pendente' if i == 1 else 'Atendido'
                         issued_at = datetime.utcnow() - timedelta(days=i)
                         ticket = Ticket(
                             id=str(uuid.uuid4()), queue_id=queue.id, user_id=user.id if user else None,
-                            ticket_number=i, qr_code=f"QR-{uuid.uuid4().hex[:10]}", status=status,
+                            ticket_number=i, qr_code=qr_code, status=status,
                             priority=0, is_physical=is_physical, counter=1 if status == 'Atendido' else None,
                             issued_at=issued_at, attended_at=issued_at + timedelta(minutes=30) if status == 'Atendido' else None,
                             service_time=15.0 if status == 'Atendido' else None,
