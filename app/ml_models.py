@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from . import db
 from .models import Ticket, Queue, Department
 from geopy.distance import geodesic
+from flask import current_app
 
 logger = logging.getLogger(__name__)
 logger.debug("Iniciando carregamento do módulo ml_models")
@@ -26,7 +27,7 @@ try:
             self.scaler = StandardScaler()
             self.is_trained = {}
             self.fallback_times = {}  # Cache de tempos médios por fila
-            self.load_model()
+            # Não chama load_model automaticamente na inicialização
 
         def load_model(self):
             """Carrega o modelo e o scaler salvos, se existirem."""
@@ -188,7 +189,7 @@ try:
             self.scaler = StandardScaler()
             self.is_trained = False
             self.fallback_scores = {}  # Cache de pontuações médias por fila
-            self.load_model()
+            # Não chama load_model automaticamente na inicialização
 
         def load_model(self):
             """Carrega o modelo e o scaler salvos, se existirem."""
@@ -356,11 +357,20 @@ try:
                 logger.error(f"Erro ao prever qualidade para queue_id={queue.id}: {e}")
                 return self.fallback_scores.get(queue.id, self.DEFAULT_SCORE)
 
-    # Instanciar os preditores globalmente
+    # Instanciar os preditores globalmente, mas sem inicializar
     logger.debug("Instanciando wait_time_predictor e service_recommendation_predictor")
     wait_time_predictor = WaitTimePredictor()
     service_recommendation_predictor = ServiceRecommendationPredictor()
     logger.debug("Instâncias criadas com sucesso")
+
+    # Adicionar função de inicialização
+    def initialize_models(app):
+        """Inicializa os modelos dentro do contexto da aplicação."""
+        with app.app_context():
+            logger.info("Inicializando modelos de ML dentro do contexto da aplicação")
+            wait_time_predictor.load_model()
+            service_recommendation_predictor.load_model()
+            logger.info("Modelos de ML inicializados com sucesso dentro do contexto da aplicação")
 
 except Exception as e:
     logger.error(f"Erro ao carregar o módulo ml_models: {e}")
