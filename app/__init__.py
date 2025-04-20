@@ -89,17 +89,7 @@ def create_app():
         from .models import Institution, Queue, User, Ticket, Department
         
         # Criar tabelas apenas se não existirem
-        db.create_all()
-        app.logger.info("Tabelas criadas ou verificadas no banco de dados")
-        
-        # Inserir dados iniciais de forma idempotente
-        from .data_init import populate_initial_data
-        try:
-            populate_initial_data(app)
-            app.logger.info("Dados iniciais inseridos automaticamente")
-        except Exception as e:
-            app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
-            raise  # Re-lançar para depuração no Render
+      
         
         # Inicializar modelos de ML
         app.logger.debug("Tentando importar preditores de ML")

@@ -574,66 +574,78 @@ def init_queue_routes(app):
             logger.error(f"Erro inesperado ao validar ticket: {str(e)}")
             return jsonify({'error': f'Erro ao validar ticket: {str(e)}'}), 500
 
+    
     @app.route('/api/queues', methods=['GET'])
     def list_queues():
-        institutions = Institution.query.all()
-        now = datetime.now()
-        current_weekday_str = now.strftime('%A')
-        current_weekday_enum = getattr(Weekday, current_weekday_str.upper())
-        current_time = now.time()
-        result = []
+        try:
+            now = datetime.now()
+            current_weekday_str = now.strftime('%A')
+            current_weekday_enum = getattr(Weekday, current_weekday_str.upper())
+            current_time = now.time()
+            result = []
 
-        for inst in institutions:
-            branches = Branch.query.filter_by(institution_id=inst.id).all()
-            departments = Department.query.filter_by(institution_id=inst.id).all()
-            queues = Queue.query.filter(Queue.department_id.in_([d.id for d in departments])).all()
-            queue_data = []
+            # Consulta otimizada para buscar instituições, filiais e departamentos
+            institutions = Institution.query.all()
+            for inst in institutions:
+                # Busca filiais da instituição
+                branches = Branch.query.filter_by(institution_id=inst.id).all()
+                branch_ids = [b.id for b in branches]
 
-            for q in queues:
-                schedule = QueueSchedule.query.filter_by(queue_id=q.id, weekday=current_weekday_enum).first()
-                is_open = False
-                if schedule and not schedule.is_closed:
-                    is_open = (
-                        schedule.open_time and schedule.end_time and
-                        current_time >= schedule.open_time and
-                        current_time <= schedule.end_time and
-                        q.active_tickets < q.daily_limit
-                    )
+                # Busca departamentos das filiais
+                departments = Department.query.filter(Department.branch_id.in_(branch_ids)).all()
+                department_ids = [d.id for d in departments]
 
-                features = QueueService.get_wait_time_features(q.id, q.current_ticket + 1, 0)
-                wait_time = wait_time_predictor.predict(q.id, features)
+                # Busca filas dos departamentos
+                queues = Queue.query.filter(Queue.department_id.in_(department_ids)).all()
+                queue_data = []
 
-                queue_data.append({
-                    'id': q.id,
-                    'service': q.service,
-                    'prefix': q.prefix,
-                    'sector': q.department.sector if q.department else None,
-                    'department': q.department.name if q.department else None,
-                    'branch': q.branch.name if q.branch else None,
-                    'institution': q.department.institution.name if q.department and q.department.institution else None,
-                    'open_time': schedule.open_time.strftime('%H:%M') if schedule and schedule.open_time else None,
-                    'end_time': schedule.end_time.strftime('%H:%M') if schedule and schedule.end_time else None,
-                    'daily_limit': q.daily_limit,
-                    'active_tickets': q.active_tickets,
-                    'avg_wait_time': f"{int(wait_time)} minutos" if wait_time is not None else "N/A",
-                    'num_counters': q.num_counters,
-                    'status': 'Aberto' if is_open else 'Fechado'
+                for q in queues:
+                    schedule = QueueSchedule.query.filter_by(queue_id=q.id, weekday=current_weekday_enum).first()
+                    is_open = False
+                    if schedule and not schedule.is_closed:
+                        is_open = (
+                            schedule.open_time and schedule.end_time and
+                            current_time >= schedule.open_time and
+                            current_time <= schedule.end_time and
+                            q.active_tickets < q.daily_limit
+                        )
+
+                    features = QueueService.get_wait_time_features(q.id, q.current_ticket + 1, 0)
+                    wait_time = wait_time_predictor.predict(q.id, features)
+
+                    queue_data.append({
+                        'id': q.id,
+                        'service': q.service,
+                        'prefix': q.prefix,
+                        'sector': q.department.sector if q.department else None,
+                        'department': q.department.name if q.department else None,
+                        'branch': q.department.branch.name if q.department and q.department.branch else None,
+                        'institution': inst.name,
+                        'open_time': schedule.open_time.strftime('%H:%M') if schedule and schedule.open_time else None,
+                        'end_time': schedule.end_time.strftime('%H:%M') if schedule and schedule.end_time else None,
+                        'daily_limit': q.daily_limit,
+                        'active_tickets': q.active_tickets,
+                        'avg_wait_time': f"{int(wait_time)} minutos" if wait_time is not None else "N/A",
+                        'num_counters': q.num_counters,
+                        'status': 'Aberto' if is_open else 'Fechado'
+                    })
+
+                result.append({
+                    'institution': {
+                        'id': inst.id,
+                        'name': inst.name,
+                        'description': inst.description,
+                        'branches': [{'id': b.id, 'name': b.name, 'location': b.location, 'neighborhood': b.neighborhood, 'latitude': b.latitude, 'longitude': b.longitude} for b in branches]
+                    },
+                    'queues': queue_data
                 })
 
-            result.append({
-                'institution': {
-                    'id': inst.id,
-                    'name': inst.name,
-                    'location': inst.location,
-                    'latitude': inst.latitude,
-                    'longitude': inst.longitude
-                },
-                'queues': queue_data
-            })
-
-        logger.info(f"Lista de filas retornada: {len(result)} instituições encontradas.")
-        return jsonify(result), 200
-
+            logger.info(f"Lista de filas retornada: {len(result)} instituições encontradas.")
+            return jsonify(result), 200
+        except Exception as e:
+            logger.error(f"Erro ao listar filas: {str(e)}")
+            return jsonify({'error': f'Erro ao listar filas: {str(e)}'}), 500
+        
     @app.route('/api/tickets', methods=['GET'])
     @require_auth
     def list_user_tickets():
@@ -814,80 +826,89 @@ def init_queue_routes(app):
 
     @app.route('/api/institutions/<string:institution_id>/services/search', methods=['GET'])
     def search_services(institution_id):
-        institution = Institution.query.get_or_404(institution_id)
-        user_id = request.user_id if hasattr(request, 'user_id') else None
+        try:
+            institution = Institution.query.get_or_404(institution_id)
+            user_id = request.user_id if hasattr(request, 'user_id') else None
+            filters = {}
 
-        filters = {}
-        service_name = request.args.get('service_name')
-        if service_name:
-            if not re.match(r'^[A-Za-zÀ-ÿ\s]{1,100}$', service_name):
+            service_name = request.args.get('service_name', '').strip()
+            if service_name and not re.match(r'^[A-Za-zÀ-ÿ\s]{1,100}$', service_name):
                 logger.warning(f"Nome do serviço inválido: {service_name}")
                 return jsonify({'error': 'Nome do serviço inválido'}), 400
-            filters['query'] = service_name
+            if service_name:
+                filters['query'] = service_name
 
-        category_id = request.args.get('category_id')
-        if category_id:
-            if not ServiceCategory.query.get(category_id):
-                logger.warning(f"Categoria inválida: {category_id}")
-                return jsonify({'error': 'Categoria inválida'}), 400
-            filters['category_id'] = category_id
+            # Adicionar validação para sector
+            sector = request.args.get('sector', '').strip()
+            if sector and not re.match(r'^[A-Za-zÀ-ÿ\s]{1,100}$', sector):
+                logger.warning(f"Setor inválido: {sector}")
+                return jsonify({'error': 'Setor inválido'}), 400
+            if sector and sector != 'Todos':
+                filters['sector'] = sector
 
-        tag = request.args.get('tag')
-        if tag:
-            if not ServiceTag.query.filter_by(tag=tag).first():
-                logger.warning(f"Tag inválida: {tag}")
-                return jsonify({'error': 'Tag inválida'}), 400
-            filters['tag'] = tag
+            # Outros filtros (category_id, tag, etc.)
+            category_id = request.args.get('category_id')
+            if category_id:
+                if not ServiceCategory.query.get(category_id):
+                    logger.warning(f"Categoria inválida: {category_id}")
+                    return jsonify({'error': 'Categoria inválida'}), 400
+                filters['category_id'] = category_id
 
-        user_lat = request.args.get('latitude')
-        user_lon = request.args.get('longitude')
-        if user_lat and user_lon:
-            try:
-                filters['user_lat'] = float(user_lat)
-                filters['user_lon'] = float(user_lon)
-            except (ValueError, TypeError):
-                logger.warning(f"Latitude ou longitude inválidos: lat={user_lat}, lon={user_lon}")
-                return jsonify({'error': 'Latitude e longitude devem ser números'}), 400
+            tag = request.args.get('tag')
+            if tag:
+                if not ServiceTag.query.filter_by(tag=tag).first():
+                    logger.warning(f"Tag inválida: {tag}")
+                    return jsonify({'error': 'Tag inválida'}), 400
+                filters['tag'] = tag
 
-        neighborhood = request.args.get('neighborhood')
-        if neighborhood:
-            if not re.match(r'^[A-Za-zÀ-ÿ\s,]{1,100}$', neighborhood):
-                logger.warning(f"Bairro inválido: {neighborhood}")
-                return jsonify({'error': 'Bairro inválido'}), 400
-            filters['neighborhood'] = neighborhood
+            user_lat = request.args.get('latitude')
+            user_lon = request.args.get('longitude')
+            if user_lat and user_lon:
+                try:
+                    filters['user_lat'] = float(user_lat)
+                    filters['user_lon'] = float(user_lon)
+                except (ValueError, TypeError):
+                    logger.warning(f"Latitude ou longitude inválidos: lat={user_lat}, lon={user_lon}")
+                    return jsonify({'error': 'Latitude e longitude devem ser números'}), 400
 
-        max_wait_time = request.args.get('max_wait_time')
-        if max_wait_time is not None:
-            try:
-                max_wait_time = int(max_wait_time)
-                if max_wait_time < 0 or max_wait_time > 1440:
+            neighborhood = request.args.get('neighborhood')
+            if neighborhood:
+                if not re.match(r'^[A-Za-zÀ-ÿ\s,]{1,100}$', neighborhood):
+                    logger.warning(f"Bairro inválido: {neighborhood}")
+                    return jsonify({'error': 'Bairro inválido'}), 400
+                filters['neighborhood'] = neighborhood
+
+            max_wait_time = request.args.get('max_wait_time')
+            if max_wait_time is not None:
+                try:
+                    max_wait_time = int(max_wait_time)
+                    if max_wait_time < 0 or max_wait_time > 1440:
+                        logger.warning(f"Tempo de espera inválido: {max_wait_time}")
+                        return jsonify({'error': 'Tempo de espera inválido'}), 400
+                    filters['max_wait_time'] = max_wait_time
+                except (ValueError, TypeError):
                     logger.warning(f"Tempo de espera inválido: {max_wait_time}")
-                    return jsonify({'error': 'Tempo de espera inválido'}), 400
-                filters['max_wait_time'] = max_wait_time
+                    return jsonify({'error': 'Tempo de espera deve ser um número inteiro'}), 400
+
+            is_open = request.args.get('is_open', 'true').lower() == 'true'
+            filters['is_open'] = is_open
+
+            page = request.args.get('page', '1')
+            per_page = request.args.get('per_page', '20')
+            try:
+                page = int(page)
+                per_page = int(per_page)
             except (ValueError, TypeError):
-                logger.warning(f"Tempo de espera inválido: {max_wait_time}")
-                return jsonify({'error': 'Tempo de espera deve ser um número inteiro'}), 400
+                logger.warning(f"Página ou per_page inválidos: page={page}, per_page={per_page}")
+                return jsonify({'error': 'Página e itens por página devem ser números inteiros'}), 400
 
-        is_open = request.args.get('is_open', 'true').lower() == 'true'
-        filters['is_open'] = is_open
+            if per_page > 100:
+                logger.warning(f"Per_page excede o máximo: {per_page}")
+                return jsonify({'error': 'Máximo de itens por página é 100'}), 400
 
-        page = request.args.get('page', '1')
-        per_page = request.args.get('per_page', '20')
-        try:
-            page = int(page)
-            per_page = int(per_page)
-        except (ValueError, TypeError):
-            logger.warning(f"Página ou per_page inválidos: page={page}, per_page={per_page}")
-            return jsonify({'error': 'Página e itens por página devem ser números inteiros'}), 400
+            filters['page'] = page
+            filters['per_page'] = per_page
 
-        if per_page > 100:
-            logger.warning(f"Per_page excede o máximo: {per_page}")
-            return jsonify({'error': 'Máximo de itens por página é 100'}), 400
-
-        filters['page'] = page
-        filters['per_page'] = per_page
-
-        try:
             result = QueueService.search_services(
                 query=service_name,
                 user_id=user_id,
@@ -895,12 +916,12 @@ def init_queue_routes(app):
                 **filters
             )
             logger.info(f"Serviços buscados para institution_id={institution_id}: {result['total']} resultados")
-            return jsonify(result)
+            return jsonify(result), 200
         except Exception as e:
             db.session.rollback()
             logger.error(f"Erro ao buscar serviços para institution_id={institution_id}: {str(e)}")
             return jsonify({'error': f'Erro ao buscar serviços: {str(e)}'}), 500
-
+    
     @app.route('/api/institutions/<string:institution_id>/physical-ticket', methods=['POST'])
     def generate_physical_ticket(institution_id):
         institution = Institution.query.get_or_404(institution_id)
