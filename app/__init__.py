@@ -101,36 +101,38 @@ def create_app():
         #    populate_initial_data(app)
         #    app.logger.info("Dados iniciais inseridos automaticamente")
         #except Exception as e:
-        ##    app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
+        #    app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
         #    raise  # Re-lançar para depuração no Render
         
         # Inicializar modelos de ML
         app.logger.debug("Tentando importar preditores de ML")
         try:
-            from .ml_models import wait_time_predictor, service_recommendation_predictor, collaborative_model, demand_model, clustering_model, initialize_models
+            from .ml_models import wait_time_predictor, service_recommendation_predictor, collaborative_model, demand_model, clustering_model
             app.logger.info("Preditores de ML importados com sucesso")
-            initialize_models(app)
         except ImportError as e:
             app.logger.error(f"Erro ao importar preditores de ML: {e}")
-            raise
+            app.logger.warning("Continuando inicialização sem modelos de ML")
+            wait_time_predictor = service_recommendation_predictor = collaborative_model = demand_model = clustering_model = None
         
-        app.logger.debug("Iniciando treinamento dos modelos de ML")
-        try:
-            queues = Queue.query.all()
-            for queue in queues:
-                app.logger.debug(f"Treinando WaitTimePredictor para queue_id={queue.id}")
-                wait_time_predictor.train(queue.id)
-                app.logger.debug(f"Treinando DemandForecastingModel para queue_id={queue.id}")
-                demand_model.train(queue.id)
-            app.logger.debug("Treinando ServiceRecommendationPredictor")
-            service_recommendation_predictor.train()
-            app.logger.debug("Treinando CollaborativeFilteringModel")
-            collaborative_model.train()
-            app.logger.debug("Treinando ServiceClusteringModel")
-            clustering_model.train()
-            app.logger.info("Modelos de ML inicializados na startup")
-        except Exception as e:
-            app.logger.error(f"Erro ao inicializar modelos de ML: {str(e)}")
+        if wait_time_predictor:  # Verificar se os modelos foram importados
+            app.logger.debug("Iniciando treinamento dos modelos de ML")
+            try:
+                queues = Queue.query.all()
+                for queue in queues:
+                    app.logger.debug(f"Treinando WaitTimePredictor para queue_id={queue.id}")
+                    wait_time_predictor.train(queue.id)
+                    app.logger.debug(f"Treinando DemandForecastingModel para queue_id={queue.id}")
+                    demand_model.train(queue.id)
+                app.logger.debug("Treinando ServiceRecommendationPredictor")
+                service_recommendation_predictor.train()
+                app.logger.debug("Treinando CollaborativeFilteringModel")
+                collaborative_model.train()
+                app.logger.debug("Treinando ServiceClusteringModel")
+                clustering_model.train()
+                app.logger.info("Modelos de ML inicializados na startup")
+            except Exception as e:
+                app.logger.error(f"Erro ao inicializar modelos de ML: {str(e)}")
+                app.logger.warning("Continuando inicialização apesar de erros nos modelos de ML")
     
     # Registrar rotas
     from .routes import init_routes
@@ -153,3 +155,7 @@ def create_app():
     return app
 
 app = create_app()
+
+if __name__ == '__main__':
+    port = int(os.getenv('PORT', 10000))
+    socketio.run(app, host='0.0.0.0', port=port)

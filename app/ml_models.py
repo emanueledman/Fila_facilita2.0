@@ -7,7 +7,11 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import TruncatedSVD
 from sklearn.cluster import KMeans
-from prophet import Prophet
+try:
+    from prophet import Prophet
+except ImportError as e:
+    logger.error(f"Erro ao importar Prophet: {e}")
+    Prophet = None
 from sqlalchemy import and_
 from datetime import datetime, timedelta
 from app import db
@@ -82,13 +86,11 @@ class WaitTimePredictor:
                 if not tickets:
                     break
 
-               
                 for ticket in tickets:
                     position = max(0, ticket.ticket_number - queue.current_ticket)
                     hour_of_day = ticket.issued_at.hour
                     sector_encoded = self.get_sector_id(queue.department.sector if queue.department else None)
                     category_encoded = self.get_category_id(queue.category_id)
-                   
                     data.append({
                         'position': position,
                         'active_tickets': queue.active_tickets,
@@ -98,7 +100,6 @@ class WaitTimePredictor:
                         'daily_limit': queue.daily_limit or 100,
                         'sector_encoded': sector_encoded,
                         'category_encoded': category_encoded,
-
                         'service_time': ticket.service_time
                     })
 
@@ -123,7 +124,6 @@ class WaitTimePredictor:
                         hour_of_day = ticket.issued_at.hour
                         sector_encoded = self.get_sector_id(similar_queue.department.sector if similar_queue.department else None)
                         category_encoded = self.get_category_id(similar_queue.category_id)
-                        
                         data.append({
                             'position': position,
                             'active_tickets': similar_queue.active_tickets,
@@ -133,7 +133,6 @@ class WaitTimePredictor:
                             'daily_limit': similar_queue.daily_limit or 100,
                             'sector_encoded': sector_encoded,
                             'category_encoded': category_encoded,
-
                             'service_time': ticket.service_time
                         })
 
@@ -142,7 +141,7 @@ class WaitTimePredictor:
                 return None, None
 
             df = pd.DataFrame(data)
-            X = df[['position', 'active_tickets', 'priority', 'hour_of_day', 'num_counters', 'daily_limit', 'sector_encoded', 'category_encoded', 'recent_feedback_rating']]
+            X = df[['position', 'active_tickets', 'priority', 'hour_of_day', 'num_counters', 'daily_limit', 'sector_encoded', 'category_encoded']]
             y = df['service_time']
             logger.debug(f"Dados preparados para queue_id={queue_id}: {len(data)} amostras")
             return X, y
@@ -209,7 +208,6 @@ class WaitTimePredictor:
                 queue.daily_limit or 100,
                 self.get_sector_id(queue.department.sector if queue.department else None),
                 self.get_category_id(queue.category_id),
-                3.0,  # Default feedback rating
                 distance
             ]])
             features_scaled = self.scalers[queue_id].transform(features)
@@ -280,8 +278,6 @@ class ServiceRecommendationPredictor:
                     Ticket.service_time.isnot(None),
                     Ticket.service_time > 0
                 ).limit(batch_size).all()
-                
-                
                 service_times = [t.service_time for t in tickets]
                 avg_service_time = np.mean(service_times) if service_times else 30
                 availability = max(0, queue.daily_limit - queue.active_tickets)
@@ -299,7 +295,6 @@ class ServiceRecommendationPredictor:
                 quality_score = (
                     0.3 * (availability / max(1, queue.daily_limit))
                     + 0.25 * (1 / (1 + avg_service_time / 30))
-
                     + 0.15 * (1 / (1 + predicted_demand / 10))
                     + 0.1 * tag_similarity
                 )
@@ -311,7 +306,6 @@ class ServiceRecommendationPredictor:
                     'sector_encoded': self.get_sector_id(queue.department.sector if queue.department else None),
                     'category_encoded': self.get_category_id(queue.category_id),
                     'is_open': is_open,
-
                     'tag_similarity': tag_similarity,
                     'predicted_demand': predicted_demand,
                     'is_preferred_institution': 1 if branch and branch.institution_id in preferred_institutions else 0,
@@ -326,7 +320,7 @@ class ServiceRecommendationPredictor:
             df = pd.DataFrame(data)
             X = df[[
                 'avg_service_time', 'availability', 'sector_encoded', 'category_encoded',
-                'is_open', 'avg_rating', 'tag_similarity', 'predicted_demand',
+                'is_open', 'tag_similarity', 'predicted_demand',
                 'is_preferred_institution', 'is_preferred_neighborhood'
             ]]
             y = df['quality_score']
@@ -370,7 +364,6 @@ class ServiceRecommendationPredictor:
                     return self.DEFAULT_SCORE
 
             branch = Branch.query.join(Department).filter(Department.id == queue.department_id).first()
-            
             tickets = Ticket.query.filter(
                 Ticket.queue_id == queue.id,
                 Ticket.status == 'Atendido',
@@ -398,7 +391,6 @@ class ServiceRecommendationPredictor:
                 self.get_sector_id(queue.department.sector if queue.department else None),
                 self.get_category_id(queue.category_id),
                 is_open,
-
                 tag_similarity,
                 predicted_demand,
                 1 if branch and branch.institution_id in preferred_institutions else 0,
@@ -512,6 +504,7 @@ class DemandForecastingModel:
     def __init__(self):
         self.models = {}
         self.is_trained = {}
+        self.use_prophet = Prophet is not None
 
     def get_model_path(self, queue_id):
         return self.MODEL_PATH.format(queue_id=queue_id)
@@ -538,6 +531,10 @@ class DemandForecastingModel:
             return None
 
     def train(self, queue_id):
+        if not self.use_prophet:
+            logger.warning(f"Prophet não disponível, pulando treinamento para queue_id={queue_id}")
+            self.is_trained[queue_id] = False
+            return
         try:
             df = self.prepare_data(queue_id)
             if df is None or len(df) < 24:
@@ -555,6 +552,10 @@ class DemandForecastingModel:
             self.is_trained[queue_id] = False
 
     def load_model(self, queue_id):
+        if not self.use_prophet:
+            logger.warning(f"Prophet não disponível, pulando carregamento para queue_id={queue_id}")
+            self.is_trained[queue_id] = False
+            return
         try:
             path = self.get_model_path(queue_id)
             if os.path.exists(path):
@@ -566,12 +567,10 @@ class DemandForecastingModel:
             self.is_trained[queue_id] = False
 
     def predict(self, queue_id, hours_ahead=1):
+        if not self.use_prophet or queue_id not in self.is_trained or not self.is_trained[queue_id]:
+            logger.warning(f"Modelo de demanda não disponível para queue_id={queue_id}, retornando 0")
+            return 0
         try:
-            if queue_id not in self.is_trained or not self.is_trained[queue_id]:
-                self.load_model(queue_id)
-                if not self.is_trained.get(queue_id, False):
-                    return 0
-
             model = self.models[queue_id]
             future = model.make_future_dataframe(periods=hours_ahead, freq='H')
             forecast = model.predict(future)
