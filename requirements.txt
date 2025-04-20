@@ -21,3 +21,4 @@ flask-cors==4.0.1
 redis==5.0.8
 geopy==2.4.1
 prophet==1.1.2  
+cmdstanpy==1.2.0 

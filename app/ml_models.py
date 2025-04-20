@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import TruncatedSVD
 from sklearn.cluster import KMeans
-from fbprophet import Prophet
+from prophet import Prophet
 from sqlalchemy import and_
 from datetime import datetime, timedelta
 from app import db
