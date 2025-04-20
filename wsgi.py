@@ -12,4 +12,7 @@ if __name__ == "__main__":
     port = int(os.getenv('PORT', 10000))
     debug = os.getenv('FLASK_ENV') != 'production'
     logger.info(f"Iniciando servidor WSGI em {host}:{port} (debug={debug})")
+    if os.getenv('FLASK_ENV') == 'production':
+        # Em produção, espera-se que Gunicorn + Eventlet seja usado
+        logger.warning("Executando socketio.run diretamente em produção não é recomendado. Use Gunicorn + Eventlet.")
     socketio.run(app, host=host, port=port, debug=debug)

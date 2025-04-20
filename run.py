@@ -1,7 +1,7 @@
 import eventlet
 eventlet.monkey_patch()
 from app import app, socketio, db
-from app.ml_models import wait_time_predictor, service_recommendation_predictor
+from app.ml_models import wait_time_predictor, service_recommendation_predictor, collaborative_model, demand_model, clustering_model
 from app.models import Queue
 import os
 import logging
@@ -20,6 +20,12 @@ def train_ml_model_periodically():
                     wait_time_predictor.train(queue.id)
                 logger.info("Treinando ServiceRecommendationPredictor")
                 service_recommendation_predictor.train()
+                logger.info("Treinando CollaborativeFilteringModel")
+                collaborative_model.train()
+                logger.info("Treinando DemandForecastingModel")
+                demand_model.train()
+                logger.info("Treinando ServiceClusteringModel")
+                clustering_model.train()
                 logger.info("Treinamento periódico concluído.")
             except Exception as e:
                 logger.error(f"Erro ao treinar modelos de ML: {str(e)}")

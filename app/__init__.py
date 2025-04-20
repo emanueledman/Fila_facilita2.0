@@ -7,7 +7,6 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from flask_cors import CORS
 from redis import Redis
 import os
 from dotenv import load_dotenv
@@ -51,8 +50,8 @@ def create_app():
     app.logger.info(f"Iniciando com banco de dados: {app.config['SQLALCHEMY_DATABASE_URI']}")
     
     # Configurações do SocketIO
-    app.config['SOCKETIO_LOGGER'] = True
-    app.config['SOCKETIO_ENGINEIO_LOGGER'] = True
+    app.config['SOCKETIO_LOGGER'] = os.getenv('FLASK_ENV') != 'production'
+    app.config['SOCKETIO_ENGINEIO_LOGGER'] = os.getenv('FLASK_ENV') != 'production'
     
     # Inicializar extensões
     db.init_app(app)
@@ -65,12 +64,15 @@ def create_app():
         ],
         async_mode='eventlet',
         path='/tickets',
-        logger=True,
-        engineio_logger=True
+        logger=os.getenv('FLASK_ENV') != 'production',
+        engineio_logger=os.getenv('FLASK_ENV') != 'production',
+        message_queue=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
+        manage_session=False
     )
     limiter.init_app(app)
     
-    # Configurar CORS
+    # Configurar CORS apenas para endpoints REST
+    from flask_cors import CORS
     CORS(app, resources={r"/api/*": {
         "origins": [
             "http://127.0.0.1:5500",
@@ -89,14 +91,24 @@ def create_app():
         from .models import Institution, Queue, User, Ticket, Department
         
         # Criar tabelas apenas se não existirem
-      
+        db.drop_all()
+        db.create_all()
+        app.logger.info("Tabelas criadas ou verificadas no banco de dados")
+        
+        # Inserir dados iniciais de forma idempotente
+        from .data_init import populate_initial_data
+        try:
+            populate_initial_data(app)
+            app.logger.info("Dados iniciais inseridos automaticamente")
+        except Exception as e:
+            app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
+            raise  # Re-lançar para depuração no Render
         
         # Inicializar modelos de ML
         app.logger.debug("Tentando importar preditores de ML")
         try:
             from .ml_models import wait_time_predictor, service_recommendation_predictor, initialize_models
             app.logger.info("Preditores de ML importados com sucesso")
-            # Inicializar os modelos dentro do contexto da aplicação
             initialize_models(app)
         except ImportError as e:
             app.logger.error(f"Erro ao importar preditores de ML: {e}")
@@ -113,7 +125,6 @@ def create_app():
             app.logger.info("Modelos de ML inicializados na startup")
         except Exception as e:
             app.logger.error(f"Erro ao inicializar modelos de ML: {str(e)}")
-            # Não lançar exceção aqui para permitir que a aplicação continue
     
     # Registrar rotas
     from .routes import init_routes

@@ -1,10 +1,10 @@
 import logging
 import uuid
 import numpy as np
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, or_
 from datetime import datetime, time, timedelta
 from app.models import Queue, QueueSchedule, Ticket, AuditLog, Department, Institution, User, Weekday, Branch, ServiceCategory, ServiceTag, UserPreference
-from app.ml_models import wait_time_predictor, service_recommendation_predictor
+from app.ml_models import wait_time_predictor, service_recommendation_predictor, collaborative_model, demand_model, clustering_model
 from app import db, redis_client, socketio
 from .utils.pdf_generator import generate_ticket_pdf
 from firebase_admin import messaging
@@ -36,7 +36,7 @@ class QueueService:
         try:
             queue = ticket.queue
             if not queue or not queue.department or not queue.department.branch or not queue.department.branch.institution:
-                logger.error(f"Dados incompletos para o ticket {ticket.id}: queue, department, branch ou institution ausentes")
+                logger.error(f"Dados incompletos para o ticket {ticket.id}")
                 raise ValueError("Fila, departamento ou instituição associada ao ticket não encontrada")
             
             receipt = (
@@ -64,7 +64,7 @@ class QueueService:
         """Gera um PDF para o ticket."""
         try:
             if not ticket.queue or not ticket.queue.department or not ticket.queue.department.branch or not ticket.queue.department.branch.institution:
-                logger.error(f"Dados incompletos para o ticket {ticket.id}: queue, department, branch ou institution ausentes")
+                logger.error(f"Dados incompletos para o ticket {ticket.id}")
                 raise ValueError("Fila, departamento ou instituição associada ao ticket não encontrada")
             
             if position is None:
@@ -87,7 +87,7 @@ class QueueService:
             raise
 
     @staticmethod
-    def calculate_wait_time(queue_id, ticket_number, priority=0):
+    def calculate_wait_time(queue_id, ticket_number, priority=0, user_lat=None, user_lon=None):
         """Calcula o tempo de espera estimado para um ticket."""
         try:
             if not isinstance(queue_id, str) or not queue_id:
@@ -100,7 +100,7 @@ class QueueService:
                 return "N/A"
             
             if not QueueService.is_queue_open(queue):
-                logger.warning(f"Fila {queue_id} está fechada para cálculo de wait_time")
+                logger.warning(f"Fila {queue_id} está fechada")
                 return "N/A"
 
             ticket_number = int(ticket_number) if isinstance(ticket_number, (int, float)) else 0
@@ -109,11 +109,11 @@ class QueueService:
             if queue.current_ticket == 0:
                 queue.current_ticket = 1
                 db.session.commit()
-                logger.debug(f"Atendimento ainda não começou para queue_id={queue_id}, inicializando current_ticket=1")
+                logger.debug(f"Atendimento inicializado para queue_id={queue_id}, current_ticket=1")
 
             position = max(0, ticket_number - queue.current_ticket)
             if position == 0:
-                logger.debug(f"Ticket {ticket_number} está na posição 0, wait_time=0")
+                logger.debug(f"Ticket {ticket_number} na posição 0")
                 return 0
 
             now = datetime.utcnow()
@@ -122,11 +122,13 @@ class QueueService:
                 position=position,
                 active_tickets=queue.active_tickets,
                 priority=priority,
-                hour_of_day=now.hour
+                hour_of_day=now.hour,
+                user_lat=user_lat,
+                user_lon=user_lon
             )
 
             wait_time = round(wait_time, 1)
-            logger.debug(f"Wait time calculado para ticket {ticket_number} na fila {queue_id}: {wait_time} min (position={position}, priority={priority})")
+            logger.debug(f"Wait time calculado para ticket {ticket_number} na fila {queue_id}: {wait_time} min")
             return wait_time if wait_time != "N/A" else queue.avg_wait_time or 5
         except Exception as e:
             logger.error(f"Erro ao calcular wait_time para queue_id={queue_id}: {e}")
@@ -137,7 +139,7 @@ class QueueService:
         """Calcula a distância entre o usuário e a filial em quilômetros."""
         try:
             if not all(isinstance(x, (int, float)) for x in [user_lat, user_lon, branch.latitude, branch.longitude]):
-                logger.warning(f"Coordenadas inválidas: user_lat={user_lat}, user_lon={user_lon}, branch_lat={branch.latitude}, branch_lon={branch.longitude}")
+                logger.warning(f"Coordenadas inválidas")
                 return None
             
             user_location = (float(user_lat), float(user_lon))
@@ -158,9 +160,7 @@ class QueueService:
                 user = User.query.get(user_id)
                 if user and user.fcm_token:
                     fcm_token = user.fcm_token
-                    logger.debug(f"FCM token recuperado do banco para user_id {user_id}: {fcm_token}")
-                else:
-                    logger.warning(f"FCM token não encontrado para user_id {user_id}")
+                    logger.debug(f"FCM token recuperado para user_id {user_id}")
 
             if fcm_token:
                 fcm_message = messaging.Message(
@@ -172,7 +172,7 @@ class QueueService:
                     token=fcm_token
                 )
                 response = messaging.send(fcm_message)
-                logger.info(f"Notificação FCM enviada para {fcm_token}: {response}")
+                logger.info(f"Notificação FCM enviada: {response}")
 
             if via_websocket and socketio and user_id:
                 emit('notification', {'user_id': user_id, 'message': message}, namespace='/', room=str(user_id))
@@ -181,7 +181,7 @@ class QueueService:
             logger.error(f"Erro ao enviar notificação: {e}")
 
     @staticmethod
-    def add_to_queue(service, user_id, priority=0, is_physical=False, fcm_token=None, branch_id=None):
+    def add_to_queue(service, user_id, priority=0, is_physical=False, fcm_token=None, branch_id=None, user_lat=None, user_lon=None):
         """Adiciona um ticket à fila."""
         try:
             if not isinstance(service, str) or not service.strip():
@@ -197,19 +197,22 @@ class QueueService:
             
             queue = query.first()
             if not queue:
-                logger.error(f"Fila não encontrada para o serviço: {service}, branch_id: {branch_id}")
+                logger.error(f"Fila não encontrada: {service}, branch_id: {branch_id}")
                 raise ValueError("Fila não encontrada")
             
             if not QueueService.is_queue_open(queue):
-                logger.warning(f"Fila {queue.id} está fechada para emissão de senha")
-                raise ValueError(f"A fila {queue.service} está fechada no momento.")
+                logger.warning(f"Fila {queue.id} está fechada")
+                raise ValueError(f"A fila {queue.service} está fechada")
             
             if queue.active_tickets >= queue.daily_limit:
-                logger.warning(f"Fila {queue.id} está cheia: {queue.active_tickets}/{queue.daily_limit}")
-                raise ValueError("Limite diário atingido")
+                alternatives = clustering_model.get_alternatives(queue.id, n=3)
+                alt_queues = Queue.query.filter(Queue.id.in_(alternatives)).all()
+                alt_message = "Alternativas: " + ", ".join([f"{q.service} (ID: {q.id})" for q in alt_queues])
+                logger.warning(f"Fila {queue.id} cheia: {queue.active_tickets}/{queue.daily_limit}")
+                raise ValueError(f"Limite diário atingido. {alt_message}")
             
             if Ticket.query.filter_by(user_id=user_id, queue_id=queue.id, status='Pendente').first():
-                logger.warning(f"Usuário {user_id} já possui uma senha ativa na fila {queue.id}")
+                logger.warning(f"Usuário {user_id} já possui senha ativa na fila {queue.id}")
                 raise ValueError("Você já possui uma senha ativa")
             
             ticket_number = queue.active_tickets + 1
@@ -233,17 +236,17 @@ class QueueService:
             
             if not ticket.queue:
                 logger.error(f"Relação ticket.queue não carregada para ticket {ticket.id}")
-                raise ValueError("Erro ao carregar a fila associada ao ticket")
+                raise ValueError("Erro ao carregar a fila associada")
             
             ticket.receipt_data = QueueService.generate_receipt(ticket) if is_physical else None
-            wait_time = QueueService.calculate_wait_time(queue.id, ticket_number, priority)
+            wait_time = QueueService.calculate_wait_time(queue.id, ticket_number, priority, user_lat, user_lon)
             position = max(0, ticket.ticket_number - queue.current_ticket)
             pdf_buffer = None
             
             if is_physical:
                 pdf_buffer = QueueService.generate_pdf_ticket(ticket, position, wait_time)
             
-            message = f"Senha {queue.prefix}{ticket_number} emitida. QR: {qr_code}. Espera: {wait_time if wait_time != 'N/A' else 'Aguardando início'}"
+            message = f"Senha {queue.prefix}{ticket_number} emitida. QR: {qr_code}. Espera: {wait_time if wait_time != 'N/A' else 'Aguardando início'} min"
             QueueService.send_notification(fcm_token, message, ticket.id, via_websocket=True, user_id=user_id)
             
             if socketio:
@@ -275,18 +278,21 @@ class QueueService:
 
             if not QueueService.is_queue_open(queue):
                 logger.warning(f"Fila {queue_id} está fechada")
-                raise ValueError("Fila está fechada no momento")
+                raise ValueError("Fila está fechada")
 
             if queue.active_tickets >= queue.daily_limit:
-                logger.warning(f"Fila {queue_id} atingiu o limite diário: {queue.active_tickets}/{queue.daily_limit}")
-                raise ValueError("Limite diário de tickets atingido")
+                alternatives = clustering_model.get_alternatives(queue.id, n=3)
+                alt_queues = Queue.query.filter(Queue.id.in_(alternatives)).all()
+                alt_message = "Alternativas: " + ", ".join([f"{q.service} (ID: {q.id})" for q in alt_queues])
+                logger.warning(f"Fila {queue_id} cheia")
+                raise ValueError(f"Limite diário atingido. {alt_message}")
 
             cache_key = f'ticket_limit:{client_ip}:{queue.department.branch.institution_id}'
             emission_count = redis_client.get(cache_key)
             emission_count = int(emission_count) if emission_count else 0
             if emission_count >= 5:
                 logger.warning(f"Limite de emissões atingido para IP {client_ip}")
-                raise ValueError("Limite de emissões por hora atingido. Tente novamente mais tarde.")
+                raise ValueError("Limite de emissões por hora atingido")
             redis_client.setex(cache_key, 3600, emission_count + 1)
 
             ticket_number = queue.active_tickets + 1
@@ -319,7 +325,7 @@ class QueueService:
                 action='GENERATE_USER_PHYSICAL_TICKET',
                 resource_type='Ticket',
                 resource_id=ticket.id,
-                details=f"Ticket {qr_code} gerado via mesa digital para fila {queue.service} (IP: {client_ip})",
+                details=f"Ticket {qr_code} gerado via totem para fila {queue.service} (IP: {client_ip})",
                 timestamp=datetime.utcnow()
             )
             db.session.add(audit_log)
@@ -333,7 +339,7 @@ class QueueService:
                     'message': f"Nova senha emitida: {queue.prefix}{ticket_number}"
                 }, namespace='/', room=str(queue.id))
 
-            logger.info(f"Ticket físico {ticket.id} gerado via totem para fila {queue_id}")
+            logger.info(f"Ticket físico {ticket.id} gerado para fila {queue_id}")
             return {
                 'ticket': {
                     'id': ticket.id,
@@ -367,8 +373,8 @@ class QueueService:
                 raise ValueError("Fila não encontrada")
             
             if not QueueService.is_queue_open(queue):
-                logger.warning(f"Fila {queue.id} está fechada para chamar próximo")
-                raise ValueError("Fila está fechada no momento")
+                logger.warning(f"Fila {queue.id} está fechada")
+                raise ValueError("Fila está fechada")
 
             if queue.active_tickets == 0:
                 logger.warning(f"Fila {service} está vazia")
@@ -377,7 +383,7 @@ class QueueService:
             next_ticket = Ticket.query.filter_by(queue_id=queue.id, status='Pendente')\
                 .order_by(Ticket.priority.desc(), Ticket.ticket_number).first()
             if not next_ticket:
-                logger.warning(f"Não há tickets pendentes na fila {queue.id}")
+                logger.warning(f"Sem tickets pendentes na fila {queue.id}")
                 raise ValueError("Nenhum ticket pendente")
             
             now = datetime.utcnow()
@@ -421,13 +427,13 @@ class QueueService:
             user = User.query.get(user_id)
             if not user or not user.fcm_token:
                 logger.warning(f"Usuário {user_id} não encontrado ou sem FCM token")
-                raise ValueError("Usuário não encontrado ou sem token de notificação")
+                raise ValueError("Usuário não encontrado ou sem token")
 
             user.last_known_lat = float(user_lat)
             user.last_known_lon = float(user_lon)
             user.last_location_update = datetime.utcnow()
             db.session.commit()
-            logger.debug(f"Localização atualizada para user_id={user_id}: lat={user_lat}, lon={user_lon}")
+            logger.debug(f"Localização atualizada para user_id={user_id}")
 
             user_prefs = UserPreference.query.filter_by(user_id=user_id).all()
             preferred_institutions = {pref.institution_id for pref in user_prefs if pref.institution_id}
@@ -444,12 +450,9 @@ class QueueService:
                 query = query.filter(Branch.id == branch_id)
             if desired_service:
                 if not isinstance(desired_service, str) or not desired_service.strip():
-                    raise ValueError("O serviço desejado deve ser uma string não vazia")
+                    raise ValueError("Serviço inválido")
                 
                 search_terms = re.sub(r'[^\w\sÀ-ÿ]', '', desired_service.lower()).split()
-                if not search_terms:
-                    raise ValueError("Nenhum termo de busca válido fornecido")
-                
                 search_query = ' & '.join(search_terms)
                 query = query.filter(
                     func.to_tsvector('portuguese', Queue.service + ' ' + Department.sector)
@@ -463,13 +466,13 @@ class QueueService:
             for queue in queues:
                 branch = queue.department.branch
                 if not branch or not branch.institution:
-                    logger.warning(f"Fila {queue.id} sem filial ou instituição associada")
+                    logger.warning(f"Fila {queue.id} sem filial ou instituição")
                     continue
                 if not QueueService.is_queue_open(queue):
-                    logger.debug(f"Fila {queue.id} fechada, ignorando notificação")
+                    logger.debug(f"Fila {queue.id} fechada")
                     continue
                 if queue.active_tickets >= queue.daily_limit:
-                    logger.debug(f"Fila {queue.id} atingiu limite diário, ignorando notificação")
+                    logger.debug(f"Fila {queue.id} atingiu limite diário")
                     continue
 
                 if preferred_institutions and branch.institution_id not in preferred_institutions:
@@ -481,14 +484,23 @@ class QueueService:
                 if distance is None or distance > QueueService.PROXIMITY_THRESHOLD_KM:
                     continue
 
+                predicted_demand = demand_model.predict(queue.id, hours_ahead=1)
+                if predicted_demand > 10:
+                    continue
+
+                collaborative_scores = collaborative_model.predict(user_id, [queue.id])
+                collaborative_score = collaborative_scores.get(queue.id, 0.5)
+                if collaborative_score < 0.7:
+                    continue
+
                 cache_key = f'notification:{user_id}:{branch.id}:{queue.id}:{int(user_lat*1000)}:{int(user_lon*1000)}'
                 if redis_client.get(cache_key):
                     continue
 
-                wait_time = QueueService.calculate_wait_time(queue.id, queue.active_tickets + 1, priority=0)
+                wait_time = QueueService.calculate_wait_time(queue.id, queue.active_tickets + 1, priority=0, user_lat=user_lat, user_lon=user_lon)
                 message = (
-                    f"Fila disponível próxima! {queue.service} em {branch.institution.name} ({branch.name}) "
-                    f"a {distance:.2f} km de você. Tempo de espera: {wait_time if wait_time != 'N/A' else 'Aguardando início'} min."
+                    f"Fila popular próxima! {queue.service} em {branch.institution.name} ({branch.name}) "
+                    f"a {distance:.2f} km. Tempo de espera: {wait_time if wait_time != 'N/A' else 'Aguardando início'} min."
                 )
 
                 QueueService.send_notification(
@@ -500,7 +512,7 @@ class QueueService:
 
                 redis_client.setex(cache_key, 3600, 'sent')
                 notified_branches.add(branch.id)
-                logger.info(f"Notificação de proximidade enviada para user_id={user_id}: {message}")
+                logger.info(f"Notificação de proximidade enviada para user_id={user_id}")
         except Exception as e:
             db.session.rollback()
             logger.error(f"Erro ao verificar notificações de proximidade para user_id={user_id}: {e}")
@@ -520,20 +532,24 @@ class QueueService:
                     db.session.commit()
                     QueueService.send_notification(
                         None,
-                        f"Sua senha {ticket.queue.prefix}{ticket.ticket_number} foi cancelada porque o horário de atendimento terminou.",
+                        f"Sua senha {ticket.queue.prefix}{ticket.ticket_number} foi cancelada (horário encerrado).",
                         user_id=ticket.user_id
                     )
-                    logger.info(f"Ticket {ticket.id} cancelado devido ao fim do horário de atendimento")
+                    logger.info(f"Ticket {ticket.id} cancelado (horário encerrado)")
                     continue
                 
                 wait_time = QueueService.calculate_wait_time(ticket.queue_id, ticket.ticket_number, ticket.priority)
                 if wait_time == "N/A":
                     continue
 
+                predicted_demand = demand_model.predict(ticket.queue_id, hours_ahead=1)
                 if wait_time <= 5 and ticket.user_id != 'PRESENCIAL':
                     distance = QueueService.calculate_distance(-8.8147, 13.2302, ticket.queue.department.branch)
                     distance_msg = f" Você está a {distance:.2f} km." if distance else ""
-                    message = f"Sua vez está próxima! {ticket.queue.service}, Senha {ticket.queue.prefix}{ticket.ticket_number}. Prepare-se em {wait_time} min.{distance_msg}"
+                    message = (
+                        f"Sua vez está próxima! {ticket.queue.service}, Senha {ticket.queue.prefix}{ticket.ticket_number}. "
+                        f"Prepare-se em {wait_time} min. Demanda prevista: {predicted_demand:.1f} tickets/h.{distance_msg}"
+                    )
                     QueueService.send_notification(None, message, ticket.id, via_websocket=True, user_id=ticket.user_id)
 
                 if ticket.user_id != 'PRESENCIAL':
@@ -544,7 +560,10 @@ class QueueService:
                             if distance and distance > 5:
                                 travel_time = distance * 2
                                 if wait_time <= travel_time:
-                                    message = f"Você está a {distance:.2f} km! Senha {ticket.queue.prefix}{ticket.ticket_number} será chamada em {wait_time} min. Comece a se deslocar!"
+                                    message = (
+                                        f"Você está a {distance:.2f} km! Senha {ticket.queue.prefix}{ticket.ticket_number} "
+                                        f"será chamada em {wait_time} min. Comece a se deslocar!"
+                                    )
                                     QueueService.send_notification(None, message, ticket.id, via_websocket=True, user_id=ticket.user_id)
 
             called_tickets = Ticket.query.filter_by(status='Chamado').all()
@@ -555,10 +574,10 @@ class QueueService:
                     db.session.commit()
                     QueueService.send_notification(
                         None,
-                        f"Sua senha {ticket.queue.prefix}{ticket.ticket_number} foi cancelada porque você não validou a presença a tempo.",
+                        f"Sua senha {ticket.queue.prefix}{ticket.ticket_number} foi cancelada (tempo esgotado).",
                         user_id=ticket.user_id
                     )
-                    logger.info(f"Ticket {ticket.id} cancelado por falta de validação de presença")
+                    logger.info(f"Ticket {ticket.id} cancelado por falta de validação")
         except Exception as e:
             db.session.rollback()
             logger.error(f"Erro ao verificar notificações proativas: {e}")
@@ -601,7 +620,7 @@ class QueueService:
             return {"ticket_from": ticket_from, "ticket_to": ticket_to}
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Erro ao trocar tickets {ticket_from_id} e {ticket_to_id}: {e}")
+            logger.error(f"Erro ao subir tickets {ticket_from_id} e {ticket_to_id}: {e}")
             raise
 
     @staticmethod
@@ -616,15 +635,15 @@ class QueueService:
                 logger.warning(f"Tentativa inválida de validar presença com QR {qr_code}")
                 raise ValueError("Senha inválida ou não chamada")
             if not QueueService.is_queue_open(ticket.queue):
-                logger.warning(f"Fila {ticket.queue.id} está fechada para validação de presença")
-                raise ValueError("Fila está fechada no momento")
+                logger.warning(f"Fila {ticket.queue.id} está fechada")
+                raise ValueError("Fila está fechada")
             
             if user_lat and user_lon:
                 branch = ticket.queue.department.branch
                 distance = QueueService.calculate_distance(user_lat, user_lon, branch)
                 if distance and distance > QueueService.PRESENCE_PROXIMITY_THRESHOLD_KM:
-                    logger.warning(f"Usuário muito longe para validar presença: {distance} km")
-                    raise ValueError(f"Você está muito longe da filial ({distance:.2f} km). Aproxime-se para validar.")
+                    logger.warning(f"Usuário muito longe: {distance} km")
+                    raise ValueError(f"Você está muito longe ({distance:.2f} km). Aproxime-se.")
             
             ticket.status = 'Atendido'
             ticket.attended_at = datetime.utcnow()
@@ -654,14 +673,14 @@ class QueueService:
                 raise ValueError("Você só pode oferecer sua própria senha.")
             if ticket.status != 'Pendente':
                 logger.warning(f"Ticket {ticket_id} no estado {ticket.status} não pode ser oferecido")
-                raise ValueError(f"Esta senha está no estado '{ticket.status}' e não pode ser oferecida.")
+                raise ValueError(f"Esta senha está no estado '{ticket.status}'.")
             if ticket.trade_available:
-                logger.warning(f"Ticket {ticket_id} já está oferecido para troca")
-                raise ValueError("Esta senha já está oferecida para troca.")
+                logger.warning(f"Ticket {ticket_id} já está oferecido")
+                raise ValueError("Esta senha já está oferecida.")
             
             ticket.trade_available = True
             db.session.commit()
-            logger.info(f"Ticket {ticket_id} oferecido para troca com sucesso")
+            logger.info(f"Ticket {ticket_id} oferecido para troca")
 
             QueueService.send_notification(
                 None,
@@ -705,7 +724,7 @@ class QueueService:
                 raise ValueError("Você só pode cancelar sua própria senha")
             if ticket.status != 'Pendente':
                 logger.warning(f"Ticket {ticket_id} no estado {ticket.status} não pode ser cancelado")
-                raise ValueError("Esta senha não pode ser cancelada no momento")
+                raise ValueError("Esta senha não pode ser cancelada")
             
             ticket.status = 'Cancelado'
             ticket.queue.active_tickets -= 1
@@ -754,7 +773,7 @@ class QueueService:
             current_time = now.time()
             return schedule.open_time <= current_time <= schedule.end_time
         except (KeyError, AttributeError):
-            logger.error(f"Erro ao verificar se a fila {queue.id} está aberta: dia {weekday_str} inválido ou schedule ausente")
+            logger.error(f"Erro ao verificar fila {queue.id}: dia {weekday_str} inválido")
             return False
 
     @staticmethod
@@ -766,57 +785,76 @@ class QueueService:
         institution_name=None,
         neighborhood=None,
         branch_id=None,
+        institution_id=None,
+        category_id=None,
+        tags=None,
+        max_wait_time=None,
+        min_quality_score=None,
+        sort_by='score',
         max_results=5,
         max_distance_km=10.0,
         page=1,
         per_page=20
     ):
-        """Busca serviços disponíveis."""
+        """Busca serviços disponíveis com filtros avançados."""
         try:
             now = datetime.utcnow()
             results = []
-            
+
+            # Construir consulta base
             query_base = Queue.query.join(Department).join(Branch).join(Institution)
-            
+
+            # Aplicar filtros
+            if institution_id:
+                if not isinstance(institution_id, str):
+                    raise ValueError("institution_id inválido")
+                query_base = query_base.filter(Institution.id == institution_id)
+            if institution_name:
+                if not isinstance(institution_name, str):
+                    raise ValueError("Nome da instituição inválido")
+                query_base = query_base.filter(Institution.name.ilike(f'%{institution_name}%'))
+            if neighborhood:
+                if not isinstance(neighborhood, str):
+                    raise ValueError("Bairro inválido")
+                query_base = query_base.filter(Branch.neighborhood.ilike(f'%{neighborhood}%'))
+            if branch_id:
+                if not isinstance(branch_id, str):
+                    raise ValueError("branch_id inválido")
+                query_base = query_base.filter(Branch.id == branch_id)
+            if category_id:
+                if not isinstance(category_id, str):
+                    raise ValueError("category_id inválido")
+                query_base = query_base.filter(Queue.category_id == category_id)
+            if tags:
+                if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
+                    raise ValueError("Tags inválidas")
+                query_base = query_base.join(ServiceTag).filter(
+                    ServiceTag.tag.in_([tag.strip() for tag in tags])
+                )
             if query:
                 if not isinstance(query, str) or not query.strip():
-                    raise ValueError("O termo de busca deve ser uma string não vazia")
-                
+                    raise ValueError("Termo de busca inválido")
                 search_terms = re.sub(r'[^\w\sÀ-ÿ]', '', query.lower()).split()
                 if not search_terms:
-                    raise ValueError("Nenhum termo de busca válido fornecido")
-                
+                    raise ValueError("Nenhum termo de busca válido")
                 search_term = ' & '.join(search_terms)
                 query_base = query_base.filter(
                     func.to_tsvector('portuguese', func.concat(Queue.service, ' ', Department.sector, ' ', Institution.name))
                     .op('@@')(func.to_tsquery('portuguese', search_term))
                 )
                 query_base = query_base.outerjoin(ServiceTag).filter(
-                    Queue.id.in_(
-                        db.session.query(ServiceTag.queue_id).filter(
-                            ServiceTag.tag.ilike(f'%{query.lower()}%')
-                        )
-                    ) | (
+                    or_(
+                        Queue.id.in_(
+                            db.session.query(ServiceTag.queue_id).filter(
+                                ServiceTag.tag.ilike(f'%{query.lower()}%')
+                            )
+                        ),
                         func.to_tsvector('portuguese', Queue.service)
                         .op('@@')(func.to_tsquery('portuguese', search_term))
                     )
                 )
-            
-            if institution_name:
-                if not isinstance(institution_name, str):
-                    raise ValueError("Nome da instituição inválido")
-                query_base = query_base.filter(Institution.name.ilike(f'%{institution_name}%'))
-            
-            if neighborhood:
-                if not isinstance(neighborhood, str):
-                    raise ValueError("Bairro inválido")
-                query_base = query_base.filter(Branch.neighborhood.ilike(f'%{neighborhood}%'))
-            
-            if branch_id:
-                if not isinstance(branch_id, str):
-                    raise ValueError("branch_id inválido")
-                query_base = query_base.filter(Branch.id == branch_id)
-            
+
+            # Filtrar por horários abertos
             query_base = query_base.join(QueueSchedule).filter(
                 and_(
                     QueueSchedule.weekday == getattr(Weekday, now.strftime('%A').upper(), None),
@@ -825,37 +863,62 @@ class QueueService:
                     QueueSchedule.end_time >= now.time()
                 )
             )
-            
             query_base = query_base.filter(Queue.active_tickets < Queue.daily_limit)
-            
+
+            # Obter preferências do usuário
             user_prefs = None
             if user_id and isinstance(user_id, str):
                 user_prefs = UserPreference.query.filter_by(user_id=user_id).all()
-            
+
+            # Contar total de resultados
             total = query_base.count()
-            queues = query_base.order_by(
-                func.ts_rank(
-                    func.to_tsvector('portuguese', func.concat(Queue.service, ' ', Department.sector)),
-                    func.to_tsquery('portuguese', search_term if query and search_terms else '*')
-                ).desc()
-            ).offset((page - 1) * per_page).limit(per_page).all()
-            
+
+            # Aplicar ordenação inicial por relevância textual (se houver query)
+            if query and search_terms:
+                query_base = query_base.order_by(
+                    func.ts_rank(
+                        func.to_tsvector('portuguese', func.concat(Queue.service, ' ', Department.sector, ' ', Institution.name)),
+                        func.to_tsquery('portuguese', search_term)
+                    ).desc()
+                )
+            else:
+                query_base = query_base.order_by(Queue.active_tickets.asc())
+
+            # Aplicar paginação
+            queues = query_base.offset((page - 1) * per_page).limit(per_page).all()
+
+            # Obter pontuações colaborativas
+            collaborative_scores = collaborative_model.predict(user_id, [queue.id for queue in queues]) if user_id else {q.id: 0.5 for q in queues}
+
             for queue in queues:
                 branch = queue.department.branch
                 institution = branch.institution
-                
+
                 if not all([branch, institution, queue.department]):
                     logger.warning(f"Dados incompletos para queue_id={queue.id}")
                     continue
-                
+
+                # Calcular distância
                 distance = None
                 if user_lat and user_lon and branch.latitude and branch.longitude:
                     distance = QueueService.calculate_distance(user_lat, user_lon, branch)
                     if distance and distance > max_distance_km:
                         continue
-                
-                wait_time = QueueService.calculate_wait_time(queue.id, queue.active_tickets + 1, 0)
-                
+
+                # Calcular tempo de espera
+                wait_time = QueueService.calculate_wait_time(queue.id, queue.active_tickets + 1, 0, user_lat, user_lon)
+                if max_wait_time and isinstance(wait_time, (int, float)) and wait_time > max_wait_time:
+                    continue
+
+                # Previsão de demanda
+                predicted_demand = demand_model.predict(queue.id, hours_ahead=1)
+
+                # Pontuação de qualidade
+                quality_score = service_recommendation_predictor.predict(queue, user_id, user_lat, user_lon)
+                if min_quality_score and quality_score < min_quality_score:
+                    continue
+
+                # Velocidade da fila
                 speed_label = "Desconhecida"
                 tickets = Ticket.query.filter_by(queue_id=queue.id, status='Atendido').all()
                 service_times = [t.service_time for t in tickets if t.service_time is not None and t.service_time > 0]
@@ -867,35 +930,46 @@ class QueueService:
                         speed_label = "Moderada"
                     else:
                         speed_label = "Lenta"
-                
-                score = 0.0
-                try:
-                    quality_score = service_recommendation_predictor.predict(queue)
-                except Exception as e:
-                    logger.warning(f"Erro ao prever quality_score para queue_id={queue.id}: {e}")
-                    quality_score = 0.5
-                
-                if query and search_terms:
-                    rank = db.session.query(
-                        func.ts_rank(
-                            func.to_tsvector('portuguese', func.concat(Queue.service, ' ', Department.sector)),
-                            func.to_tsquery('portuguese', search_term)
-                        )
-                    ).filter(Queue.id == queue.id).scalar() or 0.0
-                    score += rank * 0.4
-                if distance is not None:
-                    score += (1 / (distance + 1)) * 0.3
-                score += quality_score * 0.2
-                if user_prefs:
-                    if any(pref.institution_id == institution.id for pref in user_prefs if pref.institution_id):
-                        score += 0.2
-                    if any(pref.service_category_id == queue.category_id for pref in user_prefs if pref.service_category_id):
-                        score += 0.2
-                
+
+                # Sugestões de filas alternativas
+                alternatives = clustering_model.get_alternatives(queue.id, n=3)
+                alternative_queues = Queue.query.filter(Queue.id.in_(alternatives)).all()
+                alternatives_data = [
+                    {
+                        'queue_id': alt_queue.id,
+                        'service': alt_queue.service or "Desconhecido",
+                        'wait_time': QueueService.calculate_wait_time(alt_queue.id, alt_queue.active_tickets + 1, 0, user_lat, user_lon),
+                        'quality_score': service_recommendation_predictor.predict(alt_queue, user_id, user_lat, user_lon)
+                    } for alt_queue in alternative_queues
+                ]
+
+                # Horário de funcionamento
                 schedule = QueueSchedule.query.filter_by(queue_id=queue.id, weekday=getattr(Weekday, now.strftime('%A').upper(), None)).first()
                 open_time = schedule.open_time.strftime('%H:%M') if schedule and schedule.open_time else None
                 end_time = schedule.end_time.strftime('%H:%M') if schedule and schedule.end_time else None
-                
+
+                # Pontuação composta
+                collaborative_score = collaborative_scores.get(queue.id, 0.5)
+                composite_score = 0.0
+                if query and search_terms:
+                    rank = db.session.query(
+                        func.ts_rank(
+                            func.to_tsvector('portuguese', func.concat(Queue.service, ' ', Department.sector, ' ', Institution.name)),
+                            func.to_tsquery('portuguese', search_term)
+                        )
+                    ).filter(Queue.id == queue.id).scalar() or 0.0
+                    composite_score += rank * 0.3
+                if distance is not None:
+                    composite_score += (1 / (1 + distance)) * 0.2
+                composite_score += quality_score * 0.25
+                composite_score += collaborative_score * 0.15
+                composite_score += (1 / (1 + predicted_demand / 10)) * 0.1
+                if user_prefs:
+                    if any(pref.institution_id == institution.id for pref in user_prefs if pref.institution_id):
+                        composite_score += 0.1
+                    if any(pref.service_category_id == queue.category_id for pref in user_prefs if pref.service_category_id):
+                        composite_score += 0.1
+
                 results.append({
                     'institution': {
                         'id': institution.id,
@@ -920,13 +994,28 @@ class QueueService:
                         'open_time': open_time,
                         'end_time': end_time,
                         'quality_score': float(quality_score),
-                        'speed_label': speed_label
+                        'collaborative_score': float(collaborative_score),
+                        'predicted_demand': float(predicted_demand),
+                        'speed_label': speed_label,
+                        'alternatives': alternatives_data
                     },
-                    'score': float(score)
+                    'score': float(composite_score)
                 })
-            
-            results.sort(key=lambda x: x['score'], reverse=True)
-            
+
+            # Ordenar resultados
+            if sort_by == 'wait_time':
+                results.sort(key=lambda x: float(x['queue']['wait_time'].split()[0]) if x['queue']['wait_time'] != 'Aguardando início' else float('inf'))
+            elif sort_by == 'distance':
+                results.sort(key=lambda x: x['queue']['distance'] if x['queue']['distance'] != 'Desconhecida' else float('inf'))
+            elif sort_by == 'quality_score':
+                results.sort(key=lambda x: x['queue']['quality_score'], reverse=True)
+            else:  # score (padrão)
+                results.sort(key=lambda x: x['score'], reverse=True)
+
+            # Limitar número de resultados
+            results = results[:max_results] if max_results else results
+
+            # Gerar sugestões baseadas na categoria do melhor resultado
             suggestions = []
             if results and results[0]['queue']['category_id']:
                 related_queues = Queue.query.filter(
@@ -943,27 +1032,29 @@ class QueueService:
                             'service': q.service or "Desconhecido",
                             'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else 'Aguardando início'
                         })
-            
+
             result = {
-                'services': results[:max_results],
+                'services': results,
                 'total': total,
                 'page': int(page),
                 'per_page': int(per_page),
+                'total_pages': (total + per_page - 1) // per_page,
                 'suggestions': suggestions
             }
-            
+
+            # Cache dos resultados
             try:
-                cache_key = f'services:{query}:{institution_name}:{neighborhood}:{branch_id}'
+                cache_key = f'services:{query}:{institution_name}:{neighborhood}:{branch_id}:{institution_id}:{category_id}:{tags}:{max_wait_time}:{min_quality_score}:{sort_by}'
                 redis_client.setex(cache_key, 30, json.dumps(result, default=str))
             except Exception as e:
-                logger.warning(f"Erro ao salvar cache no Redis para {cache_key}: {e}")
-            
+                logger.warning(f"Erro ao salvar cache para {cache_key}: {e}")
+
             logger.info(f"Serviços buscados: {total} resultados")
             return result
         except Exception as e:
-            logger.error(f"Erro ao buscar serviços: {e}")
+            logger.error(f"Erro ao buscar serviços: {str(e)}")
             raise
-            
+
     @staticmethod
     def get_dashboard_data(institution_id):
         """Obtém dados para o dashboard de uma instituição."""
@@ -975,16 +1066,15 @@ class QueueService:
             result = {'branches': []}
 
             for branch in branches:
-                # Consulta departamentos associados à filial
                 departments = Department.query.filter_by(branch_id=branch.id).all()
                 department_ids = [d.id for d in departments]
-
-                # Consulta filas associadas aos departamentos
                 queues = Queue.query.filter(Queue.department_id.in_(department_ids)).all()
                 branch_data = {
                     'branch_id': branch.id,
                     'branch_name': branch.name or "Desconhecida",
                     'neighborhood': branch.neighborhood or "Desconhecido",
+                    'latitude': float(branch.latitude) if branch.latitude else None,
+                    'longitude': float(branch.longitude) if branch.longitude else None,
                     'queues': []
                 }
 
@@ -1007,17 +1097,57 @@ class QueueService:
                         {
                             'ticket_number': f"{queue.prefix}{ticket.ticket_number}",
                             'counter': ticket.counter or queue.last_counter or 1,
-                            'timestamp': ticket.attended_at.isoformat() if ticket.attended_at else None
+                            'timestamp': ticket.attended_at.isoformat() if ticket.attended_at else None,
+                            'service_time': float(ticket.service_time) if ticket.service_time else None
                         } for ticket in recent_tickets
                     ]
 
+                    # Previsão de tempo de espera
+                    wait_time = QueueService.calculate_wait_time(queue.id, queue.active_tickets + 1, priority=0)
+
+                    # Pontuação de qualidade da fila
+                    quality_score = service_recommendation_predictor.predict(queue)
+
+                    # Previsão de demanda futura
+                    predicted_demand = demand_model.predict(queue.id, hours_ahead=1)
+
+                    # Sugestões de filas alternativas
+                    alternatives = clustering_model.get_alternatives(queue.id, n=3)
+                    alternative_queues = Queue.query.filter(Queue.id.in_(alternatives)).all()
+                    alternatives_data = [
+                        {
+                            'queue_id': alt_queue.id,
+                            'service': alt_queue.service or "Desconhecido",
+                            'wait_time': QueueService.calculate_wait_time(alt_queue.id, alt_queue.active_tickets + 1, 0)
+                        } for alt_queue in alternative_queues
+                    ]
+
+                    # Velocidade da fila
+                    speed_label = "Desconhecida"
+                    service_times = [t.service_time for t in recent_tickets if t.service_time is not None and t.service_time > 0]
+                    if service_times:
+                        avg_service_time = np.mean(service_times)
+                        if avg_service_time <= 5:
+                            speed_label = "Rápida"
+                        elif avg_service_time <= 15:
+                            speed_label = "Moderada"
+                        else:
+                            speed_label = "Lenta"
+
                     branch_data['queues'].append({
                         'queue_id': queue.id,
-                        'name': queue.service or 'Atendimento Geral',
-                        'service': queue.service or 'Atendimento Geral',
+                        'service': queue.service or "Atendimento Geral",
+                        'category_id': queue.category_id,
                         'current_call': current_call,
-                        'recent_calls': recent_calls_data
-                        # Removido 'category_id' para evitar erros, já que não é usado no queue_routes.py
+                        'recent_calls': recent_calls_data,
+                        'active_tickets': queue.active_tickets or 0,
+                        'daily_limit': queue.daily_limit or 100,
+                        'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else "Aguardando início",
+                        'quality_score': float(quality_score),
+                        'predicted_demand': float(predicted_demand),
+                        'speed_label': speed_label,
+                        'alternatives': alternatives_data,
+                        'is_open': QueueService.is_queue_open(queue)
                     })
 
                 result['branches'].append(branch_data)
@@ -1026,13 +1156,13 @@ class QueueService:
                 cache_key = f'dashboard:{institution_id}'
                 redis_client.setex(cache_key, 10, json.dumps(result, default=str))
             except Exception as e:
-                logger.warning(f"Erro ao salvar cache no Redis para {cache_key}: {e}")
+                logger.warning(f"Erro ao salvar cache para {cache_key}: {e}")
 
+            logger.info(f"Dados do dashboard gerados para institution_id={institution_id}")
             return result
         except Exception as e:
             logger.error(f"Erro ao obter dados do dashboard para institution_id={institution_id}: {e}")
             raise
-
 
     @staticmethod
     def emit_dashboard_update(institution_id, queue_id, event_type, data):
@@ -1048,7 +1178,7 @@ class QueueService:
             redis_client.publish(channel, json.dumps(message, default=str))
             logger.info(f"Atualização de dashboard publicada para {channel}")
         except Exception as e:
-            logger.warning(f"Erro ao publicar atualização de dashboard para {channel}: {e}")
+            logger.warning(f"Erro ao publicar atualização para {channel}: {e}")
 
     @staticmethod
     def subscribe_to_dashboard(institution_id):

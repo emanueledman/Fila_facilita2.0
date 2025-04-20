@@ -4,7 +4,7 @@ from . import db, socketio, redis_client
 from .models import Institution, Branch, Queue, Ticket, User, Department, UserRole, QueueSchedule, Weekday, ServiceCategory, ServiceTag, UserPreference
 from .auth import require_auth
 from .services import QueueService
-from .ml_models import wait_time_predictor
+from .ml_models import wait_time_predictor, service_recommendation_predictor, collaborative_model, demand_model, clustering_model
 import uuid
 from datetime import datetime, timedelta
 import io
@@ -62,6 +62,10 @@ def init_queue_routes(app):
         user_lat = request.args.get('lat')
         user_lon = request.args.get('lon')
         neighborhood = request.args.get('neighborhood')
+        max_wait_time = request.args.get('max_wait_time')
+        min_quality_score = request.args.get('min_quality_score')
+        category_id = request.args.get('category_id')
+        tags = request.args.get('tags')
 
         if not service or not isinstance(service, str) or not service.strip():
             logger.warning("Parâmetro 'service' não fornecido ou inválido.")
@@ -82,6 +86,30 @@ def init_queue_routes(app):
         if neighborhood and not re.match(r'^[A-Za-zÀ-ÿ\s,]{1,100}$', neighborhood):
             logger.warning(f"Bairro inválido: {neighborhood}")
             return jsonify({'error': 'Bairro inválido'}), 400
+        if max_wait_time:
+            try:
+                max_wait_time = float(max_wait_time)
+                if max_wait_time <= 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                logger.warning(f"max_wait_time inválido: {max_wait_time}")
+                return jsonify({'error': 'max_wait_time deve ser um número positivo'}), 400
+        if min_quality_score:
+            try:
+                min_quality_score = float(min_quality_score)
+                if not 0 <= min_quality_score <= 1:
+                    raise ValueError
+            except (ValueError, TypeError):
+                logger.warning(f"min_quality_score inválido: {min_quality_score}")
+                return jsonify({'error': 'min_quality_score deve estar entre 0 e 1'}), 400
+        if category_id and not isinstance(category_id, str):
+            logger.warning(f"category_id inválido: {category_id}")
+            return jsonify({'error': 'category_id deve ser uma string'}), 400
+        if tags:
+            tags = tags.split(',')
+            if not all(re.match(r'^[A-Za-zÀ-ÿ\s]{1,50}$', tag.strip()) for tag in tags):
+                logger.warning(f"Tags inválidas: {tags}")
+                return jsonify({'error': 'Tags inválidas'}), 400
 
         try:
             user_id = request.user_id
@@ -91,7 +119,13 @@ def init_queue_routes(app):
                 user_lat=user_lat,
                 user_lon=user_lon,
                 neighborhood=neighborhood,
-                max_results=10
+                max_results=10,
+                max_distance_km=10.0,
+                category_id=category_id,
+                tags=tags,
+                max_wait_time=max_wait_time,
+                min_quality_score=min_quality_score,
+                sort_by='score'  # Ordenar por pontuação composta
             )
             logger.info(f"Sugestões geradas para o serviço '{service}': {len(suggestions['services'])} resultados.")
             return jsonify(suggestions), 200
@@ -247,7 +281,7 @@ def init_queue_routes(app):
         if 'branch_id' in data:
             branch = Branch.query.get(data['branch_id'])
             if not branch:
-                logger.error(f"Filial não encontrada: branch_id={data['branch_id']}")
+                logger.error=f"Filial não encontrada: branch_id={data['branch_id']}"
                 return jsonify({'error': 'Filial não encontrada'}), 404
             queue.branch_id = data['branch_id']
         queue.daily_limit = data.get('daily_limit', queue.daily_limit)
@@ -290,6 +324,8 @@ def init_queue_routes(app):
         priority = data.get('priority', 0)
         is_physical = data.get('is_physical', False)
         branch_id = data.get('branch_id')
+        user_lat = data.get('user_lat')
+        user_lon = data.get('user_lon')
 
         if not isinstance(service, str) or not service.strip():
             logger.warning(f"Serviço inválido: {service}")
@@ -306,6 +342,18 @@ def init_queue_routes(app):
         if branch_id and not isinstance(branch_id, str):
             logger.warning(f"branch_id inválido: {branch_id}")
             return jsonify({'error': 'branch_id deve ser uma string'}), 400
+        if user_lat is not None:
+            try:
+                user_lat = float(user_lat)
+            except (ValueError, TypeError):
+                logger.warning(f"Latitude inválida: {user_lat}")
+                return jsonify({'error': 'Latitude deve ser um número'}), 400
+        if user_lon is not None:
+            try:
+                user_lon = float(user_lon)
+            except (ValueError, TypeError):
+                logger.warning(f"Longitude inválida: {user_lon}")
+                return jsonify({'error': 'Longitude deve ser um número'}), 400
 
         try:
             ticket, pdf_buffer = QueueService.add_to_queue(
@@ -314,10 +362,26 @@ def init_queue_routes(app):
                 priority=priority,
                 is_physical=is_physical,
                 fcm_token=fcm_token,
-                branch_id=branch_id
+                branch_id=branch_id,
+                user_lat=user_lat,
+                user_lon=user_lon
             )
             emit_ticket_update(ticket)
-            wait_time = QueueService.calculate_wait_time(ticket.queue.id, ticket.ticket_number, ticket.priority)
+            wait_time = QueueService.calculate_wait_time(ticket.queue.id, ticket.ticket_number, ticket.priority, user_lat, user_lon)
+            quality_score = service_recommendation_predictor.predict(ticket.queue, user_id, user_lat, user_lon)
+            predicted_demand = demand_model.predict(ticket.queue.id, hours_ahead=1)
+
+            # Sugestões de filas alternativas
+            alternatives = clustering_model.get_alternatives(ticket.queue.id, n=3)
+            alternative_queues = Queue.query.filter(Queue.id.in_(alternatives)).all()
+            alternatives_data = [
+                {
+                    'queue_id': alt_queue.id,
+                    'service': alt_queue.service or "Desconhecido",
+                    'wait_time': QueueService.calculate_wait_time(alt_queue.id, alt_queue.active_tickets + 1, 0, user_lat, user_lon),
+                    'quality_score': service_recommendation_predictor.predict(alt_queue, user_id, user_lat, user_lon)
+                } for alt_queue in alternative_queues
+            ]
 
             response = {
                 'message': 'Senha emitida',
@@ -330,7 +394,10 @@ def init_queue_routes(app):
                     'priority': ticket.priority,
                     'is_physical': ticket.is_physical,
                     'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None,
-                    'branch_id': ticket.queue.branch_id
+                    'branch_id': ticket.queue.branch_id,
+                    'quality_score': float(quality_score),
+                    'predicted_demand': float(predicted_demand),
+                    'alternatives': alternatives_data
                 }
             }
 
@@ -383,6 +450,9 @@ def init_queue_routes(app):
 
         queue = ticket.queue
         wait_time = QueueService.calculate_wait_time(queue.id, ticket.ticket_number, ticket.priority)
+        quality_score = service_recommendation_predictor.predict(queue, request.user_id)
+        predicted_demand = demand_model.predict(queue.id, hours_ahead=1)
+
         return jsonify({
             'service': queue.service or "Desconhecido",
             'institution': queue.department.institution.name if queue.department and queue.department.institution else "Desconhecida",
@@ -395,7 +465,9 @@ def init_queue_routes(app):
             'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else "N/A",
             'priority': ticket.priority,
             'is_physical': ticket.is_physical,
-            'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None
+            'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None,
+            'quality_score': float(quality_score),
+            'predicted_demand': float(predicted_demand)
         }), 200
 
     @app.route('/api/queue/<service>/call', methods=['POST'])
@@ -425,7 +497,8 @@ def init_queue_routes(app):
                 data={
                     'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
                     'counter': ticket.counter,
-                    'timestamp': ticket.attended_at.isoformat() if ticket.attended_at else None
+                    'timestamp': ticket.attended_at.isoformat() if ticket.attended_at else None,
+                    'predicted_demand': float(demand_model.predict(ticket.queue.id, hours_ahead=1))
                 }
             )
             logger.info(f"Senha chamada: {ticket.queue.prefix}{ticket.ticket_number} (ticket_id={ticket.id})")
@@ -482,7 +555,8 @@ def init_queue_routes(app):
                 data={
                     'ticket_number': f"{queue.prefix}{ticket.ticket_number}",
                     'counter': ticket.counter,
-                    'timestamp': ticket.attended_at.isoformat() if ticket.attended_at else None
+                    'timestamp': ticket.attended_at.isoformat() if ticket.attended_at else None,
+                    'predicted_demand': float(demand_model.predict(queue.id, hours_ahead=1))
                 }
             )
 
@@ -599,7 +673,8 @@ def init_queue_routes(app):
                 data={
                     'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
                     'counter': ticket.counter,
-                    'timestamp': ticket.attended_at.isoformat() if ticket.attended_at else None
+                    'timestamp': ticket.attended_at.isoformat() if ticket.attended_at else None,
+                    'service_time': float(ticket.service_time) if ticket.service_time else None
                 }
             )
             logger.info(f"Presença validada para ticket {ticket.id}")
@@ -653,6 +728,8 @@ def init_queue_routes(app):
                         )
 
                     wait_time = QueueService.calculate_wait_time(q.id, q.current_ticket + 1, 0)
+                    quality_score = service_recommendation_predictor.predict(q)
+                    predicted_demand = demand_model.predict(q.id, hours_ahead=1)
 
                     queue_data.append({
                         'id': q.id,
@@ -668,7 +745,9 @@ def init_queue_routes(app):
                         'active_tickets': q.active_tickets or 0,
                         'avg_wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else "N/A",
                         'num_counters': q.num_counters or 1,
-                        'status': 'Aberto' if is_open else 'Fechado'
+                        'status': 'Aberto' if is_open else 'Fechado',
+                        'quality_score': float(quality_score),
+                        'predicted_demand': float(predicted_demand)
                     })
 
                 result.append({
@@ -712,7 +791,9 @@ def init_queue_routes(app):
                 'position': max(0, t.ticket_number - t.queue.current_ticket) if t.status == 'Pendente' else 0,
                 'wait_time': f"{int(wait_time)} minutos" if isinstance((wait_time := QueueService.calculate_wait_time(t.queue.id, t.ticket_number, t.priority)), (int, float)) else "N/A",
                 'qr_code': t.qr_code,
-                'trade_available': t.trade_available
+                'trade_available': t.trade_available,
+                'quality_score': float(service_recommendation_predictor.predict(t.queue, request.user_id)),
+                'predicted_demand': float(demand_model.predict(t.queue.id, hours_ahead=1))
             } for t in tickets]), 200
         except Exception as e:
             logger.error(f"Erro ao listar tickets do usuário {request.user_id}: {str(e)}")
@@ -743,7 +824,9 @@ def init_queue_routes(app):
                 'branch': t.queue.branch.name if t.queue.branch else "Desconhecida",
                 'number': f"{t.queue.prefix}{t.ticket_number}",
                 'position': max(0, t.ticket_number - t.queue.current_ticket),
-                'user_id': t.user_id
+                'user_id': t.user_id,
+                'wait_time': f"{int(wait_time)} minutos" if isinstance((wait_time := QueueService.calculate_wait_time(t.queue.id, t.ticket_number, t.priority)), (int, float)) else "N/A",
+                'quality_score': float(service_recommendation_predictor.predict(t.queue, user_id))
             } for t in tickets]), 200
         except Exception as e:
             logger.error(f"Erro ao listar tickets disponíveis para troca para user_id={request.user_id}: {str(e)}")
@@ -805,7 +888,9 @@ def init_queue_routes(app):
                 'wait_time': f"{int(wait_time)} minutos" if isinstance((wait_time := QueueService.calculate_wait_time(t.queue.id, t.ticket_number, t.priority)), (int, float)) else "N/A",
                 'qr_code': t.qr_code,
                 'trade_available': t.trade_available,
-                'user_id': t.user_id
+                'user_id': t.user_id,
+                'quality_score': float(service_recommendation_predictor.predict(t.queue, user_id=None)),
+                'predicted_demand': float(demand_model.predict(t.queue.id, hours_ahead=1))
             } for t in tickets]), 200
         except Exception as e:
             logger.error(f"Erro ao listar todos os tickets para user_id={request.user_id}: {str(e)}")
@@ -858,10 +943,24 @@ def init_queue_routes(app):
             return jsonify({'error': 'Fila não encontrada'}), 404
 
         current_ticket = queue.current_ticket
-        if current_ticket == 0:
-            return jsonify({'current_ticket': 'N/A'}), 200
+        wait_time = QueueService.calculate_wait_time(queue.id, queue.current_ticket + 1, 0)
+        quality_score = service_recommendation_predictor.predict(queue)
+        predicted_demand = demand_model.predict(queue.id, hours_ahead=1)
 
-        return jsonify({'current_ticket': f"{queue.prefix}{current_ticket:03d}"}), 200
+        if current_ticket == 0:
+            return jsonify({
+                'current_ticket': 'N/A',
+                'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else "N/A",
+                'quality_score': float(quality_score),
+                'predicted_demand': float(predicted_demand)
+            }), 200
+
+        return jsonify({
+            'current_ticket': f"{queue.prefix}{current_ticket:03d}",
+            'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else "N/A",
+            'quality_score': float(quality_score),
+            'predicted_demand': float(predicted_demand)
+        }), 200
 
     @app.route('/api/calculate_distance', methods=['POST'])
     @require_auth
@@ -887,7 +986,6 @@ def init_queue_routes(app):
             logger.error(f"Instituição não encontrada para institution_id={institution_id}")
             return jsonify({'error': 'Instituição não encontrada'}), 404
 
-        # Ajustado para usar Branch em vez de Institution
         branch = Branch.query.filter_by(institution_id=institution_id).first()
         if not branch:
             logger.error(f"Filial não encontrada para institution_id={institution_id}")
@@ -908,18 +1006,24 @@ def init_queue_routes(app):
             user_id = request.user_id if hasattr(request, 'user_id') else None
 
             service_name = request.args.get('service_name', '').strip()
+            neighborhood = request.args.get('neighborhood')
+            user_lat = request.args.get('latitude')
+            user_lon = request.args.get('longitude')
+            category_id = request.args.get('category_id')
+            tags = request.args.get('tags')
+            max_wait_time = request.args.get('max_wait_time')
+            min_quality_score = request.args.get('min_quality_score')
+            sort_by = request.args.get('sort_by', 'score')  # Opções: score, wait_time, distance, quality_score
+            page = request.args.get('page', '1')
+            per_page = request.args.get('per_page', '20')
+
+            # Validações
             if service_name and not re.match(r'^[A-Za-zÀ-ÿ\s]{1,100}$', service_name):
                 logger.warning(f"Nome do serviço inválido: {service_name}")
                 return jsonify({'error': 'Nome do serviço inválido'}), 400
-
-            neighborhood = request.args.get('neighborhood')
-            if neighborhood:
-                if not re.match(r'^[A-Za-zÀ-ÿ\s,]{1,100}$', neighborhood):
-                    logger.warning(f"Bairro inválido: {neighborhood}")
-                    return jsonify({'error': 'Bairro inválido'}), 400
-
-            user_lat = request.args.get('latitude')
-            user_lon = request.args.get('longitude')
+            if neighborhood and not re.match(r'^[A-Za-zÀ-ÿ\s,]{1,100}$', neighborhood):
+                logger.warning(f"Bairro inválido: {neighborhood}")
+                return jsonify({'error': 'Bairro inválido'}), 400
             if user_lat and user_lon:
                 try:
                     user_lat = float(user_lat)
@@ -927,19 +1031,52 @@ def init_queue_routes(app):
                 except (ValueError, TypeError):
                     logger.warning(f"Latitude ou longitude inválidos: lat={user_lat}, lon={user_lon}")
                     return jsonify({'error': 'Latitude e longitude devem ser números'}), 400
-
-            page = request.args.get('page', '1')
-            per_page = request.args.get('per_page', '20')
+            if category_id and not isinstance(category_id, str):
+                logger.warning(f"category_id inválido: {category_id}")
+                return jsonify({'error': 'category_id deve ser uma string'}), 400
+            if tags:
+                tags = tags.split(',')
+                if not all(re.match(r'^[A-Za-zÀ-ÿ\s]{1,50}$', tag.strip()) for tag in tags):
+                    logger.warning(f"Tags inválidas: {tags}")
+                    return jsonify({'error': 'Tags inválidas'}), 400
+            if max_wait_time:
+                try:
+                    max_wait_time = float(max_wait_time)
+                    if max_wait_time <= 0:
+                        raise ValueError
+                except (ValueError, TypeError):
+                    logger.warning(f"max_wait_time inválido: {max_wait_time}")
+                    return jsonify({'error': 'max_wait_time deve ser um número positivo'}), 400
+            if min_quality_score:
+                try:
+                    min_quality_score = float(min_quality_score)
+                    if not 0 <= min_quality_score <= 1:
+                        raise ValueError
+                except (ValueError, TypeError):
+                    logger.warning(f"min_quality_score inválido: {min_quality_score}")
+                    return jsonify({'error': 'min_quality_score deve estar entre 0 e 1'}), 400
+            if sort_by not in ['score', 'wait_time', 'distance', 'quality_score']:
+                logger.warning(f"sort_by inválido: {sort_by}")
+                return jsonify({'error': 'sort_by deve ser score, wait_time, distance ou quality_score'}), 400
             try:
                 page = int(page)
                 per_page = int(per_page)
             except (ValueError, TypeError):
                 logger.warning(f"Página ou per_page inválidos: page={page}, per_page={per_page}")
                 return jsonify({'error': 'Página e itens por página devem ser números inteiros'}), 400
-
             if per_page > 100:
                 logger.warning(f"Per_page excede o máximo: {per_page}")
                 return jsonify({'error': 'Máximo de itens por página é 100'}), 400
+
+            # Cache
+            cache_key = f"search:{institution_id}:{service_name}:{neighborhood}:{category_id}:{tags}:{max_wait_time}:{min_quality_score}:{sort_by}:{page}:{per_page}"
+            try:
+                cached_data = redis_client.get(cache_key)
+                if cached_data:
+                    logger.info(f"Retornando resultado do cache para {cache_key}")
+                    return jsonify(json.loads(cached_data))
+            except Exception as e:
+                logger.warning(f"Erro ao acessar Redis para {cache_key}: {e}")
 
             result = QueueService.search_services(
                 query=service_name,
@@ -948,9 +1085,20 @@ def init_queue_routes(app):
                 user_lon=user_lon,
                 institution_id=institution_id,
                 neighborhood=neighborhood,
+                category_id=category_id,
+                tags=tags,
+                max_wait_time=max_wait_time,
+                min_quality_score=min_quality_score,
+                sort_by=sort_by,
                 page=page,
                 per_page=per_page
             )
+
+            try:
+                redis_client.setex(cache_key, 30, json.dumps(result, default=str))
+            except Exception as e:
+                logger.warning(f"Erro ao salvar cache para {cache_key}: {e}")
+
             logger.info(f"Serviços buscados para institution_id={institution_id}: {result['total']} resultados")
             return jsonify(result), 200
         except Exception as e:
@@ -981,6 +1129,16 @@ def init_queue_routes(app):
             result = QueueService.generate_physical_ticket_for_totem(queue_id, client_ip)
             ticket = Ticket.query.get(result['ticket']['id'])
             emit_ticket_update(ticket)
+            emit_dashboard_update(
+                institution_id=institution_id,
+                queue_id=queue_id,
+                event_type='physical_ticket',
+                data={
+                    'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
+                    'timestamp': ticket.issued_at.isoformat(),
+                    'wait_time': f"{int(wait_time)} minutos" if isinstance((wait_time := QueueService.calculate_wait_time(queue_id, ticket.ticket_number, 0)), (int, float)) else "N/A"
+                }
+            )
             logger.info(f"Ticket físico gerado para queue_id={queue_id}, institution_id={institution_id}")
             return send_file(
                 io.BytesIO(bytes.fromhex(result['pdf'])),
@@ -1007,6 +1165,7 @@ def init_queue_routes(app):
                 try:
                     cached_data = redis_client.get(cache_key)
                     if cached_data:
+                        logger.info(f"Retornando dashboard do cache para institution_id={institution_id}")
                         return jsonify(json.loads(cached_data))
                 except Exception as e:
                     logger.warning(f"Erro ao acessar Redis para dashboard {institution_id}: {str(e)}")
@@ -1016,7 +1175,9 @@ def init_queue_routes(app):
                 redis_client.setex(cache_key, 300, json.dumps(data, default=str))
             except Exception as e:
                 logger.warning(f"Erro ao salvar cache no Redis para dashboard {institution_id}: {str(e)}")
-            return jsonify(data)
+
+            logger.info(f"Dashboard retornado para institution_id={institution_id}")
+            return jsonify(data), 200
         except ValueError as e:
             logger.error(f"Erro ao obter dashboard para institution_id={institution_id}: {str(e)}")
             return jsonify({'error': str(e)}), 400
@@ -1054,39 +1215,6 @@ def init_queue_routes(app):
             socketio.emit('error', {'message': str(e)}, namespace='/dashboard')
         except Exception as e:
             logger.error(f"Erro inesperado ao enviar dados iniciais do dashboard para institution_id={institution_id}: {str(e)}")
-            socketio.emit('error', {'message': 'Erro ao carregar dados iniciais'}, namespace='/dashboard')
-
-    @socketio.on('disconnect', namespace='/dashboard')
-    def handle_dashboard_disconnect():
-        logger.info("Cliente desconectado do namespace /dashboard")
-    
-    @socketio.on('connect_dashboard', namespace='/dashboard')
-    def handle_dashboard_connect(data):
-        institution_id = data.get('institution_id')
-        if not institution_id or not isinstance(institution_id, str):
-            socketio.emit('error', {'message': 'institution_id é obrigatório'}, namespace='/dashboard')
-            logger.warning("Tentativa de conexão ao dashboard sem institution_id válido")
-            return
-
-        institution = Institution.query.get(institution_id)
-        if not institution:
-            socketio.emit('error', {'message': 'Instituição não encontrada'}, namespace='/dashboard')
-            logger.warning(f"Instituição não encontrada: institution_id={institution_id}")
-            return
-
-        join_room(institution_id, namespace='/dashboard')
-        logger.info(f"Cliente conectado ao dashboard: institution_id={institution_id}")
-
-        try:
-            dashboard_data = QueueService.get_dashboard_data(institution_id)
-            socketio.emit('dashboard_update', {
-                'institution_id': institution_id,
-                'event_type': 'initial_data',
-                'data': dashboard_data
-            }, room=institution_id, namespace='/dashboard')
-            logger.info(f"Dados iniciais do dashboard enviados: institution_id={institution_id}")
-        except Exception as e:
-            logger.error(f"Erro ao enviar dados iniciais do dashboard para institution_id={institution_id}: {str(e)}")
             socketio.emit('error', {'message': 'Erro ao carregar dados iniciais'}, namespace='/dashboard')
 
     @socketio.on('disconnect', namespace='/dashboard')
