@@ -5,149 +5,11 @@ from . import db
 import os
 from sqlalchemy.exc import SQLAlchemyError
 
-# Dados de teste fornecidos
+# Dados de teste ajustados para Banco BAI com 10 filiais
 institutions_data = [
     {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd094",
-        "name": "Hospital Josina Machel",
-        "description": "Hospital público em Luanda",
-        "branches": [
-            {
-                "name": "Unidade Ingombota",
-                "location": "Rua dos Hospitais, Ingombota, Luanda",
-                "neighborhood": "Ingombota",
-                "latitude": -8.8167,
-                "longitude": 13.2332,
-                "departments": [
-                    {
-                        "name": "Consulta Geral",
-                        "sector": "Saúde",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd095",
-                                "service": "Consulta Geral",
-                                "category_id": None,  # Será preenchido após criar categorias
-                                "prefix": "CG",
-                                "open_time": time(8, 0),
-                                "end_time": time(17, 0),
-                                "daily_limit": 15,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(8, 0), "end_time": time(22, 0)}
-                                ],
-                                "tags": ["Consulta", "Geral", "Saúde"]
-                            }
-                        ]
-                    },
-                    {
-                        "name": "Emergência",
-                        "sector": "Saúde",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd096",
-                                "service": "Emergência",
-                                "category_id": None,
-                                "prefix": "EM",
-                                "open_time": time(0, 0),
-                                "end_time": time(23, 59),
-                                "daily_limit": 15,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
-                                ],
-                                "tags": ["Emergência", "Saúde"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Unidade Maianga",
-                "location": "Avenida dos Combatentes, Maianga, Luanda",
-                "neighborhood": "Maianga",
-                "latitude": -8.8147,
-                "longitude": 13.2302,
-                "departments": [
-                    {
-                        "name": "Consulta Geral",
-                        "sector": "Saúde",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd097",
-                                "service": "Consulta Geral",
-                                "category_id": None,
-                                "prefix": "CG",
-                                "open_time": time(8, 0),
-                                "end_time": time(17, 0),
-                                "daily_limit": 15,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Consulta", "Geral", "Saúde"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Unidade Talatona",
-                "location": "Via Expressa, Talatona, Luanda",
-                "neighborhood": "Talatona",
-                "latitude": -8.9167,
-                "longitude": 13.1833,
-                "departments": [
-                    {
-                        "name": "Consulta Geral",
-                        "sector": "Saúde",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd098",
-                                "service": "Consulta Geral",
-                                "category_id": None,
-                                "prefix": "CG",
-                                "open_time": time(8, 0),
-                                "end_time": time(17, 0),
-                                "daily_limit": 15,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(8, 0), "end_time": time(22, 0)}
-                                ],
-                                "tags": ["Consulta", "Geral", "Saúde"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    {
         "id": "018d6313-5bf1-7062-a3bd-0e99679fd099",
-        "name": "Banco de Fomento Angola",
+        "name": "Banco BAI",
         "description": "Banco comercial em Luanda",
         "branches": [
             {
@@ -176,8 +38,8 @@ institutions_data = [
                                     {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
                                     {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
                                     {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(8, 0), "end_time": time(22, 0)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(8, 0), "end_time": time(22, 0)}
+                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
                                 "tags": ["Atendimento", "Bancário"]
                             }
@@ -273,7 +135,252 @@ institutions_data = [
                                     {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
                                     {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(8, 0), "end_time": time(22, 0)}
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                ],
+                                "tags": ["Atendimento", "Bancário"]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "Agência Samba",
+                "location": "Rua Principal, Samba, Luanda",
+                "neighborhood": "Samba",
+                "latitude": -8.8200,
+                "longitude": 13.2400,
+                "departments": [
+                    {
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
+                        "queues": [
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Atendimento Geral",
+                                "category_id": None,
+                                "prefix": "AG",
+                                "open_time": time(8, 0),
+                                "end_time": time(15, 0),
+                                "daily_limit": 15,
+                                "num_counters": 4,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                ],
+                                "tags": ["Atendimento", "Bancário"]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "Agência Rangel",
+                "location": "Avenida Deolinda Rodrigues, Rangel, Luanda",
+                "neighborhood": "Rangel",
+                "latitude": -8.8300,
+                "longitude": 13.2500,
+                "departments": [
+                    {
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
+                        "queues": [
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Atendimento Geral",
+                                "category_id": None,
+                                "prefix": "AG",
+                                "open_time": time(8, 0),
+                                "end_time": time(15, 0),
+                                "daily_limit": 15,
+                                "num_counters": 4,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                ],
+                                "tags": ["Atendimento", "Bancário"]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "Agência Kilamba",
+                "location": "Cidade do Kilamba, Luanda",
+                "neighborhood": "Kilamba",
+                "latitude": -8.9333,
+                "longitude": 13.2667,
+                "departments": [
+                    {
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
+                        "queues": [
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Atendimento Geral",
+                                "category_id": None,
+                                "prefix": "AG",
+                                "open_time": time(8, 0),
+                                "end_time": time(15, 0),
+                                "daily_limit": 15,
+                                "num_counters": 4,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                ],
+                                "tags": ["Atendimento", "Bancário"]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "Agência Cazenga",
+                "location": "Rua do Mercado, Cazenga, Luanda",
+                "neighborhood": "Cazenga",
+                "latitude": -8.8500,
+                "longitude": 13.2833,
+                "departments": [
+                    {
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
+                        "queues": [
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Atendimento Geral",
+                                "category_id": None,
+                                "prefix": "AG",
+                                "open_time": time(8, 0),
+                                "end_time": time(15, 0),
+                                "daily_limit": 15,
+                                "num_counters": 4,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                ],
+                                "tags": ["Atendimento", "Bancário"]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "Agência Viana",
+                "location": "Estrada de Viana, Viana, Luanda",
+                "neighborhood": "Viana",
+                "latitude": -8.9035,
+                "longitude": 13.3741,
+                "departments": [
+                    {
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
+                        "queues": [
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Atendimento Geral",
+                                "category_id": None,
+                                "prefix": "AG",
+                                "open_time": time(8, 0),
+                                "end_time": time(15, 0),
+                                "daily_limit": 15,
+                                "num_counters": 4,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                ],
+                                "tags": ["Atendimento", "Bancário"]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "Agência Cacuaco",
+                "location": "Rua Central, Cacuaco, Luanda",
+                "neighborhood": "Cacuaco",
+                "latitude": -8.7667,
+                "longitude": 13.3667,
+                "departments": [
+                    {
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
+                        "queues": [
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Atendimento Geral",
+                                "category_id": None,
+                                "prefix": "AG",
+                                "open_time": time(8, 0),
+                                "end_time": time(15, 0),
+                                "daily_limit": 15,
+                                "num_counters": 4,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                ],
+                                "tags": ["Atendimento", "Bancário"]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "Agência Patriota",
+                "location": "Condomínio Patriota, Luanda",
+                "neighborhood": "Patriota",
+                "latitude": -8.9000,
+                "longitude": 13.2000,
+                "departments": [
+                    {
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
+                        "queues": [
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Atendimento Geral",
+                                "category_id": None,
+                                "prefix": "AG",
+                                "open_time": time(8, 0),
+                                "end_time": time(15, 0),
+                                "daily_limit": 15,
+                                "num_counters": 4,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end Time": time(15, 0)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
                                 "tags": ["Atendimento", "Bancário"]
                             }
@@ -287,8 +394,8 @@ institutions_data = [
 
 def populate_initial_data(app):
     """
-    Popula o banco de dados com dados iniciais para testes, incluindo apenas Bancos e Hospitais.
-    Cada instituição tem 3 filiais em diferentes bairros de Luanda, com 15 senhas por fila.
+    Popula o banco de dados com dados iniciais para testes, incluindo apenas Banco BAI.
+    A instituição tem 10 filiais em diferentes bairros de Luanda, com 15 senhas por fila.
     Mantém idempotência, logs em português, IDs fixos para filas principais, e compatibilidade com models.py.
     Usa bcrypt para senhas e respeita todos os relacionamentos.
     Suporta modelos de ML com dados suficientes para treinamento inicial.
@@ -524,7 +631,7 @@ def populate_initial_data(app):
                         db.session.add(super_admin)
                         users.append(super_admin)
 
-                    # INSTITUTION_ADMIN (2)
+                    # INSTITUTION_ADMIN (1 para Banco BAI)
                     for inst in Institution.query.all():
                         email = f'admin_{inst.name.lower().replace(" ", "_")}@queue.com'
                         if not User.query.filter_by(email=email).first():
@@ -541,7 +648,7 @@ def populate_initial_data(app):
                             db.session.add(admin)
                             users.append(admin)
 
-                    # DEPARTMENT_ADMIN (~13)
+                    # DEPARTMENT_ADMIN (~11, um por departamento)
                     for dept in Department.query.all():
                         # Gerar email único incluindo o nome da instituição e filial
                         inst_name = dept.branch.institution.name.lower().replace(" ", "_")
@@ -601,7 +708,7 @@ def populate_initial_data(app):
                                     id=str(uuid.uuid4()),
                                     user_id=user.id,
                                     service_category_id=category.id,
-                                    institution_id=Institution.query.first().id if i % 2 == 0 else Institution.query.offset(1).first().id,
+                                    institution_id=Institution.query.first().id,
                                     neighborhood=neighborhoods[i % len(neighborhoods)]['name']
                                 )
                                 db.session.add(preference)
@@ -613,28 +720,27 @@ def populate_initial_data(app):
                 # --------------------------------------
                 # Criar Tickets
                 # --------------------------------------
-                
                 def create_tickets():
                     """
-                    Cria 15 tickets por fila (total ~195), com ticket_number e qr_code únicos.
+                    Cria 25 tickets por fila, com ticket_number e qr_code únicos.
                     """
                     now = datetime.utcnow()
                     for queue in Queue.query.all():
                         existing_tickets = Ticket.query.filter_by(queue_id=queue.id).count()
                         if existing_tickets >= 25:
-                            app.logger.info(f"Fila {queue.service} já tem 15 tickets, pulando.")
+                            app.logger.info(f"Fila {queue.service} já tem 25 tickets, pulando.")
                             continue
-                        
+
                         # Obter informações do departamento e filial para criar um código QR único
                         department = Department.query.filter_by(id=queue.department_id).first()
                         branch_id = department.branch_id
-                        branch_code = branch_id[-4:] # Usar últimos 4 caracteres do ID da filial
-                        
+                        branch_code = branch_id[-4:]  # Usar últimos 4 caracteres do ID da filial
+
                         for i in range(25 - existing_tickets):
                             ticket_number = i + 1
                             # Criar um código QR único incluindo o ID da filial
                             qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
-                            
+
                             status = 'Atendido' if i % 2 == 0 else 'Pendente'  # Alterna para suportar ML
                             ticket = Ticket(
                                 id=str(uuid.uuid4()),
@@ -654,13 +760,8 @@ def populate_initial_data(app):
                             db.session.add(ticket)
                     db.session.flush()
                     app.logger.info("Tickets criados com sucesso.")
-                
-                create_tickets()
 
-                # --------------------------------------
-                # Criar Feedbacks de Usuário
-                # --------------------------------------
-  
+                create_tickets()
 
                 # --------------------------------------
                 # Criar Logs de Auditoria

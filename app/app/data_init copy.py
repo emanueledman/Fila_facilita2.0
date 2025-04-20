@@ -3110,7 +3110,7 @@ institutions_data = [
 ]
 
 
-def populate_initial_data(app):
+def initial_data(app):
     """
     Popula o banco de dados com dados iniciais para testes, incluindo instituições, filiais, departamentos e filas.
     Cada instituição tem filiais em diferentes bairros de Luanda, com 15 senhas por fila.
