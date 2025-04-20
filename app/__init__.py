@@ -91,9 +91,9 @@ def create_app():
         from .models import Institution, Queue, User, Ticket, Department, UserPreference, UserRole, Branch, ServiceCategory, ServiceTag, QueueSchedule, AuditLog
         
         # Criar tabelas, limpando a base a cada inicialização
-        ##db.drop_all()
-        ##db.create_all()
-        ##app.logger.info("Tabelas criadas ou verificadas no banco de dados")
+        db.drop_all()
+        db.create_all()
+        app.logger.info("Tabelas criadas ou verificadas no banco de dados")
         
         # Inserir dados iniciais de forma idempotente
         from .data_init import populate_initial_data
