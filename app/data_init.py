@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 # Dados de teste ajustados para Administrações Municipais de Luanda com 10 filiais
 institutions_data = [
     {
-        "id": "018d6713-5bf1-7082-a3bd-0e99679fd099",
+        "id": str(uuid.uuid4()),
         "name": "Administrações Municipais de Luanda",
         "description": "Administrações municipais responsáveis por serviços públicos em Luanda",
         "branches": [
@@ -24,7 +24,7 @@ institutions_data = [
                         "sector": "Administrativo",
                         "queues": [
                             {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd100",
+                                "id": str(uuid.uuid4()),
                                 "service": "Atendimento Geral",
                                 "category_id": None,
                                 "prefix": "AG",
@@ -50,7 +50,7 @@ institutions_data = [
                         "sector": "Administrativo",
                         "queues": [
                             {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd101",
+                                "id": str(uuid.uuid4()),
                                 "service": "Documentos",
                                 "category_id": None,
                                 "prefix": "DOC",
@@ -85,7 +85,7 @@ institutions_data = [
                         "sector": "Administrativo",
                         "queues": [
                             {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd102",
+                                "id": str(uuid.uuid4()),
                                 "service": "Atendimento Geral",
                                 "category_id": None,
                                 "prefix": "AG",
@@ -120,7 +120,7 @@ institutions_data = [
                         "sector": "Administrativo",
                         "queues": [
                             {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd103",
+                                "id": str(uuid.uuid4()),
                                 "service": "Atendimento Geral",
                                 "category_id": None,
                                 "prefix": "AG",
@@ -396,7 +396,7 @@ def populate_initial_data(app):
     """
     Popula o banco de dados com dados iniciais para testes, incluindo apenas Administrações Municipais de Luanda.
     A instituição tem 10 filiais em diferentes bairros de Luanda, com 15 senhas por fila.
-    Mantém idempotência, logs em português, IDs fixos para filas principais, e compatibilidade com models.py.
+    Mantém idempotência, logs em português, e compatibilidade com models.py.
     Usa bcrypt para senhas e respeita todos os relacionamentos.
     Suporta modelos de ML com dados suficientes para treinamento inicial.
     """
@@ -583,9 +583,9 @@ def populate_initial_data(app):
                     """
                     Cria uma instituição com suas filiais.
                     """
-                    existing_inst = Institution.query.filter_by(id=inst_data['id']).first()
+                    existing_inst = Institution.query.filter_by(name=inst_data['name']).first()
                     if existing_inst:
-                        app.logger.info(f"Instituição {inst_data['name']} já existe com ID {inst_data['id']}, pulando.")
+                        app.logger.info(f"Instituição {inst_data['name']} já existe, pulando.")
                         return existing_inst
 
                     institution = Institution(
