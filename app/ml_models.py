@@ -11,7 +11,7 @@ from fbprophet import Prophet
 from sqlalchemy import and_
 from datetime import datetime, timedelta
 from app import db
-from app.models import Queue, Ticket, Department, UserFeedback, ServiceTag, UserPreference, QueueSchedule, Branch
+from app.models import Queue, Ticket, Department, ServiceTag, UserPreference, QueueSchedule, Branch, Weekday
 from geopy.distance import geodesic
 import joblib
 import os
@@ -82,17 +82,13 @@ class WaitTimePredictor:
                 if not tickets:
                     break
 
-                feedbacks = db.session.query(UserFeedback).filter(
-                    UserFeedback.ticket_id.in_([t.id for t in tickets])
-                ).all()
-                feedback_map = {f.ticket_id: f.rating for f in feedbacks}
-
+               
                 for ticket in tickets:
                     position = max(0, ticket.ticket_number - queue.current_ticket)
                     hour_of_day = ticket.issued_at.hour
                     sector_encoded = self.get_sector_id(queue.department.sector if queue.department else None)
                     category_encoded = self.get_category_id(queue.category_id)
-                    rating = feedback_map.get(ticket.id, 3.0)
+                   
                     data.append({
                         'position': position,
                         'active_tickets': queue.active_tickets,
@@ -102,7 +98,7 @@ class WaitTimePredictor:
                         'daily_limit': queue.daily_limit or 100,
                         'sector_encoded': sector_encoded,
                         'category_encoded': category_encoded,
-                        'recent_feedback_rating': rating,
+
                         'service_time': ticket.service_time
                     })
 
@@ -127,7 +123,7 @@ class WaitTimePredictor:
                         hour_of_day = ticket.issued_at.hour
                         sector_encoded = self.get_sector_id(similar_queue.department.sector if similar_queue.department else None)
                         category_encoded = self.get_category_id(similar_queue.category_id)
-                        rating = feedback_map.get(ticket.id, 3.0)
+                        
                         data.append({
                             'position': position,
                             'active_tickets': similar_queue.active_tickets,
@@ -137,7 +133,7 @@ class WaitTimePredictor:
                             'daily_limit': similar_queue.daily_limit or 100,
                             'sector_encoded': sector_encoded,
                             'category_encoded': category_encoded,
-                            'recent_feedback_rating': rating,
+
                             'service_time': ticket.service_time
                         })
 
@@ -284,9 +280,8 @@ class ServiceRecommendationPredictor:
                     Ticket.service_time.isnot(None),
                     Ticket.service_time > 0
                 ).limit(batch_size).all()
-                feedbacks = db.session.query(UserFeedback).join(Ticket).filter(Ticket.queue_id == queue.id).all()
-                avg_rating = np.mean([f.rating for f in feedbacks]) if feedbacks else 3.0
-
+                
+                
                 service_times = [t.service_time for t in tickets]
                 avg_service_time = np.mean(service_times) if service_times else 30
                 availability = max(0, queue.daily_limit - queue.active_tickets)
@@ -304,7 +299,7 @@ class ServiceRecommendationPredictor:
                 quality_score = (
                     0.3 * (availability / max(1, queue.daily_limit))
                     + 0.25 * (1 / (1 + avg_service_time / 30))
-                    + 0.2 * (avg_rating / 5)
+
                     + 0.15 * (1 / (1 + predicted_demand / 10))
                     + 0.1 * tag_similarity
                 )
@@ -316,7 +311,7 @@ class ServiceRecommendationPredictor:
                     'sector_encoded': self.get_sector_id(queue.department.sector if queue.department else None),
                     'category_encoded': self.get_category_id(queue.category_id),
                     'is_open': is_open,
-                    'avg_rating': avg_rating,
+
                     'tag_similarity': tag_similarity,
                     'predicted_demand': predicted_demand,
                     'is_preferred_institution': 1 if branch and branch.institution_id in preferred_institutions else 0,
@@ -375,8 +370,7 @@ class ServiceRecommendationPredictor:
                     return self.DEFAULT_SCORE
 
             branch = Branch.query.join(Department).filter(Department.id == queue.department_id).first()
-            feedbacks = db.session.query(UserFeedback).join(Ticket).filter(Ticket.queue_id == queue.id).all()
-            avg_rating = np.mean([f.rating for f in feedbacks]) if feedbacks else 3.0
+            
             tickets = Ticket.query.filter(
                 Ticket.queue_id == queue.id,
                 Ticket.status == 'Atendido',
@@ -404,7 +398,7 @@ class ServiceRecommendationPredictor:
                 self.get_sector_id(queue.department.sector if queue.department else None),
                 self.get_category_id(queue.category_id),
                 is_open,
-                avg_rating,
+
                 tag_similarity,
                 predicted_demand,
                 1 if branch and branch.institution_id in preferred_institutions else 0,
