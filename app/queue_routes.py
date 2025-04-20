@@ -1185,6 +1185,198 @@ def init_queue_routes(app):
             logger.error(f"Erro inesperado ao obter dashboard para institution_id={institution_id}: {str(e)}")
             return jsonify({'error': 'Erro ao obter dados do dashboard'}), 500
 
+    @app.route('/api/services/search', methods=['GET'])
+    def search_all_services():
+        try:
+            user_id = request.user_id if hasattr(request, 'user_id') else None
+
+            # Parâmetros da requisição
+            query = request.args.get('query', '').strip()
+            user_lat = request.args.get('latitude')
+            user_lon = request.args.get('longitude')
+            neighborhood = request.args.get('neighborhood')
+            category_id = request.args.get('category_id')
+            tags = request.args.get('tags')
+            max_wait_time = request.args.get('max_wait_time')
+            min_quality_score = request.args.get('min_quality_score')
+            sort_by = request.args.get('sort_by', 'score')  # Opções: score, wait_time, distance, quality_score
+            page = request.args.get('page', '1')
+            per_page = request.args.get('per_page', '20')
+
+            # Validações
+            if query and not re.match(r'^[A-Za-zÀ-ÿ\s]{1,100}$', query):
+                logger.warning(f"Query inválida: {query}")
+                return jsonify({'error': 'Query inválida'}), 400
+            if neighborhood and not re.match(r'^[A-Za-zÀ-ÿ\s,]{1,100}$', neighborhood):
+                logger.warning(f"Bairro inválido: {neighborhood}")
+                return jsonify({'error': 'Bairro inválido'}), 400
+            if user_lat and user_lon:
+                try:
+                    user_lat = float(user_lat)
+                    user_lon = float(user_lon)
+                except (ValueError, TypeError):
+                    logger.warning(f"Latitude ou longitude inválidos: lat={user_lat}, lon={user_lon}")
+                    return jsonify({'error': 'Latitude e longitude devem ser números'}), 400
+            if category_id and not isinstance(category_id, str):
+                logger.warning(f"category_id inválido: {category_id}")
+                return jsonify({'error': 'category_id deve ser uma string'}), 400
+            if tags:
+                tags = tags.split(',')
+                if not all(re.match(r'^[A-Za-zÀ-ÿ\s]{1,50}$', tag.strip()) for tag in tags):
+                    logger.warning(f"Tags inválidas: {tags}")
+                    return jsonify({'error': 'Tags inválidas'}), 400
+            if max_wait_time:
+                try:
+                    max_wait_time = float(max_wait_time)
+                    if max_wait_time <= 0:
+                        raise ValueError
+                except (ValueError, TypeError):
+                    logger.warning(f"max_wait_time inválido: {max_wait_time}")
+                    return jsonify({'error': 'max_wait_time deve ser um número positivo'}), 400
+            if min_quality_score:
+                try:
+                    min_quality_score = float(min_quality_score)
+                    if not 0 <= min_quality_score <= 1:
+                        raise ValueError
+                except (ValueError, TypeError):
+                    logger.warning(f"min_quality_score inválido: {min_quality_score}")
+                    return jsonify({'error': 'min_quality_score deve estar entre 0 e 1'}), 400
+            if sort_by not in ['score', 'wait_time', 'distance', 'quality_score']:
+                logger.warning(f"sort_by inválido: {sort_by}")
+                return jsonify({'error': 'sort_by deve ser score, wait_time, distance ou quality_score'}), 400
+            try:
+                page = int(page)
+                per_page = int(per_page)
+                if page < 1 or per_page < 1:
+                    raise ValueError
+            except (ValueError, TypeError):
+                logger.warning(f"Página ou per_page inválidos: page={page}, per_page={per_page}")
+                return jsonify({'error': 'Página e itens por página devem ser números inteiros positivos'}), 400
+            if per_page > 100:
+                logger.warning(f"Per_page excede o máximo: {per_page}")
+                return jsonify({'error': 'Máximo de itens por página é 100'}), 400
+
+            # Cache
+            cache_key = f"services:{query}:{neighborhood}:{category_id}:{tags}:{max_wait_time}:{min_quality_score}:{sort_by}:{page}:{per_page}"
+            try:
+                cached_data = redis_client.get(cache_key)
+                if cached_data:
+                    logger.info(f"Retornando resultado do cache para {cache_key}")
+                    return jsonify(json.loads(cached_data))
+            except Exception as e:
+                logger.warning(f"Erro ao acessar Redis para {cache_key}: {e}")
+
+            # Consultar filas
+            queues_query = Queue.query.join(Department).join(Branch).join(Institution)
+            if query:
+                queues_query = queues_query.filter(Queue.service.ilike(f'%{query}%'))
+            if category_id:
+                queues_query = queues_query.filter(Queue.category_id == category_id)
+            if tags:
+                queues_query = queues_query.join(ServiceTag).filter(ServiceTag.tag.in_(tags))
+            if neighborhood:
+                queues_query = queues_query.filter(Branch.neighborhood.ilike(f'%{neighborhood}%'))
+
+            queues = queues_query.all()
+            result = {'branches': [], 'total': 0}
+            branch_data = {}
+            user_prefs = UserPreference.query.filter_by(user_id=user_id).all() if user_id else []
+            preferred_categories = {p.service_category_id for p in user_prefs if p.service_category_id}
+            preferred_neighborhoods = {p.neighborhood for p in user_prefs if p.neighborhood}
+
+            # Processar filas por filial
+            for queue in queues:
+                branch = queue.department.branch
+                institution = queue.department.institution
+                wait_time = QueueService.calculate_wait_time(queue.id, queue.active_tickets + 1, 0)
+                quality_score = service_recommendation_predictor.predict(queue, user_id, user_lat, user_lon)
+
+                # Aplicar filtros
+                if max_wait_time and (not isinstance(wait_time, (int, float)) or wait_time > max_wait_time):
+                    continue
+                if min_quality_score and quality_score < min_quality_score:
+                    continue
+
+                distance = QueueService.calculate_distance(user_lat, user_lon, branch) if user_lat and user_lon else float('inf')
+                predicted_demand = demand_model.predict(queue.id, hours_ahead=1)
+
+                # Calcular pontuação composta
+                composite_score = (
+                    (1 / (1 + distance)) * 0.4 +
+                    quality_score * 0.3 +
+                    (1 / (1 + wait_time / 10)) * 0.2 +
+                    (1 / (1 + predicted_demand / 10)) * 0.1
+                )
+                if queue.category_id in preferred_categories:
+                    composite_score += 0.15
+                if branch.neighborhood in preferred_neighborhoods:
+                    composite_score += 0.1
+
+                branch_key = branch.id
+                if branch_key not in branch_data:
+                    branch_data[branch_key] = {
+                        'id': branch.id,
+                        'institution_name': institution.name or "Desconhecida",
+                        'name': branch.name or "Desconhecida",
+                        'location': branch.location or "Desconhecida",
+                        'neighborhood': branch.neighborhood or "Desconhecido",
+                        'latitude': float(branch.latitude) if branch.latitude else None,
+                        'longitude': float(branch.longitude) if branch.longitude else None,
+                        'distance': float(distance) if distance != float('inf') else None,
+                        'queues': [],
+                        'max_composite_score': 0
+                    }
+
+                branch_data[branch_key]['queues'].append({
+                    'id': queue.id,
+                    'service': queue.service or "Desconhecido",
+                    'category_id': queue.category_id,
+                    'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else "N/A",
+                    'quality_score': float(quality_score),
+                    'predicted_demand': float(predicted_demand),
+                    'composite_score': float(composite_score)
+                })
+                branch_data[branch_key]['max_composite_score'] = max(
+                    branch_data[branch_key]['max_composite_score'], composite_score
+                )
+
+            # Converter para lista e ordenar
+            branches = list(branch_data.values())
+            if sort_by == 'distance':
+                branches.sort(key=lambda x: x['distance'] if x['distance'] is not None else float('inf'))
+            elif sort_by == 'wait_time':
+                branches.sort(key=lambda x: min(
+                    (q['wait_time'] if q['wait_time'] != "N/A" else float('inf') for q in x['queues']),
+                    default=float('inf')
+                ))
+            elif sort_by == 'quality_score':
+                branches.sort(key=lambda x: max((q['quality_score'] for q in x['queues']), default=0), reverse=True)
+            else:  # score
+                branches.sort(key=lambda x: x['max_composite_score'], reverse=True)
+
+            # Paginação
+            total = len(branches)
+            start = (page - 1) * per_page
+            end = start + per_page
+            branches = branches[start:end]
+
+            result['branches'] = branches
+            result['total'] = total
+            result['page'] = page
+            result['per_page'] = per_page
+
+            # Salvar no cache
+            try:
+                redis_client.setex(cache_key, 30, json.dumps(result, default=str))
+            except Exception as e:
+                logger.warning(f"Erro ao salvar cache para {cache_key}: {e}")
+
+            logger.info(f"Serviços buscados para query={query}: {total} filiais encontradas")
+            return jsonify(result), 200
+        except Exception as e:
+            logger.error(f"Erro ao buscar serviços: {str(e)}")
+            return jsonify({'error': f'Erro ao buscar serviços: {str(e)}'}), 500
+
     @socketio.on('connect_dashboard', namespace='/dashboard')
     def handle_dashboard_connect(data):
         institution_id = data.get('institution_id')
