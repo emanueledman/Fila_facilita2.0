@@ -613,9 +613,10 @@ def populate_initial_data(app):
                 # --------------------------------------
                 # Criar Tickets
                 # --------------------------------------
+                
                 def create_tickets():
                     """
-                    Cria 15 tickets por fila (total ~195), com ticket_number e qr_code.
+                    Cria 15 tickets por fila (total ~195), com ticket_number e qr_code únicos.
                     """
                     now = datetime.utcnow()
                     for queue in Queue.query.all():
@@ -623,9 +624,17 @@ def populate_initial_data(app):
                         if existing_tickets >= 15:
                             app.logger.info(f"Fila {queue.service} já tem 15 tickets, pulando.")
                             continue
+                        
+                        # Obter informações do departamento e filial para criar um código QR único
+                        department = Department.query.filter_by(id=queue.department_id).first()
+                        branch_id = department.branch_id
+                        branch_code = branch_id[-4:] # Usar últimos 4 caracteres do ID da filial
+                        
                         for i in range(15 - existing_tickets):
                             ticket_number = i + 1
-                            qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}"
+                            # Criar um código QR único incluindo o ID da filial
+                            qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
+                            
                             status = 'Atendido' if i % 2 == 0 else 'Pendente'  # Alterna para suportar ML
                             ticket = Ticket(
                                 id=str(uuid.uuid4()),
@@ -645,7 +654,7 @@ def populate_initial_data(app):
                             db.session.add(ticket)
                     db.session.flush()
                     app.logger.info("Tickets criados com sucesso.")
-
+                
                 create_tickets()
 
                 # --------------------------------------
