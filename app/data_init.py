@@ -39,7 +39,7 @@ institutions_data = [
                                     {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
                                     {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                    {"weekday": Weekday.SUNDAY, "open_time": time(8, 0), "end_time": time(22, 0)}
                                 ],
                                 "tags": ["Consulta", "Geral", "Saúde"]
                             }
@@ -135,7 +135,7 @@ institutions_data = [
                                     {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
                                     {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                    {"weekday": Weekday.SUNDAY, "open_time": time(8, 0), "end_time": time(22, 0)}
                                 ],
                                 "tags": ["Consulta", "Geral", "Saúde"]
                             }
@@ -176,8 +176,8 @@ institutions_data = [
                                     {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
                                     {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
                                     {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                    {"weekday": Weekday.SATURDAY, "open_time": time(8, 0), "end_time": time(22, 0)},
+                                    {"weekday": Weekday.SUNDAY, "open_time": time(8, 0), "end_time": time(22, 0)}
                                 ],
                                 "tags": ["Atendimento", "Bancário"]
                             }
@@ -273,7 +273,7 @@ institutions_data = [
                                     {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
                                     {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                    {"weekday": Weekday.SUNDAY, "open_time": time(8, 0), "end_time": time(22, 0)}
                                 ],
                                 "tags": ["Atendimento", "Bancário"]
                             }
