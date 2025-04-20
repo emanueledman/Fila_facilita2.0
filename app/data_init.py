@@ -660,27 +660,7 @@ def populate_initial_data(app):
                 # --------------------------------------
                 # Criar Feedbacks de Usuário
                 # --------------------------------------
-                def create_user_feedbacks():
-                    """
-                    Cria feedbacks para tickets atendidos, para suportar ServiceRecommendationPredictor.
-                    """
-                    tickets = Ticket.query.filter_by(status='Atendido').all()
-                    for i, ticket in enumerate(tickets):
-                        existing_feedback = UserFeedback.query.filter_by(ticket_id=ticket.id).first()
-                        if not existing_feedback:
-                            feedback = UserFeedback(
-                                id=str(uuid.uuid4()),
-                                ticket_id=ticket.id,
-                                user_id=ticket.user_id,
-                                rating=3.0 + (i % 3),  # Ratings variam entre 3 e 5
-                                comment=f"Feedback teste {i+1}",
-                                created_at=datetime.utcnow()
-                            )
-                            db.session.add(feedback)
-                    db.session.flush()
-                    app.logger.info("Feedbacks de usuário criados com sucesso.")
-
-                create_user_feedbacks()
+  
 
                 # --------------------------------------
                 # Criar Logs de Auditoria
