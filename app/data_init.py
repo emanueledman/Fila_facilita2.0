@@ -291,6 +291,7 @@ def populate_initial_data(app):
     Cada instituição tem 3 filiais em diferentes bairros de Luanda, com 15 senhas por fila.
     Mantém idempotência, logs em português, IDs fixos para filas principais, e compatibilidade com models.py.
     Usa bcrypt para senhas e respeita todos os relacionamentos.
+    Suporta modelos de ML com dados suficientes para treinamento inicial.
     """
     with app.app_context():
         try:
@@ -488,7 +489,7 @@ def populate_initial_data(app):
                     db.session.add(institution)
                     db.session.flush()
 
-                    for branch_data in inst['branches']:
+                    for branch_data in inst_data['branches']:
                         create_branch(institution.id, branch_data)
 
                     return institution
@@ -504,8 +505,7 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_users():
                     """
-                    Cria ~60 usuários: 1 SYSTEM_ADMIN, 1 INSTITUTION_ADMIN por instituição (2),
-                    1 DEPARTMENT_ADMIN por departamento (13), 10 USER.
+                    Cria ~26 usuários: 1 SYSTEM_ADMIN, 2 INSTITUTION_ADMIN, ~13 DEPARTMENT_ADMIN, 10 USER.
                     Usa User.set_password com bcrypt.
                     Garante emails únicos para DEPARTMENT_ADMIN.
                     """
@@ -601,6 +601,7 @@ def populate_initial_data(app):
                                     id=str(uuid.uuid4()),
                                     user_id=user.id,
                                     service_category_id=category.id,
+                                    institution_id=Institution.query.first().id if i % 2 == 0 else Institution.query.offset(1).first().id,
                                     neighborhood=neighborhoods[i % len(neighborhoods)]['name']
                                 )
                                 db.session.add(preference)
@@ -625,20 +626,20 @@ def populate_initial_data(app):
                         for i in range(15 - existing_tickets):
                             ticket_number = i + 1
                             qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}"
-                            status = 'Pendente' if i % 2 == 0 else 'Atendido'  # Alterna para simular
+                            status = 'Atendido' if i % 2 == 0 else 'Pendente'  # Alterna para suportar ML
                             ticket = Ticket(
                                 id=str(uuid.uuid4()),
                                 queue_id=queue.id,
                                 user_id=users[i % len(users)].id,
                                 ticket_number=ticket_number,
                                 qr_code=qr_code,
-                                priority=0,
+                                priority=1 if i % 3 == 0 else 0,  # Adiciona prioridades para ML
                                 is_physical=False,
                                 status=status,
-                                issued_at=now - timedelta(days=i),
+                                issued_at=now - timedelta(days=i % 7),  # Distribui tickets em 7 dias
                                 expires_at=now + timedelta(days=1),
-                                counter=None,
-                                service_time=0.0 if status == 'Pendente' else 300.0,  # Simula 5 minutos
+                                counter=1 if status == 'Atendido' else None,
+                                service_time=300.0 if status == 'Atendido' else 0.0,  # 5 minutos para atendidos
                                 trade_available=False
                             )
                             db.session.add(ticket)
@@ -646,6 +647,31 @@ def populate_initial_data(app):
                     app.logger.info("Tickets criados com sucesso.")
 
                 create_tickets()
+
+                # --------------------------------------
+                # Criar Feedbacks de Usuário
+                # --------------------------------------
+                def create_user_feedbacks():
+                    """
+                    Cria feedbacks para tickets atendidos, para suportar ServiceRecommendationPredictor.
+                    """
+                    tickets = Ticket.query.filter_by(status='Atendido').all()
+                    for i, ticket in enumerate(tickets):
+                        existing_feedback = UserFeedback.query.filter_by(ticket_id=ticket.id).first()
+                        if not existing_feedback:
+                            feedback = UserFeedback(
+                                id=str(uuid.uuid4()),
+                                ticket_id=ticket.id,
+                                user_id=ticket.user_id,
+                                rating=3.0 + (i % 3),  # Ratings variam entre 3 e 5
+                                comment=f"Feedback teste {i+1}",
+                                created_at=datetime.utcnow()
+                            )
+                            db.session.add(feedback)
+                    db.session.flush()
+                    app.logger.info("Feedbacks de usuário criados com sucesso.")
+
+                create_user_feedbacks()
 
                 # --------------------------------------
                 # Criar Logs de Auditoria

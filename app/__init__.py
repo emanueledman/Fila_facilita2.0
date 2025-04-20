@@ -88,7 +88,7 @@ def create_app():
     limiter.storage_uri = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
     
     with app.app_context():
-        from .models import Institution, Queue, User, Ticket, Department, UserPreference, UserRole, Branch, ServiceCategory, ServiceTag, QueueSchedule, AuditLog 
+        from .models import Institution, Queue, User, Ticket, Department, UserPreference, UserRole, Branch, ServiceCategory, ServiceTag, QueueSchedule, AuditLog
         
         # Criar tabelas, limpando a base a cada inicialização
         db.drop_all()
@@ -107,7 +107,7 @@ def create_app():
         # Inicializar modelos de ML
         app.logger.debug("Tentando importar preditores de ML")
         try:
-            from .ml_models import wait_time_predictor, service_recommendation_predictor, initialize_models
+            from .ml_models import wait_time_predictor, service_recommendation_predictor, collaborative_model, demand_model, clustering_model, initialize_models
             app.logger.info("Preditores de ML importados com sucesso")
             initialize_models(app)
         except ImportError as e:
@@ -120,8 +120,14 @@ def create_app():
             for queue in queues:
                 app.logger.debug(f"Treinando WaitTimePredictor para queue_id={queue.id}")
                 wait_time_predictor.train(queue.id)
+                app.logger.debug(f"Treinando DemandForecastingModel para queue_id={queue.id}")
+                demand_model.train(queue.id)
             app.logger.debug("Treinando ServiceRecommendationPredictor")
             service_recommendation_predictor.train()
+            app.logger.debug("Treinando CollaborativeFilteringModel")
+            collaborative_model.train()
+            app.logger.debug("Treinando ServiceClusteringModel")
+            clustering_model.train()
             app.logger.info("Modelos de ML inicializados na startup")
         except Exception as e:
             app.logger.error(f"Erro ao inicializar modelos de ML: {str(e)}")
