@@ -12,7 +12,7 @@ flask-socketio==5.3.6
 reportlab==4.2.2
 eventlet==0.36.1
 Flask-Migrate==4.0.7
-bcrypt>=4.0.1
+bcrypt==4.0.1
 scikit-learn==1.5.1
 pandas==2.2.2
 joblib==1.4.2
@@ -20,5 +20,6 @@ flask-limiter==3.8.0
 flask-cors==4.0.1
 redis==5.0.8
 geopy==2.4.1
-prophet==1.1.2  
-cmdstanpy==1.2.0 
+prophet==1.1.2
+cmdstanpy==1.2.0
+holidays==0.24
