@@ -8,23 +8,23 @@ from sqlalchemy.exc import SQLAlchemyError
 # Dados de teste ajustados para Administrações Municipais de Luanda com 10 filiais
 institutions_data = [
     {
-        "id": str(uuid.uuid4()),
-        "name": "Administrações Municipais de Luanda",
-        "description": "Administrações municipais responsáveis por serviços públicos em Luanda",
+        "id": "018d6313-5bf1-7062-a3bd-0e99679fd099",
+        "name": "Banco BAI",
+        "description": "Banco comercial em Luanda",
         "branches": [
             {
-                "name": "Administração Municipal Ingombota",
+                "name": "Agência Ingombota",
                 "location": "Avenida 4 de Fevereiro, Ingombota, Luanda",
                 "neighborhood": "Ingombota",
                 "latitude": -8.8167,
                 "longitude": 13.2332,
                 "departments": [
                     {
-                        "name": "Atendimento ao Cidadão",
-                        "sector": "Administrativo",
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
                         "queues": [
                             {
-                                "id": str(uuid.uuid4()),
+                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd100",
                                 "service": "Atendimento Geral",
                                 "category_id": None,
                                 "prefix": "AG",
@@ -41,19 +41,19 @@ institutions_data = [
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Atendimento", "Administrativo"]
+                                "tags": ["Atendimento", "Bancário"]
                             }
                         ]
                     },
                     {
-                        "name": "Emissão de Documentos",
-                        "sector": "Administrativo",
+                        "name": "Caixa",
+                        "sector": "Bancário",
                         "queues": [
                             {
-                                "id": str(uuid.uuid4()),
-                                "service": "Documentos",
+                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd101",
+                                "service": "Caixa",
                                 "category_id": None,
-                                "prefix": "DOC",
+                                "prefix": "CX",
                                 "open_time": time(8, 0),
                                 "end_time": time(15, 0),
                                 "daily_limit": 15,
@@ -67,25 +67,25 @@ institutions_data = [
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Documentos", "Administrativo"]
+                                "tags": ["Caixa", "Bancário"]
                             }
                         ]
                     }
                 ]
             },
             {
-                "name": "Administração Municipal Maianga",
+                "name": "Agência Maianga",
                 "location": "Rua Che Guevara, Maianga, Luanda",
                 "neighborhood": "Maianga",
                 "latitude": -8.8147,
                 "longitude": 13.2302,
                 "departments": [
                     {
-                        "name": "Atendimento ao Cidadão",
-                        "sector": "Administrativo",
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
                         "queues": [
                             {
-                                "id": str(uuid.uuid4()),
+                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd102",
                                 "service": "Atendimento Geral",
                                 "category_id": None,
                                 "prefix": "AG",
@@ -102,25 +102,25 @@ institutions_data = [
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Atendimento", "Administrativo"]
+                                "tags": ["Atendimento", "Bancário"]
                             }
                         ]
                     }
                 ]
             },
             {
-                "name": "Administração Municipal Talatona",
+                "name": "Agência Talatona",
                 "location": "Condomínio Belas Business Park, Talatona, Luanda",
                 "neighborhood": "Talatona",
                 "latitude": -8.9167,
                 "longitude": 13.1833,
                 "departments": [
                     {
-                        "name": "Atendimento ao Cidadão",
-                        "sector": "Administrativo",
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
                         "queues": [
                             {
-                                "id": str(uuid.uuid4()),
+                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd103",
                                 "service": "Atendimento Geral",
                                 "category_id": None,
                                 "prefix": "AG",
@@ -137,22 +137,22 @@ institutions_data = [
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Atendimento", "Administrativo"]
+                                "tags": ["Atendimento", "Bancário"]
                             }
                         ]
                     }
                 ]
             },
             {
-                "name": "Administração Municipal Samba",
+                "name": "Agência Samba",
                 "location": "Rua Principal, Samba, Luanda",
                 "neighborhood": "Samba",
                 "latitude": -8.8200,
                 "longitude": 13.2400,
                 "departments": [
                     {
-                        "name": "Atendimento ao Cidadão",
-                        "sector": "Administrativo",
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
@@ -172,22 +172,22 @@ institutions_data = [
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Atendimento", "Administrativo"]
+                                "tags": ["Atendimento", "Bancário"]
                             }
                         ]
                     }
                 ]
             },
             {
-                "name": "Administração Municipal Rangel",
+                "name": "Agência Rangel",
                 "location": "Avenida Deolinda Rodrigues, Rangel, Luanda",
                 "neighborhood": "Rangel",
                 "latitude": -8.8300,
                 "longitude": 13.2500,
                 "departments": [
                     {
-                        "name": "Atendimento ao Cidadão",
-                        "sector": "Administrativo",
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
@@ -207,22 +207,22 @@ institutions_data = [
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Atendimento", "Administrativo"]
+                                "tags": ["Atendimento", "Bancário"]
                             }
                         ]
                     }
                 ]
             },
             {
-                "name": "Administração Municipal Kilamba",
+                "name": "Agência Kilamba",
                 "location": "Cidade do Kilamba, Luanda",
                 "neighborhood": "Kilamba",
                 "latitude": -8.9333,
                 "longitude": 13.2667,
                 "departments": [
                     {
-                        "name": "Atendimento ao Cidadão",
-                        "sector": "Administrativo",
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
@@ -242,22 +242,22 @@ institutions_data = [
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Atendimento", "Administrativo"]
+                                "tags": ["Atendimento", "Bancário"]
                             }
                         ]
                     }
                 ]
             },
             {
-                "name": "Administração Municipal Cazenga",
+                "name": "Agência Cazenga",
                 "location": "Rua do Mercado, Cazenga, Luanda",
                 "neighborhood": "Cazenga",
                 "latitude": -8.8500,
                 "longitude": 13.2833,
                 "departments": [
                     {
-                        "name": "Atendimento ao Cidadão",
-                        "sector": "Administrativo",
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
@@ -277,22 +277,22 @@ institutions_data = [
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Atendimento", "Administrativo"]
+                                "tags": ["Atendimento", "Bancário"]
                             }
                         ]
                     }
                 ]
             },
             {
-                "name": "Administração Municipal Viana",
+                "name": "Agência Viana",
                 "location": "Estrada de Viana, Viana, Luanda",
                 "neighborhood": "Viana",
                 "latitude": -8.9035,
                 "longitude": 13.3741,
                 "departments": [
                     {
-                        "name": "Atendimento ao Cidadão",
-                        "sector": "Administrativo",
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
@@ -312,22 +312,22 @@ institutions_data = [
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Atendimento", "Administrativo"]
+                                "tags": ["Atendimento", "Bancário"]
                             }
                         ]
                     }
                 ]
             },
             {
-                "name": "Administração Municipal Cacuaco",
+                "name": "Agência Cacuaco",
                 "location": "Rua Central, Cacuaco, Luanda",
                 "neighborhood": "Cacuaco",
                 "latitude": -8.7667,
                 "longitude": 13.3667,
                 "departments": [
                     {
-                        "name": "Atendimento ao Cidadão",
-                        "sector": "Administrativo",
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
@@ -347,22 +347,22 @@ institutions_data = [
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Atendimento", "Administrativo"]
+                                "tags": ["Atendimento", "Bancário"]
                             }
                         ]
                     }
                 ]
             },
             {
-                "name": "Administração Municipal Patriota",
+                "name": "Agência Patriota",
                 "location": "Condomínio Patriota, Luanda",
                 "neighborhood": "Patriota",
                 "latitude": -8.9000,
                 "longitude": 13.2000,
                 "departments": [
                     {
-                        "name": "Atendimento ao Cidadão",
-                        "sector": "Administrativo",
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
@@ -375,14 +375,14 @@ institutions_data = [
                                 "num_counters": 4,
                                 "schedules": [
                                     {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end Time": time(15, 0)},
                                     {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
                                     {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
                                     {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Atendimento", "Administrativo"]
+                                "tags": ["Atendimento", "Bancário"]
                             }
                         ]
                     }
