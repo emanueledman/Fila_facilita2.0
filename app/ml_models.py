@@ -524,7 +524,7 @@ class DemandForecastingModel:
                 {'ds': t.issued_at, 'y': 1}
                 for t in tickets
             ])
-            df = df.groupby(pd.Grouper(key='ds', freq='H')).sum().reset_index()
+            df = df.groupby(pd.Grouper(key='ds', freq='h')).sum().reset_index()
             return df
         except Exception as e:
             logger.error(f"Erro ao preparar dados de demanda para queue_id={queue_id}: {e}")
@@ -572,7 +572,7 @@ class DemandForecastingModel:
             return 0
         try:
             model = self.models[queue_id]
-            future = model.make_future_dataframe(periods=hours_ahead, freq='H')
+            future = model.make_future_dataframe(periods=hours_ahead, freq='h')
             forecast = model.predict(future)
             predicted_demand = forecast.tail(1)['yhat'].iloc[0]
             return max(0, round(predicted_demand, 1))
