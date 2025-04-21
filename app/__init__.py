@@ -92,17 +92,17 @@ def create_app():
         
         # Criar tabelas, limpando a base a cada inicialização
         #db.drop_all()
-        db.create_all()
-        app.logger.info("Tabelas criadas ou verificadas no banco de dados")
+        #db.create_all()
+        #app.logger.info("Tabelas criadas ou verificadas no banco de dados")
         
         # Inserir dados iniciais de forma idempotente
-        from .data_init import populate_initial_data
-        try:
-            populate_initial_data(app)
-            app.logger.info("Dados iniciais inseridos automaticamente")
-        except Exception as e:
-            app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
-            raise  # Re-lançar para depuração no Render
+        #from .data_init import populate_initial_data
+        #try:
+        #    populate_initial_data(app)
+        #    app.logger.info("Dados iniciais inseridos automaticamente")
+        #except Exception as e:
+        #    app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
+         #   raise  # Re-lançar para depuração no Render
         
         # Inicializar modelos de ML
         app.logger.debug("Tentando importar preditores de ML")
