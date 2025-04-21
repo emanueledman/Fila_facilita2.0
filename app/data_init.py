@@ -477,9 +477,18 @@ def populate_initial_data(app):
                     """
                     Cria uma fila com agendamentos e tags, conforme models.py.
                     """
+                    # Verifica se a fila existe pelo ID específico
                     existing_queue = Queue.query.filter_by(id=queue_data['id']).first()
+                    # Se não existe pelo ID, verifica pelo nome e departamento
+                    if not existing_queue:
+                        existing_queue = Queue.query.filter_by(
+                            department_id=department_id, 
+                            service=queue_data['service'],
+                            prefix=queue_data['prefix']
+                        ).first()
+                    
                     if existing_queue:
-                        app.logger.info(f"Fila {queue_data['service']} já existe com ID {queue_data['id']}, pulando.")
+                        app.logger.info(f"Fila {queue_data['service']} já existe com ID {existing_queue.id}, pulando.")
                         return existing_queue
 
                     queue = Queue(
@@ -560,6 +569,16 @@ def populate_initial_data(app):
                     existing_branch = Branch.query.filter_by(institution_id=institution_id, name=branch_data['name']).first()
                     if existing_branch:
                         app.logger.info(f"Filial {branch_data['name']} já existe na instituição, pulando.")
+                        # Mesmo se a filial já existe, ainda verificamos os departamentos para adicionar novos
+                        for dept_data in branch_data['departments']:
+                            existing_dept = Department.query.filter_by(branch_id=existing_branch.id, name=dept_data['name']).first()
+                            if not existing_dept:
+                                # Cria novo departamento na filial existente
+                                create_department(existing_branch.id, dept_data)
+                            else:
+                                # Verifica filas do departamento existente
+                                for queue_data in dept_data['queues']:
+                                    create_queue(existing_dept.id, queue_data)
                         return existing_branch
 
                     branch = Branch(
@@ -585,7 +604,23 @@ def populate_initial_data(app):
                     """
                     existing_inst = Institution.query.filter_by(name=inst_data['name']).first()
                     if existing_inst:
-                        app.logger.info(f"Instituição {inst_data['name']} já existe, pulando.")
+                        app.logger.info(f"Instituição {inst_data['name']} já existe, atualizando filiais se necessário.")
+                        # Mesmo que a instituição exista, ainda verificamos as filiais para adicionar novas
+                        for branch_data in inst_data['branches']:
+                            existing_branch = Branch.query.filter_by(institution_id=existing_inst.id, name=branch_data['name']).first()
+                            if not existing_branch:
+                                # Cria nova filial para instituição existente
+                                create_branch(existing_inst.id, branch_data)
+                            else:
+                                # Verifica departamentos da filial existente
+                                for dept_data in branch_data['departments']:
+                                    existing_dept = Department.query.filter_by(branch_id=existing_branch.id, name=dept_data['name']).first()
+                                    if not existing_dept:
+                                        create_department(existing_branch.id, dept_data)
+                                    else:
+                                        # Verifica filas do departamento existente
+                                        for queue_data in dept_data['queues']:
+                                            create_queue(existing_dept.id, queue_data)
                         return existing_inst
 
                     institution = Institution(
@@ -602,10 +637,10 @@ def populate_initial_data(app):
                     return institution
 
                 # Criar instituições
-                app.logger.info("Criando instituições...")
+                app.logger.info("Criando ou atualizando instituições...")
                 for inst_data in institutions_data:
                     create_institution(inst_data)
-                app.logger.info("Instituições, filiais, departamentos e filas criados com sucesso.")
+                app.logger.info("Instituições, filiais, departamentos e filas criados ou atualizados com sucesso.")
 
                 # --------------------------------------
                 # Criar Usuários
@@ -670,20 +705,22 @@ def populate_initial_data(app):
                             users.append(manager)
 
                     # USER (10)
-                    for i in range(10):
-                        email = f'user_{i}@queue.com'
-                        if not User.query.filter_by(email=email).first():
-                            user = User(
-                                id=str(uuid.uuid4()),
-                                email=email,
-                                name=f'Usuário {i+1}',
-                                user_role=UserRole.USER,
-                                created_at=datetime.utcnow(),
-                                active=True
-                            )
-                            user.set_password('user123')
-                            db.session.add(user)
-                            users.append(user)
+                    user_count = User.query.filter_by(user_role=UserRole.USER).count()
+                    if user_count < 10:  # Criar apenas se não houver 10 usuários já
+                        for i in range(10 - user_count):
+                            email = f'user_{i}@queue.com'
+                            if not User.query.filter_by(email=email).first():
+                                user = User(
+                                    id=str(uuid.uuid4()),
+                                    email=email,
+                                    name=f'Usuário {i+1}',
+                                    user_role=UserRole.USER,
+                                    created_at=datetime.utcnow(),
+                                    active=True
+                                )
+                                user.set_password('user123')
+                                db.session.add(user)
+                                users.append(user)
 
                     db.session.flush()
                     app.logger.info("Usuários criados com sucesso.")
@@ -728,7 +765,7 @@ def populate_initial_data(app):
                     for queue in Queue.query.all():
                         existing_tickets = Ticket.query.filter_by(queue_id=queue.id).count()
                         if existing_tickets >= 25:
-                            app.logger.info(f"Fila {queue.service} já tem 25 tickets, pulando.")
+                            app.logger.info(f"Fila {queue.service} já tem {existing_tickets} tickets, pulando.")
                             continue
 
                         # Obter informações do departamento e filial para criar um código QR único
@@ -737,15 +774,23 @@ def populate_initial_data(app):
                         branch_code = branch_id[-4:]  # Usar últimos 4 caracteres do ID da filial
 
                         for i in range(25 - existing_tickets):
-                            ticket_number = i + 1
+                            # Encontrar o próximo número de ticket disponível
+                            max_ticket_number = db.session.query(db.func.max(Ticket.ticket_number)).filter_by(queue_id=queue.id).scalar() or 0
+                            ticket_number = max_ticket_number + i + 1
+                            
                             # Criar um código QR único incluindo o ID da filial
                             qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
+                            
+                            # Verificar se o QR code já existe
+                            if Ticket.query.filter_by(qr_code=qr_code).first():
+                                # Se existir, adicionar um timestamp para garantir unicidade
+                                qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}-{int(now.timestamp())}"
 
                             status = 'Atendido' if i % 2 == 0 else 'Pendente'  # Alterna para suportar ML
                             ticket = Ticket(
                                 id=str(uuid.uuid4()),
                                 queue_id=queue.id,
-                                user_id=users[i % len(users)].id,
+                                user_id=User.query.filter_by(user_role=UserRole.USER).offset(i % 10).first().id,
                                 ticket_number=ticket_number,
                                 qr_code=qr_code,
                                 priority=1 if i % 3 == 0 else 0,  # Adiciona prioridades para ML
@@ -796,6 +841,10 @@ def populate_initial_data(app):
                 app.logger.info("Dados iniciais populados com sucesso!")
                 app.logger.info("FIM DA INICIALIZAÇÃO DE DADOS")
 
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            app.logger.error(f"Erro SQL ao popular dados: {str(e)}")
+            raise
         except Exception as e:
             db.session.rollback()
             app.logger.error(f"Erro ao popular dados: {str(e)}")
