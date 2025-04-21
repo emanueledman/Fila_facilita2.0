@@ -63,7 +63,7 @@ def create_app():
             "https://fila-facilita2-0-4uzw.onrender.com"
         ],
         async_mode='eventlet',
-        path='/tickets',
+        path='/socket.io',
         logger=os.getenv('FLASK_ENV') != 'production',
         engineio_logger=os.getenv('FLASK_ENV') != 'production',
         message_queue=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
