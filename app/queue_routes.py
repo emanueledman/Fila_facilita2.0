@@ -13,6 +13,7 @@ import re
 import logging
 from sqlalchemy import and_, or_
 from geopy.distance import geodesic
+from firebase_admin import auth
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -26,12 +27,14 @@ def init_queue_routes(app):
             )
             socketio.emit('ticket_update', {
                 'ticket_id': ticket.id,
+                'user_id': ticket.user_id,  # Adiciona user_id para validação no cliente
                 'status': ticket.status,
                 'counter': f"{ticket.counter:02d}" if ticket.counter else None,
                 'position': max(0, ticket.ticket_number - ticket.queue.current_ticket),
                 'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else "N/A",
-            }, namespace='/tickets')
-            logger.info(f"Atualização de ticket emitida via WebSocket: ticket_id={ticket.id}, wait_time={wait_time}")
+                'number': f"{ticket.queue.prefix}{ticket.ticket_number}"  # Adiciona número do ticket
+            }, room=ticket.user_id, namespace='/tickets')  # Envia para a sala do usuário
+            logger.info(f"Atualização de ticket emitida via WebSocket: ticket_id={ticket.id}, user_id={ticket.user_id}")
             QueueService.send_notification(
                 fcm_token=None,
                 message=f"Ticket {ticket.queue.prefix}{ticket.ticket_number} atualizado: {ticket.status}",
@@ -41,6 +44,7 @@ def init_queue_routes(app):
             )
         except Exception as e:
             logger.error(f"Erro ao emitir atualização via WebSocket: {e}")
+            
 
     def emit_dashboard_update(institution_id, queue_id, event_type, data):
         """Emite atualização ao painel via WebSocket no namespace /dashboard."""
@@ -1412,3 +1416,27 @@ def init_queue_routes(app):
     @socketio.on('disconnect', namespace='/dashboard')
     def handle_dashboard_disconnect():
         logger.info("Cliente desconectado do namespace /dashboard")
+        
+        
+
+
+@socketio.on('connect', namespace='/tickets')
+def handle_connect(data):
+    token = request.args.get('token')
+    if not token:
+        logger.warning("Tentativa de conexão sem token no namespace /tickets")
+        raise ConnectionRefusedError('Token de autenticação ausente')
+
+    try:
+        decoded_token = auth.verify_id_token(token)
+        user_id = decoded_token['uid']
+        logger.info(f"Cliente autenticado no namespace /tickets: user_id={user_id}")
+        join_room(user_id)  # Coloca o usuário em uma sala com seu user_id
+    except Exception as e:
+        logger.error(f"Erro ao autenticar token no namespace /tickets: {str(e)}")
+        raise ConnectionRefusedError('Token inválido')
+
+@socketio.on('join', namespace='/tickets')
+def handle_join(user_id):
+    logger.info(f"Usuário entrou na sala: user_id={user_id}")
+    join_room(user_id)
