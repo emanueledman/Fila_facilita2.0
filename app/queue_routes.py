@@ -1433,7 +1433,7 @@ def init_queue_routes(app):
 
 
 
-    @api.route('/api/institution_types', methods=['GET'])
+    @app.route('/api/institution_types', methods=['GET'])
     def get_institution_types():
         """Lista todos os tipos de instituições."""
         try:
@@ -1453,7 +1453,7 @@ def init_queue_routes(app):
             logger.error(f"Erro inesperado ao listar tipos de instituições: {e}")
             return jsonify({'error': 'Erro interno do servidor'}), 500
 
-    @api.route('/api/user/preferences', methods=['GET'])
+    @app.route('/api/user/preferences', methods=['GET'])
     def get_user_preferences():
         """Retorna preferências do usuário, incluindo inferências do CollaborativeFilteringModel."""
         try:
@@ -1496,7 +1496,7 @@ def init_queue_routes(app):
             logger.error(f"Erro inesperado ao carregar preferências para user_id={user_id}: {e}")
             return jsonify({'error': 'Erro interno do servidor'}), 500
 
-    @api.route('/api/institutions', methods=['GET'])
+    @app.route('/api/institutions', methods=['GET'])
     def get_institutions():
         """Lista instituições por tipo, ordenadas por pontuação de qualidade."""
         try:
@@ -1599,7 +1599,7 @@ def init_queue_routes(app):
             logger.error(f"Erro inesperado ao listar instituições para type_id={type_id}: {e}")
             return jsonify({'error': 'Erro interno do servidor'}), 500
 
-    @api.route('/api/branches', methods=['GET'])
+    @app.route('/api/branches', methods=['GET'])
     def get_branches():
         """Lista filiais por instituição, ordenadas por pontuação de qualidade."""
         try:
