@@ -14,6 +14,8 @@ import logging
 from sqlalchemy import and_, or_
 from geopy.distance import geodesic
 from firebase_admin import auth
+from sqlalchemy.exc import SQLAlchemyError
+from uuid import uuid
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
