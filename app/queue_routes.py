@@ -1431,3 +1431,81 @@ def init_queue_routes(app):
         except Exception as e:
             logger.error(f"Erro na desconexão WebSocket no namespace /dashboard: {str(e)}")
 
+
+
+    @app.route('/api/user/preferences', methods=['GET'])
+    @require_auth
+    def get_user_preferences():
+        try:
+            user_id = request.args.get('user_id')
+            if not user_id:
+                return jsonify({'error': 'user_id obrigatório'}), 400
+
+            cache_key = f'user_preferences:{user_id}'
+            cached = redis_client.get(cache_key)
+            if cached:
+                return jsonify(json.loads(cached)), 200
+
+            user = User.query.get(user_id)
+            if not user:
+                return jsonify({'error': 'Usuário não encontrado'}), 404
+
+            preferences = UserPreference.query.filter_by(user_id=user_id).all()
+            data = [
+                {
+                    'id': p.id,
+                    'user_id': p.user_id,
+                    'institution_type_id': p.institution_type_id,
+                    'institution_type_name': p.institution_type.name if p.institution_type else None,
+                    'institution_id': p.institution_id,
+                    'institution_name': p.institution.name if p.institution else None,
+                    'service_category_id': p.service_category_id,
+                    'service_category_name': p.service_category.name if p.service_category else None,
+                    'neighborhood': p.neighborhood
+                } for p in preferences
+            ]
+
+            audit_log = AuditLog(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                action='GET_PREFERENCES',
+                resource_type='UserPreference',
+                resource_id=user_id,
+                details=f"Acessou preferências",
+                timestamp=datetime.utcnow()
+            )
+            db.session.add(audit_log)
+            db.session.commit()
+
+            response = {'preferences': data}
+            redis_client.setex(cache_key, 600, json.dumps(response))
+            return jsonify(response), 200
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao buscar preferências user_id={user_id}: {e}")
+            return jsonify({'error': 'Erro interno'}), 500
+        
+
+    @app.route('/api/institution_types', methods=['GET'])
+    def get_institution_types():
+        try:
+            cache_key = 'institution_types'
+            cached = redis_client.get(cache_key)
+            if cached:
+                return jsonify(json.loads(cached)), 200
+
+            types = InstitutionType.query.all()
+            data = [
+                {
+                    'id': t.id,
+                    'name': t.name,
+                    'description': t.description or '',
+                    'icon': f'https://facilita-assets.com/icons/{t.name.lower().replace(" ", "_")}.png'
+                } for t in types
+            ]
+
+            redis_client.setex(cache_key, 3600, json.dumps({'types': data}))
+            return jsonify({'types': data}), 200
+        except Exception as e:
+            logger.error(f"Erro ao buscar institution_types: {e}")
+            return jsonify({'error': 'Erro interno'}), 500
