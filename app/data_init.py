@@ -1,24 +1,17 @@
 import uuid
 from datetime import time, datetime, timedelta
-from .models import AuditLog, Institution, Queue, User, Ticket, Department, UserPreference, UserRole, QueueSchedule, Weekday, Branch, ServiceCategory, ServiceTag
+from .models import AuditLog, Institution, Queue, User, Ticket, Department, UserPreference, UserRole, QueueSchedule, Weekday, Branch, ServiceCategory, ServiceTag, InstitutionType
 from . import db
 import os
 from sqlalchemy.exc import SQLAlchemyError
 
-# Dados de teste ajustados para Administrações Municipais de Luanda com 10 filiais
-import uuid
-from datetime import time, datetime, timedelta
-from .models import AuditLog, Institution, Queue, User, Ticket, Department, UserPreference, UserRole, QueueSchedule, Weekday, Branch, ServiceCategory, ServiceTag
-from . import db
-import os
-from sqlalchemy.exc import SQLAlchemyError
-
-# Dados de teste ajustados para SIAC com 10 filiais
+# Dados de teste para 3 instituições, cada uma com 3 filiais
 institutions_data = [
     {
         "id": "018d6313-5bf1-7062-a3bd-0e99679fd099",
         "name": "SIAC",
         "description": "Serviço Integrado de Atendimento ao Cidadão em Luanda",
+        "institution_type_id": None,  # Será preenchido com Administrativo
         "branches": [
             {
                 "name": "Unidade Ingombota",
@@ -34,7 +27,7 @@ institutions_data = [
                             {
                                 "id": "018d6313-5bf1-7062-a3bd-0e99679fd100",
                                 "service": "Atendimento Geral",
-                                "category_id": None,
+                                "category_id": None,  # Será preenchido com Administrativo
                                 "prefix": "AG",
                                 "open_time": time(8, 0),
                                 "end_time": time(15, 0),
@@ -52,32 +45,6 @@ institutions_data = [
                                 "tags": ["Atendimento", "Administrativo"]
                             }
                         ]
-                    },
-                    {
-                        "name": "Emissão de Documentos",
-                        "sector": "Administrativo",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd101",
-                                "service": "Documentos",
-                                "category_id": None,
-                                "prefix": "DOC",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 15,
-                                "num_counters": 6,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Documentos", "Administrativo"]
-                            }
-                        ]
                     }
                 ]
             },
@@ -93,7 +60,7 @@ institutions_data = [
                         "sector": "Administrativo",
                         "queues": [
                             {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd102",
+                                "id": str(uuid.uuid4()),
                                 "service": "Atendimento Geral",
                                 "category_id": None,
                                 "prefix": "AG",
@@ -101,7 +68,7 @@ institutions_data = [
                                 "end_time": time(15, 0),
                                 "daily_limit": 15,
                                 "num_counters": 4,
-                                " schedule": [
+                                "schedules": [
                                     {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
                                     {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
                                     {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
@@ -122,251 +89,6 @@ institutions_data = [
                 "neighborhood": "Talatona",
                 "latitude": -8.9167,
                 "longitude": 13.1833,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cidadão",
-                        "sector": "Administrativo",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd103",
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 15,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Administrativo"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Unidade Samba",
-                "location": "Rua Principal, Samba, Luanda",
-                "neighborhood": "Samba",
-                "latitude": -8.8200,
-                "longitude": 13.2400,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cidadão",
-                        "sector": "Administrativo",
-                        "queues": [
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 15,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Administrativo"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Unidade Rangel",
-                "location": "Avenida Deolinda Rodrigues, Rangel, Luanda",
-                "neighborhood": "Rangel",
-                "latitude": -8.8300,
-                "longitude": 13.2500,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cidadão",
-                        "sector": "Administrativo",
-                        "queues": [
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 15,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Administrativo"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Unidade Kilamba",
-                "location": "Cidade do Kilamba, Luanda",
-                "neighborhood": "Kilamba",
-                "latitude": -8.9333,
-                "longitude": 13.2667,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cidadão",
-                        "sector": "Administrativo",
-                        "queues": [
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 15,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Administrativo"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Unidade Cazenga",
-                "location": "Rua do Mercado, Cazenga, Luanda",
-                "neighborhood": "Cazenga",
-                "latitude": -8.8500,
-                "longitude": 13.2833,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cidadão",
-                        "sector": "Administrativo",
-                        "queues": [
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 15,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Administrativo"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Unidade Viana",
-                "location": "Estrada de Viana, Viana, Luanda",
-                "neighborhood": "Viana",
-                "latitude": -8.9035,
-                "longitude": 13.3741,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cidadão",
-                        "sector": "Administrativo",
-                        "queues": [
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 15,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Administrativo"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Unidade Cacuaco",
-                "location": "Rua Central, Cacuaco, Luanda",
-                "neighborhood": "Cacuaco",
-                "latitude": -8.7667,
-                "longitude": 13.3667,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cidadão",
-                        "sector": "Administrativo",
-                        "queues": [
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 15,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Administrativo"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Unidade Patriota",
-                "location": "Condomínio Patriota, Luanda",
-                "neighborhood": "Patriota",
-                "latitude": -8.9000,
-                "longitude": 13.2000,
                 "departments": [
                     {
                         "name": "Atendimento ao Cidadão",
@@ -397,16 +119,240 @@ institutions_data = [
                 ]
             }
         ]
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "name": "Banco BIC",
+        "description": "Serviços bancários em Luanda",
+        "institution_type_id": None,  # Será preenchido com Bancário
+        "branches": [
+            {
+                "name": "Agência Ingombota",
+                "location": "Avenida Lenine, Ingombota, Luanda",
+                "neighborhood": "Ingombota",
+                "latitude": -8.8160,
+                "longitude": 13.2340,
+                "departments": [
+                    {
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
+                        "queues": [
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Atendimento Bancário",
+                                "category_id": None,  # Será preenchido com Bancário
+                                "prefix": "AB",
+                                "open_time": time(8, 30),
+                                "end_time": time(15, 30),
+                                "daily_limit": 20,
+                                "num_counters": 5,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                ],
+                                "tags": ["Bancário", "Atendimento"]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "Agência Kilamba",
+                "location": "Cidade do Kilamba, Luanda",
+                "neighborhood": "Kilamba",
+                "latitude": -8.9333,
+                "longitude": 13.2667,
+                "departments": [
+                    {
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
+                        "queues": [
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Atendimento Bancário",
+                                "category_id": None,
+                                "prefix": "AB",
+                                "open_time": time(8, 30),
+                                "end_time": time(15, 30),
+                                "daily_limit": 20,
+                                "num_counters": 5,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                ],
+                                "tags": ["Bancário", "Atendimento"]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "Agência Cazenga",
+                "location": "Rua do Mercado, Cazenga, Luanda",
+                "neighborhood": "Cazenga",
+                "latitude": -8.8500,
+                "longitude": 13.2833,
+                "departments": [
+                    {
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
+                        "queues": [
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Atendimento Bancário",
+                                "category_id": None,
+                                "prefix": "AB",
+                                "open_time": time(8, 30),
+                                "end_time": time(15, 30),
+                                "daily_limit": 20,
+                                "num_counters": 5,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                ],
+                                "tags": ["Bancário", "Atendimento"]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "name": "Hospital Josina Machel",
+        "description": "Serviços de saúde em Luanda",
+        "institution_type_id": None,  # Será preenchido com Saúde
+        "branches": [
+            {
+                "name": "Unidade Central",
+                "location": "Avenida Ho Chi Minh, Luanda",
+                "neighborhood": "Maianga",
+                "latitude": -8.8145,
+                "longitude": 13.2290,
+                "departments": [
+                    {
+                        "name": "Consulta Geral",
+                        "sector": "Saúde",
+                        "queues": [
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Consulta Médica",
+                                "category_id": None,  # Será preenchido com Consulta Médica
+                                "prefix": "CM",
+                                "open_time": time(7, 0),
+                                "end_time": time(17, 0),
+                                "daily_limit": 30,
+                                "num_counters": 3,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                    {"weekday": Weekday.SATURDAY, "open_time": time(7, 0), "end_time": time(12, 0)},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                ],
+                                "tags": ["Saúde", "Consulta"]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "Unidade Viana",
+                "location": "Estrada de Viana, Viana, Luanda",
+                "neighborhood": "Viana",
+                "latitude": -8.9035,
+                "longitude": 13.3741,
+                "departments": [
+                    {
+                        "name": "Consulta Geral",
+                        "sector": "Saúde",
+                        "queues": [
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Consulta Médica",
+                                "category_id": None,
+                                "prefix": "CM",
+                                "open_time": time(7, 0),
+                                "end_time": time(17, 0),
+                                "daily_limit": 30,
+                                "num_counters": 3,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                    {"weekday": Weekday.SATURDAY, "open_time": time(7, 0), "end_time": time(12, 0)},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                ],
+                                "tags": ["Saúde", "Consulta"]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "Unidade Rangel",
+                "location": "Avenida Deolinda Rodrigues, Rangel, Luanda",
+                "neighborhood": "Rangel",
+                "latitude": -8.8300,
+                "longitude": 13.2500,
+                "departments": [
+                    {
+                        "name": "Consulta Geral",
+                        "sector": "Saúde",
+                        "queues": [
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Consulta Médica",
+                                "category_id": None,
+                                "prefix": "CM",
+                                "open_time": time(7, 0),
+                                "end_time": time(17, 0),
+                                "daily_limit": 30,
+                                "num_counters": 3,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                    {"weekday": Weekday.SATURDAY, "open_time": time(7, 0), "end_time": time(12, 0)},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                ],
+                                "tags": ["Saúde", "Consulta"]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
     }
 ]
 
-
 def populate_initial_data(app):
     """
-    Popula o banco de dados com dados iniciais para testes, incluindo apenas Administrações Municipais de Luanda.
-    A instituição tem 10 filiais em diferentes bairros de Luanda, com 15 senhas por fila.
-    Mantém idempotência, logs em português, e compatibilidade com models.py.
-    Usa bcrypt para senhas e respeita todos os relacionamentos.
+    Popula o banco de dados com dados iniciais para testes, incluindo 3 instituições (SIAC, Banco BIC, Hospital Josina Machel),
+    cada uma com 3 filiais em Luanda. Mantém idempotência, logs em português, e compatibilidade com models.py.
+    Usa bcrypt para senhas e respeita todos os relacionamentos, incluindo InstitutionType.
     Suporta modelos de ML com dados suficientes para treinamento inicial.
     """
     with app.app_context():
@@ -416,17 +362,59 @@ def populate_initial_data(app):
                 app.logger.info("Iniciando população de dados iniciais...")
 
                 # --------------------------------------
+                # Criar Tipos de Instituição
+                # --------------------------------------
+                def create_institution_types():
+                    """
+                    Cria tipos de instituição necessários (Administrativo, Bancário, Saúde).
+                    Retorna um mapa de nomes para IDs.
+                    """
+                    types = [
+                        {'name': 'Administrativo', 'description': 'Serviços administrativos e atendimento ao cidadão'},
+                        {'name': 'Bancário', 'description': 'Serviços financeiros e bancários'},
+                        {'name': 'Saúde', 'description': 'Serviços de saúde e atendimento médico'}
+                    ]
+                    type_map = {}
+                    for inst_type in types:
+                        existing_type = InstitutionType.query.filter_by(name=inst_type['name']).first()
+                        if existing_type:
+                            type_map[inst_type['name']] = existing_type.id
+                            continue
+                        institution_type = InstitutionType(
+                            id=str(uuid.uuid4()),
+                            name=inst_type['name'],
+                            description=inst_type['description']
+                        )
+                        db.session.add(institution_type)
+                        db.session.flush()
+                        type_map[inst_type['name']] = institution_type.id
+                    app.logger.info("Tipos de instituição criados com sucesso.")
+                    return type_map
+
+                institution_type_map = create_institution_types()
+
+                # Atualizar institution_type_id nos dados de teste
+                for inst in institutions_data:
+                    if inst['name'] == 'SIAC':
+                        inst['institution_type_id'] = institution_type_map['Administrativo']
+                    elif inst['name'] == 'Banco BIC':
+                        inst['institution_type_id'] = institution_type_map['Bancário']
+                    elif inst['name'] == 'Hospital Josina Machel':
+                        inst['institution_type_id'] = institution_type_map['Saúde']
+
+                # --------------------------------------
                 # Criar Categorias de Serviço
                 # --------------------------------------
                 def create_service_categories():
                     """
-                    Cria categorias de serviço necessárias (Saúde, Consulta Médica, Administrativo).
+                    Cria categorias de serviço necessárias (Saúde, Consulta Médica, Administrativo, Bancário).
                     Retorna um mapa de nomes para IDs.
                     """
                     categories = [
                         {'name': 'Saúde', 'description': 'Serviços de saúde e atendimento médico', 'parent_id': None},
                         {'name': 'Consulta Médica', 'description': 'Consultas gerais e especializadas', 'parent_id': None},
                         {'name': 'Administrativo', 'description': 'Serviços administrativos municipais e atendimento ao cidadão', 'parent_id': None},
+                        {'name': 'Bancário', 'description': 'Serviços financeiros e bancários', 'parent_id': None}
                     ]
                     category_map = {}
                     for cat in categories:
@@ -462,6 +450,8 @@ def populate_initial_data(app):
                                     queue['category_id'] = category_map['Consulta Médica']
                                 elif 'Administrativo' in queue['tags']:
                                     queue['category_id'] = category_map['Administrativo']
+                                elif 'Bancário' in queue['tags']:
+                                    queue['category_id'] = category_map['Bancário']
 
                 # --------------------------------------
                 # Bairros de Luanda
@@ -470,13 +460,10 @@ def populate_initial_data(app):
                     {'name': 'Ingombota', 'latitude': -8.8167, 'longitude': 13.2332},
                     {'name': 'Maianga', 'latitude': -8.8147, 'longitude': 13.2302},
                     {'name': 'Talatona', 'latitude': -8.9167, 'longitude': 13.1833},
-                    {'name': 'Samba', 'latitude': -8.8200, 'longitude': 13.2400},
-                    {'name': 'Rangel', 'latitude': -8.8300, 'longitude': 13.2500},
                     {'name': 'Kilamba', 'latitude': -8.9333, 'longitude': 13.2667},
                     {'name': 'Cazenga', 'latitude': -8.8500, 'longitude': 13.2833},
                     {'name': 'Viana', 'latitude': -8.9035, 'longitude': 13.3741},
-                    {'name': 'Cacuaco', 'latitude': -8.7667, 'longitude': 13.3667},
-                    {'name': 'Patriota', 'latitude': -8.9000, 'longitude': 13.2000}
+                    {'name': 'Rangel', 'latitude': -8.8300, 'longitude': 13.2500}
                 ]
 
                 # --------------------------------------
@@ -486,9 +473,7 @@ def populate_initial_data(app):
                     """
                     Cria uma fila com agendamentos e tags, conforme models.py.
                     """
-                    # Verifica se a fila existe pelo ID específico
                     existing_queue = Queue.query.filter_by(id=queue_data['id']).first()
-                    # Se não existe pelo ID, verifica pelo nome e departamento
                     if not existing_queue:
                         existing_queue = Queue.query.filter_by(
                             department_id=department_id, 
@@ -519,7 +504,6 @@ def populate_initial_data(app):
                     db.session.add(queue)
                     db.session.flush()
 
-                    # Criar agendamentos
                     for schedule in queue_data['schedules']:
                         existing_schedule = QueueSchedule.query.filter_by(queue_id=queue.id, weekday=schedule['weekday']).first()
                         if existing_schedule:
@@ -534,7 +518,6 @@ def populate_initial_data(app):
                         )
                         db.session.add(queue_schedule)
 
-                    # Criar tags
                     for tag_name in queue_data['tags']:
                         existing_tag = ServiceTag.query.filter_by(queue_id=queue.id, tag=tag_name).first()
                         if existing_tag:
@@ -578,14 +561,11 @@ def populate_initial_data(app):
                     existing_branch = Branch.query.filter_by(institution_id=institution_id, name=branch_data['name']).first()
                     if existing_branch:
                         app.logger.info(f"Filial {branch_data['name']} já existe na instituição, pulando.")
-                        # Mesmo se a filial já existe, ainda verificamos os departamentos para adicionar novos
                         for dept_data in branch_data['departments']:
                             existing_dept = Department.query.filter_by(branch_id=existing_branch.id, name=dept_data['name']).first()
                             if not existing_dept:
-                                # Cria novo departamento na filial existente
                                 create_department(existing_branch.id, dept_data)
                             else:
-                                # Verifica filas do departamento existente
                                 for queue_data in dept_data['queues']:
                                     create_queue(existing_dept.id, queue_data)
                         return existing_branch
@@ -614,20 +594,16 @@ def populate_initial_data(app):
                     existing_inst = Institution.query.filter_by(name=inst_data['name']).first()
                     if existing_inst:
                         app.logger.info(f"Instituição {inst_data['name']} já existe, atualizando filiais se necessário.")
-                        # Mesmo que a instituição exista, ainda verificamos as filiais para adicionar novas
                         for branch_data in inst_data['branches']:
                             existing_branch = Branch.query.filter_by(institution_id=existing_inst.id, name=branch_data['name']).first()
                             if not existing_branch:
-                                # Cria nova filial para instituição existente
                                 create_branch(existing_inst.id, branch_data)
                             else:
-                                # Verifica departamentos da filial existente
                                 for dept_data in branch_data['departments']:
                                     existing_dept = Department.query.filter_by(branch_id=existing_branch.id, name=dept_data['name']).first()
                                     if not existing_dept:
                                         create_department(existing_branch.id, dept_data)
                                     else:
-                                        # Verifica filas do departamento existente
                                         for queue_data in dept_data['queues']:
                                             create_queue(existing_dept.id, queue_data)
                         return existing_inst
@@ -635,7 +611,8 @@ def populate_initial_data(app):
                     institution = Institution(
                         id=inst_data['id'],
                         name=inst_data['name'],
-                        description=inst_data['description']
+                        description=inst_data['description'],
+                        institution_type_id=inst_data['institution_type_id']
                     )
                     db.session.add(institution)
                     db.session.flush()
@@ -645,7 +622,6 @@ def populate_initial_data(app):
 
                     return institution
 
-                # Criar instituições
                 app.logger.info("Criando ou atualizando instituições...")
                 for inst_data in institutions_data:
                     create_institution(inst_data)
@@ -656,12 +632,11 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_users():
                     """
-                    Cria ~26 usuários: 1 SYSTEM_ADMIN, 1 INSTITUTION_ADMIN, ~11 DEPARTMENT_ADMIN, 10 USER.
+                    Cria ~16 usuários: 1 SYSTEM_ADMIN, 3 INSTITUTION_ADMIN, ~9 DEPARTMENT_ADMIN, 10 USER.
                     Usa User.set_password com bcrypt.
                     Garante emails únicos para DEPARTMENT_ADMIN.
                     """
                     users = []
-                    # SYSTEM_ADMIN
                     if not User.query.filter_by(email='sysadmin@queue.com').first():
                         super_admin = User(
                             id=str(uuid.uuid4()),
@@ -675,7 +650,6 @@ def populate_initial_data(app):
                         db.session.add(super_admin)
                         users.append(super_admin)
 
-                    # INSTITUTION_ADMIN (1 para Administrações Municipais de Luanda)
                     for inst in Institution.query.all():
                         email = f'admin_{inst.name.lower().replace(" ", "_")}@queue.com'
                         if not User.query.filter_by(email=email).first():
@@ -692,9 +666,7 @@ def populate_initial_data(app):
                             db.session.add(admin)
                             users.append(admin)
 
-                    # DEPARTMENT_ADMIN (~11, um por departamento)
                     for dept in Department.query.all():
-                        # Gerar email único incluindo o nome da instituição e filial
                         inst_name = dept.branch.institution.name.lower().replace(" ", "_")
                         branch_name = dept.branch.name.lower().replace(" ", "_")
                         email = f'manager_{dept.name.lower().replace(" ", "_")}_{inst_name}_{branch_name}@queue.com'
@@ -713,9 +685,8 @@ def populate_initial_data(app):
                             db.session.add(manager)
                             users.append(manager)
 
-                    # USER (10)
                     user_count = User.query.filter_by(user_role=UserRole.USER).count()
-                    if user_count < 10:  # Criar apenas se não houver 10 usuários já
+                    if user_count < 10:
                         for i in range(10 - user_count):
                             email = f'user_{i}@queue.com'
                             if not User.query.filter_by(email=email).first():
@@ -746,7 +717,7 @@ def populate_initial_data(app):
                     """
                     user_list = User.query.filter_by(user_role=UserRole.USER).limit(10).all()
                     for i, user in enumerate(user_list):
-                        categories = ServiceCategory.query.filter(ServiceCategory.name.in_(['Saúde', 'Administrativo'])).all()
+                        categories = ServiceCategory.query.filter(ServiceCategory.name.in_(['Saúde', 'Administrativo', 'Bancário'])).all()
                         for category in categories[:2]:
                             existing_pref = UserPreference.query.filter_by(user_id=user.id, service_category_id=category.id).first()
                             if not existing_pref:
@@ -754,7 +725,8 @@ def populate_initial_data(app):
                                     id=str(uuid.uuid4()),
                                     user_id=user.id,
                                     service_category_id=category.id,
-                                    institution_id=Institution.query.first().id,
+                                    institution_type_id=InstitutionType.query.filter_by(name=category.name).first().id if category.name in ['Saúde', 'Administrativo', 'Bancário'] else None,
+                                    institution_id=Institution.query.offset(i % 3).first().id,
                                     neighborhood=neighborhoods[i % len(neighborhoods)]['name']
                                 )
                                 db.session.add(preference)
@@ -777,38 +749,31 @@ def populate_initial_data(app):
                             app.logger.info(f"Fila {queue.service} já tem {existing_tickets} tickets, pulando.")
                             continue
 
-                        # Obter informações do departamento e filial para criar um código QR único
                         department = Department.query.filter_by(id=queue.department_id).first()
                         branch_id = department.branch_id
-                        branch_code = branch_id[-4:]  # Usar últimos 4 caracteres do ID da filial
+                        branch_code = branch_id[-4:]
 
                         for i in range(25 - existing_tickets):
-                            # Encontrar o próximo número de ticket disponível
                             max_ticket_number = db.session.query(db.func.max(Ticket.ticket_number)).filter_by(queue_id=queue.id).scalar() or 0
                             ticket_number = max_ticket_number + i + 1
-                            
-                            # Criar um código QR único incluindo o ID da filial
                             qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
-                            
-                            # Verificar se o QR code já existe
                             if Ticket.query.filter_by(qr_code=qr_code).first():
-                                # Se existir, adicionar um timestamp para garantir unicidade
                                 qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}-{int(now.timestamp())}"
 
-                            status = 'Atendido' if i % 2 == 0 else 'Pendente'  # Alterna para suportar ML
+                            status = 'Atendido' if i % 2 == 0 else 'Pendente'
                             ticket = Ticket(
                                 id=str(uuid.uuid4()),
                                 queue_id=queue.id,
                                 user_id=User.query.filter_by(user_role=UserRole.USER).offset(i % 10).first().id,
                                 ticket_number=ticket_number,
                                 qr_code=qr_code,
-                                priority=1 if i % 3 == 0 else 0,  # Adiciona prioridades para ML
+                                priority=1 if i % 3 == 0 else 0,
                                 is_physical=False,
                                 status=status,
-                                issued_at=now - timedelta(days=i % 7),  # Distribui tickets em 7 dias
+                                issued_at=now - timedelta(days=i % 7),
                                 expires_at=now + timedelta(days=1),
                                 counter=1 if status == 'Atendido' else None,
-                                service_time=300.0 if status == 'Atendido' else 0.0,  # 5 minutos para atendidos
+                                service_time=300.0 if status == 'Atendido' else 0.0,
                                 trade_available=False
                             )
                             db.session.add(ticket)
