@@ -1430,3 +1430,4 @@ def init_queue_routes(app):
                     logger.info(f"Usuário {user_id} desconectado do WebSocket namespace /dashboard")
         except Exception as e:
             logger.error(f"Erro na desconexão WebSocket no namespace /dashboard: {str(e)}")
+
