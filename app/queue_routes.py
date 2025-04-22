@@ -1431,68 +1431,293 @@ def init_queue_routes(app):
         except Exception as e:
             logger.error(f"Erro na desconexão WebSocket no namespace /dashboard: {str(e)}")
 
-    @app.route('/api/institution_types', methods=['GET'])
+
+
+    @api.route('/api/institution_types', methods=['GET'])
     def get_institution_types():
+        """Lista todos os tipos de instituições."""
         try:
             types = InstitutionType.query.all()
-            types_data = [
+            result = [
                 {
                     'id': t.id,
                     'name': t.name,
-                    'description': t.description or '',
-                    'icon': f'https://facilita-assets.com/icons/{t.name.lower().replace(" ", "_")}.png'
+                    'icon': t.icon_url or 'https://via.placeholder.com/48'
                 } for t in types
             ]
-            logger.info(f"Tipos de instituições carregados: {len(types_data)}")
-            return jsonify({'types': types_data}), 200
+            return jsonify({'types': result}), 200
+        except SQLAlchemyError as e:
+            logger.error(f"Erro no banco ao listar tipos de instituições: {e}")
+            return jsonify({'error': 'Erro interno do servidor'}), 500
         except Exception as e:
-            logger.error(f"Erro ao buscar institution_types: {e}")
-            return jsonify({'error': 'Erro interno'}), 500
-        
-    @app.route('/api/user/preferences', methods=['GET'])
-    @require_auth
+            logger.error(f"Erro inesperado ao listar tipos de instituições: {e}")
+            return jsonify({'error': 'Erro interno do servidor'}), 500
+
+    @api.route('/api/user/preferences', methods=['GET'])
     def get_user_preferences():
+        """Retorna preferências do usuário, incluindo inferências do CollaborativeFilteringModel."""
         try:
             user_id = request.args.get('user_id')
             if not user_id:
-                return jsonify({'error': 'user_id obrigatório'}), 400
+                return jsonify({'error': 'user_id é obrigatório'}), 400
 
-            user = User.query.get(user_id)
-            if not user:
-                return jsonify({'error': 'Usuário não encontrado'}), 404
-
+            # Preferências explícitas do banco
             preferences = UserPreference.query.filter_by(user_id=user_id).all()
-            response_data = {
-                'preferences': [
-                    {
-                        'id': p.id,
-                        'user_id': p.user_id,
-                        'institution_type_id': p.institution_type_id,
-                        'institution_type_name': p.institution_type.name if p.institution_type else None,
-                        'institution_id': p.institution_id,
-                        'institution_name': p.institution.name if p.institution else None,
-                        'service_category_id': p.service_category_id,
-                        'service_category_name': p.service_category.name if p.service_category else None,
-                        'neighborhood': p.neighborhood
-                    } for p in preferences
-                ]
+            preference_scores = {
+                pref.institution_type_id: pref.preference_score
+                for pref in preferences
+                if pref.institution_type_id
             }
 
-            audit_log = AuditLog(
-                id=str(uuid.uuid4()),
-                user_id=user_id,
-                action='GET_PREFERENCES',
-                resource_type='UserPreference',
-                resource_id=user_id,
-                details=f"Acessou preferências",
-                timestamp=datetime.utcnow()
-            )
-            db.session.add(audit_log)
-            db.session.commit()
+            # Se poucas preferências, usar CollaborativeFilteringModel para inferir
+            if len(preference_scores) < 3:
+                try:
+                    # Obter todas as filas para inferência
+                    queue_ids = [q.id for q in Queue.query.all()]
+                    collab_scores = collaborative_model.predict(user_id, queue_ids)
+                    # Mapear filas para tipos de instituição
+                    for queue_id, score in collab_scores.items():
+                        queue = Queue.query.get(queue_id)
+                        if queue and queue.department and queue.department.branch:
+                            inst = Institution.query.get(queue.department.branch.institution_id)
+                            if inst and inst.institution_type_id:
+                                # Ponderar score colaborativo (0 a 1) para escala 0-100
+                                preference_scores[inst.institution_type_id] = preference_scores.get(
+                                    inst.institution_type_id, 0
+                                ) + int(score * 50)  # Ajuste de peso
+                except Exception as e:
+                    logger.warning(f"Erro ao inferir preferências para user_id={user_id}: {e}")
 
-            logger.info(f"Preferências carregadas para user_id={user_id}: {len(response_data['preferences'])}")
-            return jsonify(response_data), 200
+            return jsonify({'preferences': preference_scores}), 200
+        except SQLAlchemyError as e:
+            logger.error(f"Erro no banco ao carregar preferências para user_id={user_id}: {e}")
+            return jsonify({'error': 'Erro interno do servidor'}), 500
         except Exception as e:
-            db.session.rollback()
-            logger.error(f"Erro ao buscar preferências user_id={user_id}: {e}")
-            return jsonify({'error': 'Erro interno'}), 500
+            logger.error(f"Erro inesperado ao carregar preferências para user_id={user_id}: {e}")
+            return jsonify({'error': 'Erro interno do servidor'}), 500
+
+    @api.route('/api/institutions', methods=['GET'])
+    def get_institutions():
+        """Lista instituições por tipo, ordenadas por pontuação de qualidade."""
+        try:
+            type_id = request.args.get('type_id')
+            user_id = request.args.get('user_id')
+            user_lat = request.args.get('lat', type=float)
+            user_lon = request.args.get('lon', type=float)
+
+            if not type_id:
+                return jsonify({'error': 'type_id é obrigatório'}), 400
+
+            # Filtrar instituições por tipo
+            institutions = Institution.query.filter_by(institution_type_id=type_id).all()
+            if not institutions:
+                return jsonify({'institutions': []}), 200
+
+            # Calcular pontuações de qualidade
+            result = []
+            for inst in institutions:
+                # Encontrar uma fila representativa (primeira fila da primeira filial)
+                branch = Branch.query.filter_by(institution_id=inst.id).first()
+                queue = None
+                if branch:
+                    queue = Queue.query.join(Department).filter(Department.branch_id == branch.id).first()
+
+                # Pontuação de qualidade usando ServiceRecommendationPredictor
+                quality_score = 0.5  # Default
+                if queue:
+                    try:
+                        quality_score = service_recommendation_predictor.predict(
+                            queue=queue,
+                            user_id=user_id,
+                            user_lat=user_lat,
+                            user_lon=user_lon
+                        )
+                    except Exception as e:
+                        logger.warning(f"Erro ao prever qualidade para institution_id={inst.id}: {e}")
+
+                # Tempo de espera médio (se houver filas)
+                avg_wait_time = None
+                if branch:
+                    queues = Queue.query.join(Department).filter(Department.branch_id == branch.id).all()
+                    if queues:
+                        wait_times = [
+                            QueueService.calculate_wait_time(
+                                queue_id=q.id,
+                                ticket_number=q.current_ticket + 1,
+                                priority=0,
+                                user_lat=user_lat,
+                                user_lon=user_lon
+                            ) for q in queues
+                        ]
+                        wait_times = [wt for wt in wait_times if wt != "N/A"]
+                        avg_wait_time = round(sum(wait_times) / len(wait_times), 1) if wait_times else None
+
+                result.append({
+                    'id': inst.id,
+                    'name': inst.name,
+                    'logo': inst.logo_url or 'https://via.placeholder.com/40',
+                    'description': inst.description or '',
+                    'quality_score': round(quality_score, 2),
+                    'avg_wait_time': avg_wait_time
+                })
+
+            # Ordenar por pontuação de qualidade (descendente)
+            result.sort(key=lambda x: x['quality_score'], reverse=True)
+
+            # Adicionar alternativas usando ServiceClusteringModel (se tempo de espera for alto)
+            for inst in result[:]:
+                if inst['avg_wait_time'] and inst['avg_wait_time'] > 30:  # Limite de 30 minutos
+                    branch = Branch.query.filter_by(institution_id=inst['id']).first()
+                    if branch:
+                        queue = Queue.query.join(Department).filter(Department.branch_id == branch.id).first()
+                        if queue:
+                            try:
+                                alternatives = clustering_model.get_alternatives(queue.id, n=2)
+                                alt_institutions = []
+                                for alt_queue_id in alternatives:
+                                    alt_queue = Queue.query.get(alt_queue_id)
+                                    if alt_queue and alt_queue.department and alt_queue.department.branch:
+                                        alt_inst = Institution.query.get(alt_queue.department.branch.institution_id)
+                                        if alt_inst and alt_inst.institution_type_id == type_id:
+                                            alt_institutions.append({
+                                                'id': alt_inst.id,
+                                                'name': alt_inst.name,
+                                                'logo': alt_inst.logo_url or 'https://via.placeholder.com/40',
+                                                'description': alt_inst.description or '',
+                                                'quality_score': 0.5,  # Pode calcular se necessário
+                                                'avg_wait_time': None
+                                            })
+                                inst['alternatives'] = alt_institutions
+                            except Exception as e:
+                                logger.warning(f"Erro ao obter alternativas para institution_id={inst['id']}: {e}")
+
+            return jsonify({'institutions': result}), 200
+        except SQLAlchemyError as e:
+            logger.error(f"Erro no banco ao listar instituições para type_id={type_id}: {e}")
+            return jsonify({'error': 'Erro interno do servidor'}), 500
+        except Exception as e:
+            logger.error(f"Erro inesperado ao listar instituições para type_id={type_id}: {e}")
+            return jsonify({'error': 'Erro interno do servidor'}), 500
+
+    @api.route('/api/branches', methods=['GET'])
+    def get_branches():
+        """Lista filiais por instituição, ordenadas por pontuação de qualidade."""
+        try:
+            institution_id = request.args.get('institution_id')
+            user_id = request.args.get('user_id')
+            user_lat = request.args.get('lat', type=float)
+            user_lon = request.args.get('lon', type=float)
+
+            if not institution_id:
+                return jsonify({'error': 'institution_id é obrigatório'}), 400
+
+            branches = Branch.query.filter_by(institution_id=institution_id).all()
+            if not branches:
+                return jsonify({'branches': []}), 200
+
+            result = []
+            for branch in branches:
+                # Encontrar uma fila representativa
+                queue = Queue.query.join(Department).filter(Department.branch_id == branch.id).first()
+
+                # Pontuação de qualidade
+                quality_score = 0.5  # Default
+                if queue:
+                    try:
+                        quality_score = service_recommendation_predictor.predict(
+                            queue=queue,
+                            user_id=user_id,
+                            user_lat=user_lat,
+                            user_lon=user_lon
+                        )
+                    except Exception as e:
+                        logger.warning(f"Erro ao prever qualidade para branch_id={branch.id}: {e}")
+
+                # Tempo de espera médio
+                queues = Queue.query.join(Department).filter(Department.branch_id == branch.id).all()
+                avg_wait_time = None
+                predicted_demand = None
+                if queues:
+                    wait_times = [
+                        QueueService.calculate_wait_time(
+                            queue_id=q.id,
+                            ticket_number=q.current_ticket + 1,
+                            priority=0,
+                            user_lat=user_lat,
+                            user_lon=user_lon
+                        ) for q in queues
+                    ]
+                    wait_times = [wt for wt in wait_times if wt != "N/A"]
+                    avg_wait_time = round(sum(wait_times) / len(wait_times), 1) if wait_times else None
+
+                    # Previsão de demanda
+                    try:
+                        demands = [demand_model.predict(q.id, hours_ahead=1) for q in queues]
+                        predicted_demand = round(sum(demands) / len(demands), 1) if demands else None
+                    except Exception as e:
+                        logger.warning(f"Erro ao prever demanda para branch_id={branch.id}: {e}")
+
+                # Distância (se localização fornecida)
+                distance_km = None
+                if user_lat is not None and user_lon is not None and branch.latitude and branch.longitude:
+                    distance_km = QueueService.calculate_distance(user_lat, user_lon, branch)
+
+                branch_data = {
+                    'id': branch.id,
+                    'name': branch.name,
+                    'neighborhood': branch.neighborhood or 'Desconhecido',
+                    'logo': branch.logo_url or 'https://via.placeholder.com/40',
+                    'latitude': branch.latitude,
+                    'longitude': branch.longitude,
+                    'quality_score': round(quality_score, 2),
+                    'avg_wait_time': avg_wait_time,
+                    'predicted_demand': predicted_demand,
+                    'distance_km': round(distance_km, 2) if distance_km is not None else None
+                }
+
+                # Adicionar alternativas se tempo de espera for alto
+                if avg_wait_time and avg_wait_time > 30 and queue:
+                    try:
+                        alternatives = clustering_model.get_alternatives(queue.id, n=2)
+                        alt_branches = []
+                        for alt_queue_id in alternatives:
+                            alt_queue = Queue.query.get(alt_queue_id)
+                            if alt_queue and alt_queue.department and alt_queue.department.branch:
+                                alt_branch = alt_queue.department.branch
+                                if alt_branch.institution_id == institution_id and alt_branch.id != branch.id:
+                                    alt_queues = Queue.query.join(Department).filter(Department.branch_id == alt_branch.id).all()
+                                    alt_wait_times = [
+                                        QueueService.calculate_wait_time(
+                                            queue_id=q.id,
+                                            ticket_number=q.current_ticket + 1,
+                                            priority=0
+                                        ) for q in alt_queues
+                                    ]
+                                    alt_wait_times = [wt for wt in alt_wait_times if wt != "N/A"]
+                                    alt_avg_wait_time = round(sum(alt_wait_times) / len(alt_wait_times), 1) if alt_wait_times else None
+                                    alt_branches.append({
+                                        'id': alt_branch.id,
+                                        'name': alt_branch.name,
+                                        'neighborhood': alt_branch.neighborhood or 'Desconhecido',
+                                        'logo': alt_branch.logo_url or 'https://via.placeholder.com/40',
+                                        'avg_wait_time': alt_avg_wait_time
+                                    })
+                        branch_data['alternatives'] = alt_branches
+                    except Exception as e:
+                        logger.warning(f"Erro ao obter alternativas para branch_id={branch.id}: {e}")
+
+                result.append(branch_data)
+
+            # Ordenar por pontuação de qualidade, considerando distância se disponível
+            result.sort(key=lambda x: (
+                x['quality_score'],
+                x['distance_km'] if x['distance_km'] is not None else float('inf')
+            ), reverse=True)
+
+            return jsonify({'branches': result}), 200
+        except SQLAlchemyError as e:
+            logger.error(f"Erro no banco ao listar filiais para institution_id={institution_id}: {e}")
+            return jsonify({'error': 'Erro interno do servidor'}), 500
+        except Exception as e:
+            logger.error(f"Erro inesperado ao listar filiais para institution_id={institution_id}: {e}")
+            return jsonify({'error': 'Erro interno do servidor'}), 500
