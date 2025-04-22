@@ -82,7 +82,8 @@ class Institution(db.Model):
     institution_type_id = Column(String(36), ForeignKey('institution_type.id'), nullable=False, index=True)  # Novo campo
     description = Column(Text, nullable=True)
     
-    type = relationship('InstitutionType', backref=db.backref('institutions', lazy='dynamic'))
+    # Removida a definição duplicada do relacionamento com InstitutionType
+    # type = relationship('InstitutionType', backref=db.backref('institutions', lazy='dynamic'))
     
     def __repr__(self):
         return f'<Institution {self.name} ({self.type.name})>'
