@@ -15,7 +15,7 @@ except ImportError as e:
 from sqlalchemy import and_
 from datetime import datetime, timedelta
 from app import db
-from app.models import Queue, Ticket, Department, ServiceTag, UserPreference, QueueSchedule, Branch, Weekday
+from app.models import Queue, Ticket, Department, ServiceTag, UserPreference, QueueSchedule, Branch, Weekday, Institution
 from geopy.distance import geodesic
 import joblib
 import os
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class WaitTimePredictor:
     """Modelo para prever tempo de espera por fila."""
-    MIN_SAMPLES = 10
+    MIN_SAMPLES = 5  # Reduzido de 10 para 5
     MAX_DAYS = 30
     MODEL_PATH = "wait_time_model_{queue_id}.joblib"
     FALLBACK_TIME = 5
@@ -90,7 +90,7 @@ class WaitTimePredictor:
                     position = max(0, ticket.ticket_number - queue.current_ticket)
                     hour_of_day = ticket.issued_at.hour
                     sector_encoded = self.get_sector_id(queue.department.sector if queue.department else None)
-                    category_encoded = self.get_category_id(queue.category_id)
+                    categoryEncoded = self.get_category_id(queue.category_id)
                     data.append({
                         'position': position,
                         'active_tickets': queue.active_tickets,
@@ -219,7 +219,7 @@ class WaitTimePredictor:
 
 class ServiceRecommendationPredictor:
     """Modelo para prever pontuação de qualidade de filas."""
-    MIN_SAMPLES = 10
+    MIN_SAMPLES = 5  # Reduzido de 10 para 5
     MODEL_PATH = "service_recommendation_model.joblib"
     DEFAULT_SCORE = 0.5
 
@@ -229,8 +229,10 @@ class ServiceRecommendationPredictor:
         self.is_trained = False
         self.sector_mapping = {}
         self.category_mapping = {}
+        self.institution_type_mapping = {}  # Novo mapeamento
         self.next_sector_id = 1
         self.next_category_id = 1
+        self.next_institution_type_id = 1
 
     def get_sector_id(self, sector):
         if not sector:
@@ -247,6 +249,14 @@ class ServiceRecommendationPredictor:
             self.category_mapping[category_id] = self.next_category_id
             self.next_category_id += 1
         return self.category_mapping[category_id]
+
+    def get_institution_type_id(self, institution_type_id):
+        if not institution_type_id:
+            return 0
+        if institution_type_id not in self.institution_type_mapping:
+            self.institution_type_mapping[institution_type_id] = self.next_institution_type_id
+            self.next_institution_type_id += 1
+        return self.institution_type_mapping[institution_type_id]
 
     def calculate_tag_similarity(self, queue_tags, user_id):
         try:
@@ -269,9 +279,11 @@ class ServiceRecommendationPredictor:
             preferred_institutions = {pref.institution_id for pref in user_prefs if pref.institution_id}
             preferred_categories = {pref.service_category_id for pref in user_prefs if pref.service_category_id}
             preferred_neighborhoods = {pref.neighborhood for pref in user_prefs if pref.neighborhood}
+            preferred_institution_types = {pref.institution_type_id for pref in user_prefs if pref.institution_type_id}
 
             for queue in queues:
                 branch = Branch.query.join(Department).filter(Department.id == queue.department_id).first()
+                institution = Institution.query.get(branch.institution_id) if branch else None
                 tickets = Ticket.query.filter(
                     Ticket.queue_id == queue.id,
                     Ticket.status == 'Atendido',
@@ -305,11 +317,13 @@ class ServiceRecommendationPredictor:
                     'availability': availability,
                     'sector_encoded': self.get_sector_id(queue.department.sector if queue.department else None),
                     'category_encoded': self.get_category_id(queue.category_id),
+                    'institution_type_encoded': self.get_institution_type_id(institution.institution_type_id if institution else None),
                     'is_open': is_open,
                     'tag_similarity': tag_similarity,
                     'predicted_demand': predicted_demand,
                     'is_preferred_institution': 1 if branch and branch.institution_id in preferred_institutions else 0,
                     'is_preferred_neighborhood': 1 if branch and branch.neighborhood in preferred_neighborhoods else 0,
+                    'is_preferred_institution_type': 1 if institution and institution.institution_type_id in preferred_institution_types else 0,
                     'quality_score': quality_score
                 })
 
@@ -319,9 +333,9 @@ class ServiceRecommendationPredictor:
 
             df = pd.DataFrame(data)
             X = df[[
-                'avg_service_time', 'availability', 'sector_encoded', 'category_encoded',
+                'avg_service_time', 'availability', 'sector_encoded', 'category_encoded', 'institution_type_encoded',
                 'is_open', 'tag_similarity', 'predicted_demand',
-                'is_preferred_institution', 'is_preferred_neighborhood'
+                'is_preferred_institution', 'is_preferred_neighborhood', 'is_preferred_institution_type'
             ]]
             y = df['quality_score']
             return X, y
@@ -364,6 +378,7 @@ class ServiceRecommendationPredictor:
                     return self.DEFAULT_SCORE
 
             branch = Branch.query.join(Department).filter(Department.id == queue.department_id).first()
+            institution = Institution.query.get(branch.institution_id) if branch else None
             tickets = Ticket.query.filter(
                 Ticket.queue_id == queue.id,
                 Ticket.status == 'Atendido',
@@ -384,17 +399,20 @@ class ServiceRecommendationPredictor:
             user_prefs = UserPreference.query.filter_by(user_id=user_id).all() if user_id else []
             preferred_institutions = {pref.institution_id for pref in user_prefs if pref.institution_id}
             preferred_neighborhoods = {pref.neighborhood for pref in user_prefs if pref.neighborhood}
+            preferred_institution_types = {pref.institution_type_id for pref in user_prefs if pref.institution_type_id}
 
             features = np.array([[
                 avg_service_time,
                 availability,
                 self.get_sector_id(queue.department.sector if queue.department else None),
                 self.get_category_id(queue.category_id),
+                self.get_institution_type_id(institution.institution_type_id if institution else None),
                 is_open,
                 tag_similarity,
                 predicted_demand,
                 1 if branch and branch.institution_id in preferred_institutions else 0,
-                1 if branch and branch.neighborhood in preferred_neighborhoods else 0
+                1 if branch and branch.neighborhood in preferred_neighborhoods else 0,
+                1 if institution and institution.institution_type_id in preferred_institution_types else 0
             ]])
             features_scaled = self.scaler.transform(features)
             score = self.model.predict(features_scaled)[0]
@@ -406,7 +424,7 @@ class ServiceRecommendationPredictor:
 class CollaborativeFilteringModel:
     """Modelo de filtragem colaborativa para recomendações baseadas em padrões de usuários."""
     MODEL_PATH = "collaborative_model.joblib"
-    MIN_INTERACTIONS = 10
+    MIN_INTERACTIONS = 3  # Reduzido de 10 para 3
 
     def __init__(self):
         self.svd = TruncatedSVD(n_components=50, random_state=42)
@@ -499,7 +517,7 @@ class CollaborativeFilteringModel:
 class DemandForecastingModel:
     """Modelo para prever demanda futura de filas."""
     MODEL_PATH = "demand_model_{queue_id}.joblib"
-    MIN_DAYS = 7
+    MIN_DAYS = 3  # Reduzido de 7 para 3
 
     def __init__(self):
         self.models = {}
@@ -583,19 +601,29 @@ class DemandForecastingModel:
 class ServiceClusteringModel:
     """Modelo para agrupar filas semelhantes e sugerir alternativas."""
     MODEL_PATH = "clustering_model.joblib"
-    MIN_QUEUES = 10
+    MIN_QUEUES = 5  # Reduzido de 10 para 5
 
     def __init__(self):
         self.kmeans = KMeans(n_clusters=10, random_state=42)
         self.queue_mapping = {}
         self.is_trained = False
         self.tag_set = set()
+        self.institution_type_mapping = {}  # Novo mapeamento
+        self.next_institution_type_id = 1
 
     def get_category_id(self, category_id):
         return category_id if category_id else 0
 
     def get_sector_id(self, sector):
         return hash(sector) % 1000 if sector else 0
+
+    def get_institution_type_id(self, institution_type_id):
+        if not institution_type_id:
+            return 0
+        if institution_type_id not in self.institution_type_mapping:
+            self.institution_type_mapping[institution_type_id] = self.next_institution_type_id
+            self.next_institution_type_id += 1
+        return self.institution_type_mapping[institution_type_id]
 
     def prepare_data(self):
         try:
@@ -609,15 +637,18 @@ class ServiceClusteringModel:
             for queue in queues:
                 tags = [t.tag for t in queue.tags]
                 tag_vector = [1 if tag in tags else 0 for tag in self.tag_set]
+                branch = Branch.query.join(Department).filter(Department.id == queue.department_id).first()
+                institution = Institution.query.get(branch.institution_id) if branch else None
                 data.append({
                     'queue_id': queue.id,
                     'category_encoded': self.get_category_id(queue.category_id),
                     'sector_encoded': self.get_sector_id(queue.department.sector if queue.department else None),
+                    'institution_type_encoded': self.get_institution_type_id(institution.institution_type_id if institution else None),
                     'tag_vector': tag_vector
                 })
 
             X = np.array([
-                [d['category_encoded'], d['sector_encoded']] + d['tag_vector']
+                [d['category_encoded'], d['sector_encoded'], d['institution_type_encoded']] + d['tag_vector']
                 for d in data
             ])
             self.queue_mapping = {d['queue_id']: i for i, d in enumerate(data)}

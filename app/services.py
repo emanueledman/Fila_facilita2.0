@@ -3,7 +3,7 @@ import uuid
 import numpy as np
 from sqlalchemy import and_, func, or_
 from datetime import datetime, time, timedelta
-from app.models import Queue, QueueSchedule, Ticket, AuditLog, Department, Institution, User, Weekday, Branch, ServiceCategory, ServiceTag, UserPreference
+from app.models import Queue, QueueSchedule, Ticket, AuditLog, Department, Institution, User, Weekday, Branch, ServiceCategory, ServiceTag, UserPreference, InstitutionType
 from app.ml_models import wait_time_predictor, service_recommendation_predictor, collaborative_model, demand_model, clustering_model
 from app import db, redis_client, socketio
 from .utils.pdf_generator import generate_ticket_pdf
@@ -39,12 +39,15 @@ class QueueService:
                 logger.error(f"Dados incompletos para o ticket {ticket.id}")
                 raise ValueError("Fila, departamento ou instituição associada ao ticket não encontrada")
             
+            institution_type_name = queue.department.branch.institution.type.name if queue.department.branch.institution.type else "Desconhecido"
+            
             receipt = (
                 "=== Comprovante Facilita 2.0 ===\n"
-                f"Serviço: {queue.service or 'Desconhecido'}\n"
+                f"Tipo de Instituição: {institution_type_name}\n"  # Novo campo
                 f"Instituição: {queue.department.branch.institution.name or 'Desconhecida'}\n"
                 f"Filial: {queue.department.branch.name or 'Desconhecida'}\n"
                 f"Bairro: {queue.department.branch.neighborhood or 'Não especificado'}\n"
+                f"Serviço: {queue.service or 'Desconhecido'}\n"
                 f"Senha: {queue.prefix}{ticket.ticket_number}\n"
                 f"Tipo: {'Física' if ticket.is_physical else 'Virtual'}\n"
                 f"QR Code: {ticket.qr_code}\n"
@@ -67,6 +70,8 @@ class QueueService:
                 logger.error(f"Dados incompletos para o ticket {ticket.id}")
                 raise ValueError("Fila, departamento ou instituição associada ao ticket não encontrada")
             
+            institution_type_name = ticket.queue.department.branch.institution.type.name if ticket.queue.department.branch.institution.type else "Desconhecido"
+            
             if position is None:
                 position = max(0, ticket.ticket_number - ticket.queue.current_ticket)
             if wait_time is None:
@@ -76,7 +81,7 @@ class QueueService:
 
             pdf_buffer = generate_ticket_pdf(
                 ticket=ticket,
-                institution_name=f"{ticket.queue.department.branch.institution.name or 'Desconhecida'} - {ticket.queue.department.branch.name or 'Desconhecida'}",
+                institution_name=f"{institution_type_name} - {ticket.queue.department.branch.institution.name or 'Desconhecida'} - {ticket.queue.department.branch.name or 'Desconhecida'}",
                 service=ticket.queue.service or "Desconhecido",
                 position=position,
                 wait_time=wait_time
@@ -416,7 +421,7 @@ class QueueService:
             raise
 
     @staticmethod
-    def check_proximity_notifications(user_id, user_lat, user_lon, desired_service=None, institution_id=None, branch_id=None):
+    def check_proximity_notifications(user_id, user_lat, user_lon, desired_service=None, institution_id=None, branch_id=None, institution_type_id=None):
         """Verifica e envia notificações de proximidade."""
         try:
             if not isinstance(user_id, str) or not user_id:
@@ -438,6 +443,7 @@ class QueueService:
             user_prefs = UserPreference.query.filter_by(user_id=user_id).all()
             preferred_institutions = {pref.institution_id for pref in user_prefs if pref.institution_id}
             preferred_categories = {pref.service_category_id for pref in user_prefs if pref.service_category_id}
+            preferred_institution_types = {pref.institution_type_id for pref in user_prefs if pref.institution_type_id}
 
             query = Queue.query.join(Department).join(Branch).join(Institution)
             if institution_id:
@@ -448,6 +454,10 @@ class QueueService:
                 if not isinstance(branch_id, str):
                     raise ValueError("branch_id inválido")
                 query = query.filter(Branch.id == branch_id)
+            if institution_type_id:
+                if not isinstance(institution_type_id, str):
+                    raise ValueError("institution_type_id inválido")
+                query = query.filter(Institution.institution_type_id == institution_type_id)
             if desired_service:
                 if not isinstance(desired_service, str) or not desired_service.strip():
                     raise ValueError("Serviço inválido")
@@ -478,6 +488,8 @@ class QueueService:
                 if preferred_institutions and branch.institution_id not in preferred_institutions:
                     continue
                 if preferred_categories and queue.category_id and queue.category_id not in preferred_categories:
+                    continue
+                if preferred_institution_types and branch.institution.institution_type_id not in preferred_institution_types:
                     continue
 
                 distance = QueueService.calculate_distance(user_lat, user_lon, branch)
@@ -786,6 +798,7 @@ class QueueService:
         neighborhood=None,
         branch_id=None,
         institution_id=None,
+        institution_type_id=None,
         category_id=None,
         tags=None,
         max_wait_time=None,
@@ -802,7 +815,7 @@ class QueueService:
             results = []
 
             # Construir consulta base
-            query_base = Queue.query.join(Department).join(Branch).join(Institution)
+            query_base = Queue.query.join(Department).join(Branch).join(Institution).join(InstitutionType)
 
             # Aplicar filtros
             if institution_id:
@@ -813,6 +826,10 @@ class QueueService:
                 if not isinstance(institution_name, str):
                     raise ValueError("Nome da instituição inválido")
                 query_base = query_base.filter(Institution.name.ilike(f'%{institution_name}%'))
+            if institution_type_id:
+                if not isinstance(institution_type_id, str):
+                    raise ValueError("institution_type_id inválido")
+                query_base = query_base.filter(Institution.institution_type_id == institution_type_id)
             if neighborhood:
                 if not isinstance(neighborhood, str):
                     raise ValueError("Bairro inválido")
@@ -839,7 +856,7 @@ class QueueService:
                     raise ValueError("Nenhum termo de busca válido")
                 search_term = ' & '.join(search_terms)
                 query_base = query_base.filter(
-                    func.to_tsvector('portuguese', func.concat(Queue.service, ' ', Department.sector, ' ', Institution.name))
+                    func.to_tsvector('portuguese', func.concat(Queue.service, ' ', Department.sector, ' ', Institution.name, ' ', InstitutionType.name))
                     .op('@@')(func.to_tsquery('portuguese', search_term))
                 )
                 query_base = query_base.outerjoin(ServiceTag).filter(
@@ -877,7 +894,7 @@ class QueueService:
             if query and search_terms:
                 query_base = query_base.order_by(
                     func.ts_rank(
-                        func.to_tsvector('portuguese', func.concat(Queue.service, ' ', Department.sector, ' ', Institution.name)),
+                        func.to_tsvector('portuguese', func.concat(Queue.service, ' ', Department.sector, ' ', Institution.name, ' ', InstitutionType.name)),
                         func.to_tsquery('portuguese', search_term)
                     ).desc()
                 )
@@ -893,8 +910,9 @@ class QueueService:
             for queue in queues:
                 branch = queue.department.branch
                 institution = branch.institution
+                institution_type = institution.type
 
-                if not all([branch, institution, queue.department]):
+                if not all([branch, institution, queue.department, institution_type]):
                     logger.warning(f"Dados incompletos para queue_id={queue.id}")
                     continue
 
@@ -954,7 +972,7 @@ class QueueService:
                 if query and search_terms:
                     rank = db.session.query(
                         func.ts_rank(
-                            func.to_tsvector('portuguese', func.concat(Queue.service, ' ', Department.sector, ' ', Institution.name)),
+                            func.to_tsvector('portuguese', func.concat(Queue.service, ' ', Department.sector, ' ', Institution.name, ' ', InstitutionType.name)),
                             func.to_tsquery('portuguese', search_term)
                         )
                     ).filter(Queue.id == queue.id).scalar() or 0.0
@@ -969,11 +987,17 @@ class QueueService:
                         composite_score += 0.1
                     if any(pref.service_category_id == queue.category_id for pref in user_prefs if pref.service_category_id):
                         composite_score += 0.1
+                    if any(pref.institution_type_id == institution.institution_type_id for pref in user_prefs if pref.institution_type_id):
+                        composite_score += 0.1
 
                 results.append({
                     'institution': {
                         'id': institution.id,
-                        'name': institution.name or "Desconhecida"
+                        'name': institution.name or "Desconhecida",
+                        'type': {
+                            'id': institution_type.id,
+                            'name': institution_type.name or "Desconhecido"
+                        }
                     },
                     'branch': {
                         'id': branch.id,
@@ -1044,7 +1068,7 @@ class QueueService:
 
             # Cache dos resultados
             try:
-                cache_key = f'services:{query}:{institution_name}:{neighborhood}:{branch_id}:{institution_id}:{category_id}:{tags}:{max_wait_time}:{min_quality_score}:{sort_by}'
+                cache_key = f'services:{query}:{institution_name}:{neighborhood}:{branch_id}:{institution_id}:{institution_type_id}:{category_id}:{tags}:{max_wait_time}:{min_quality_score}:{sort_by}'
                 redis_client.setex(cache_key, 30, json.dumps(result, default=str))
             except Exception as e:
                 logger.warning(f"Erro ao salvar cache para {cache_key}: {e}")
@@ -1062,8 +1086,23 @@ class QueueService:
             if not isinstance(institution_id, str):
                 raise ValueError("institution_id inválido")
 
+            institution = Institution.query.get(institution_id)
+            if not institution:
+                logger.error(f"Instituição não encontrada: {institution_id}")
+                raise ValueError("Instituição não encontrada")
+
             branches = Branch.query.filter_by(institution_id=institution_id).all()
-            result = {'branches': []}
+            result = {
+                'institution': {
+                    'id': institution.id,
+                    'name': institution.name or "Desconhecida",
+                    'type': {
+                        'id': institution.type.id if institution.type else None,
+                        'name': institution.type.name if institution.type else "Desconhecido"
+                    }
+                },
+                'branches': []
+            }
 
             for branch in branches:
                 departments = Department.query.filter_by(branch_id=branch.id).all()

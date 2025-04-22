@@ -21,6 +21,18 @@ class Weekday(enum.Enum):
     SATURDAY = "Saturday"
     SUNDAY = "Sunday"
 
+# Nova tabela para tipos de instituições
+class InstitutionType(db.Model):
+    __tablename__ = 'institution_type'
+    id = Column(String(36), primary_key=True, index=True)
+    name = Column(String(100), nullable=False, unique=True)  # Ex.: Bancário, Saúde, Educação
+    description = Column(Text, nullable=True)
+    
+    institutions = relationship('Institution', backref='type', lazy='dynamic')
+    
+    def __repr__(self):
+        return f'<InstitutionType {self.name}>'
+
 # Nova tabela para categorias de serviços
 class ServiceCategory(db.Model):
     __tablename__ = 'service_category'
@@ -62,20 +74,23 @@ class Branch(db.Model):
     def __repr__(self):
         return f'<Branch {self.name} of {self.institution.name}>'
 
-# Ajustes nas tabelas existentes
+# Tabela Institution atualizada
 class Institution(db.Model):
     __tablename__ = 'institution'
     id = Column(String(36), primary_key=True, index=True)
     name = Column(String(100), nullable=False)  # Ex.: Banco BIC
+    institution_type_id = Column(String(36), ForeignKey('institution_type.id'), nullable=False, index=True)  # Novo campo
     description = Column(Text, nullable=True)
     
+    type = relationship('InstitutionType', backref=db.backref('institutions', lazy='dynamic'))
+    
     def __repr__(self):
-        return f'<Institution {self.name}>'
+        return f'<Institution {self.name} ({self.type.name})>'
 
 class Department(db.Model):
     __tablename__ = 'department'
     id = Column(String(36), primary_key=True, index=True)
-    branch_id = Column(String(36), ForeignKey('branch.id'), nullable=False, index=True)  # Alterado para branch_id
+    branch_id = Column(String(36), ForeignKey('branch.id'), nullable=False, index=True)
     name = Column(String(50), nullable=False, index=True)
     sector = Column(String(50))
     
@@ -89,7 +104,7 @@ class Queue(db.Model):
     id = Column(String(36), primary_key=True, index=True)
     department_id = Column(String(36), ForeignKey('department.id'), nullable=False, index=True)
     service = Column(String(50), nullable=False, index=True)
-    category_id = Column(String(36), ForeignKey('service_category.id'), nullable=True, index=True)  # Novo campo
+    category_id = Column(String(36), ForeignKey('service_category.id'), nullable=True, index=True)
     prefix = Column(String(10), nullable=False)
     end_time = Column(Time, nullable=True)
     open_time = Column(Time, nullable=False)
@@ -184,16 +199,18 @@ class AuditLog(db.Model):
     details = Column(Text, nullable=True)
     timestamp = Column(DateTime, nullable=False)
 
-# Nova tabela para preferências do usuário
+# Tabela UserPreference atualizada
 class UserPreference(db.Model):
     __tablename__ = 'user_preference'
     id = Column(String(36), primary_key=True, index=True)
     user_id = Column(String(36), ForeignKey('user.id'), nullable=False, index=True)
+    institution_type_id = Column(String(36), ForeignKey('institution_type.id'), nullable=True, index=True)  # Novo campo
     institution_id = Column(String(36), ForeignKey('institution.id'), nullable=True, index=True)
     service_category_id = Column(String(36), ForeignKey('service_category.id'), nullable=True, index=True)
     neighborhood = Column(String(100), nullable=True)
     
     user = relationship('User', backref=db.backref('preferences', lazy='dynamic'))
+    institution_type = relationship('InstitutionType', backref=db.backref('preferred_by', lazy='dynamic'))
     institution = relationship('Institution', backref=db.backref('preferred_by', lazy='dynamic'))
     service_category = relationship('ServiceCategory', backref=db.backref('preferred_by', lazy='dynamic'))
     
@@ -201,9 +218,11 @@ class UserPreference(db.Model):
         return f'<UserPreference for User {self.user_id}>'
 
 # Índices
+Index('idx_institution_type_id', Institution.institution_type_id)
 Index('idx_queue_institution_id_service', Queue.department_id, Queue.service)
 Index('idx_queue_schedule_queue_id', QueueSchedule.queue_id)
 Index('idx_audit_log_timestamp', AuditLog.timestamp)
 Index('idx_service_tag_queue_id', ServiceTag.queue_id)
 Index('idx_branch_institution_id', Branch.institution_id)
 Index('idx_user_preference_user_id', UserPreference.user_id)
+Index('idx_user_preference_institution_type_id', UserPreference.institution_type_id)

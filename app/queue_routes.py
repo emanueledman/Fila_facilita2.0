@@ -1,7 +1,7 @@
 from flask import jsonify, request, send_file
 from flask_socketio import join_room, leave_room, ConnectionRefusedError
 from . import db, socketio, redis_client
-from .models import Institution, Branch, Queue, Ticket, User, Department, UserRole, QueueSchedule, Weekday, ServiceCategory, ServiceTag, UserPreference
+from .models import Institution, Branch, Queue, Ticket, User, Department, UserRole, QueueSchedule, Weekday, ServiceCategory, ServiceTag, UserPreference, InstitutionType
 from .auth import require_auth
 from .services import QueueService
 from .ml_models import wait_time_predictor, service_recommendation_predictor, collaborative_model, demand_model, clustering_model
@@ -67,6 +67,7 @@ def init_queue_routes(app):
         min_quality_score = request.args.get('min_quality_score')
         category_id = request.args.get('category_id')
         tags = request.args.get('tags')
+        institution_type_id = request.args.get('institution_type_id')
 
         if user_lat is not None:
             try:
@@ -107,6 +108,9 @@ def init_queue_routes(app):
             if not all(re.match(r'^[A-Za-zÀ-ÿ\s]{1,50}$', tag.strip()) for tag in tags):
                 logger.warning(f"Tags inválidas: {tags}")
                 return jsonify({'error': 'Tags inválidas'}), 400
+        if institution_type_id and not isinstance(institution_type_id, str):
+            logger.warning(f"institution_type_id inválido: {institution_type_id}")
+            return jsonify({'error': 'institution_type_id deve ser uma string'}), 400
 
         try:
             user_id = request.user_id
@@ -122,6 +126,7 @@ def init_queue_routes(app):
                 tags=tags,
                 max_wait_time=max_wait_time,
                 min_quality_score=min_quality_score,
+                institution_type_id=institution_type_id,
                 sort_by='score'
             )
             logger.info(f"Sugestões geradas para user_id={user_id}: {len(suggestions['services'])} resultados")
@@ -138,6 +143,7 @@ def init_queue_routes(app):
         latitude = data.get('latitude')
         longitude = data.get('longitude')
         email = data.get('email')
+        institution_type_id = data.get('institution_type_id')
 
         if latitude is None or longitude is None:
             logger.error(f"Latitude ou longitude não fornecidos por user_id={user_id}")
@@ -149,6 +155,10 @@ def init_queue_routes(app):
         except (ValueError, TypeError):
             logger.error(f"Latitude ou longitude inválidos: lat={latitude}, lon={longitude}")
             return jsonify({'error': 'Latitude e longitude devem ser números'}), 400
+
+        if institution_type_id and not isinstance(institution_type_id, str):
+            logger.warning(f"institution_type_id inválido: {institution_type_id}")
+            return jsonify({'error': 'institution_type_id deve ser uma string'}), 400
 
         user = User.query.get(user_id)
         if not user:
@@ -164,7 +174,12 @@ def init_queue_routes(app):
         db.session.commit()
         logger.info(f"Localização atualizada para user_id={user_id}: lat={latitude}, lon={longitude}")
 
-        QueueService.check_proximity_notifications(user_id, latitude, longitude)
+        QueueService.check_proximity_notifications(
+            user_id=user_id,
+            user_lat=latitude,
+            user_lon=longitude,
+            institution_type_id=institution_type_id
+        )
         QueueService.check_proactive_notifications()
         return jsonify({'message': 'Localização atualizada com sucesso'}), 200
 
@@ -384,7 +399,7 @@ def init_queue_routes(app):
                     'priority': ticket.priority,
                     'is_physical': ticket.is_physical,
                     'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None,
-                    'branch_id': ticket.queue.branch_id,
+                    'branch_id': ticket.queue.department.branch_id if ticket.queue.department else None,
                     'quality_score': float(quality_score),
                     'predicted_demand': float(predicted_demand),
                     'alternatives': alternatives_data
@@ -393,7 +408,7 @@ def init_queue_routes(app):
 
             if is_physical and pdf_buffer:
                 return send_file(
-                    io.BytesIO(bytes.fromhex(pdf_buffer.getvalue().hex())),
+                    io.BytesIO(pdf_buffer.getvalue()),
                     as_attachment=True,
                     download_name=f"ticket_{ticket.queue.prefix}{ticket.ticket_number}.pdf",
                     mimetype='application/pdf'
@@ -443,9 +458,17 @@ def init_queue_routes(app):
         quality_score = service_recommendation_predictor.predict(queue, request.user_id)
         predicted_demand = demand_model.predict(queue.id, hours_ahead=1)
 
+        institution = queue.department.branch.institution if queue.department and queue.department.branch and queue.department.branch.institution else None
+
         return jsonify({
             'service': queue.service or "Desconhecido",
-            'institution': queue.department.branch.institution.name if queue.department and queue.department.branch and queue.department.branch.institution else "Desconhecida",
+            'institution': {
+                'name': institution.name if institution else "Desconhecida",
+                'type': {
+                    'id': institution.type.id if institution and institution.type else None,
+                    'name': institution.type.name if institution and institution.type else "Desconhecido"
+                }
+            },
             'branch': queue.department.branch.name if queue.department and queue.department.branch else "Desconhecida",
             'ticket_number': f"{queue.prefix}{ticket.ticket_number}",
             'qr_code': ticket.qr_code,
@@ -728,7 +751,6 @@ def init_queue_routes(app):
                         'sector': q.department.sector if q.department else None,
                         'department': q.department.name if q.department else None,
                         'branch': q.department.branch.name if q.department and q.department.branch else None,
-                        'institution': inst.name or "Desconhecida",
                         'open_time': schedule.open_time.strftime('%H:%M') if schedule and schedule.open_time else None,
                         'end_time': schedule.end_time.strftime('%H:%M') if schedule and schedule.end_time else None,
                         'daily_limit': q.daily_limit or 0,
@@ -745,18 +767,22 @@ def init_queue_routes(app):
                         'id': inst.id,
                         'name': inst.name or "Desconhecida",
                         'description': inst.description or "Sem descrição",
-                        'branches': [
-                            {
-                                'id': b.id,
-                                'name': b.name or "Desconhecida",
-                                'location': b.location or "Desconhecida",
-                                'neighborhood': b.neighborhood or "Desconhecido",
-                                'latitude': float(b.latitude) if b.latitude else None,
-                                'longitude': float(b.longitude) if b.longitude else None
-                            } for b in branches
-                        ]
+                        'type': {
+                            'id': inst.type.id if inst.type else None,
+                            'name': inst.type.name if inst.type else "Desconhecido"
+                        }
                     },
-                    'queues': queue_data
+                    'queues': queue_data,
+                    'branches': [
+                        {
+                            'id': b.id,
+                            'name': b.name or "Desconhecida",
+                            'location': b.location or "Desconhecida",
+                            'neighborhood': b.neighborhood or "Desconhecido",
+                            'latitude': float(b.latitude) if b.latitude else None,
+                            'longitude': float(b.longitude) if b.longitude else None
+                        } for b in branches
+                    ]
                 })
 
             logger.info(f"Lista de filas retornada: {len(result)} instituições encontradas.")
@@ -773,7 +799,13 @@ def init_queue_routes(app):
             return jsonify([{
                 'id': t.id,
                 'service': t.queue.service or "Desconhecido",
-                'institution': t.queue.department.branch.institution.name if t.queue.department and t.queue.department.branch and t.queue.department.branch.institution else "Desconhecida",
+                'institution': {
+                    'name': t.queue.department.branch.institution.name if t.queue.department and t.queue.department.branch and t.queue.department.branch.institution else "Desconhecida",
+                    'type': {
+                        'id': t.queue.department.branch.institution.type.id if t.queue.department and t.queue.department.branch and t.queue.department.branch.institution and t.queue.department.branch.institution.type else None,
+                        'name': t.queue.department.branch.institution.type.name if t.queue.department and t.queue.department.branch and t.queue.department.branch.institution and t.queue.department.branch.institution.type else "Desconhecido"
+                    }
+                },
                 'branch': t.queue.department.branch.name if t.queue.department and t.queue.department.branch else "Desconhecida",
                 'number': f"{t.queue.prefix}{t.ticket_number}",
                 'status': t.status,
@@ -810,7 +842,13 @@ def init_queue_routes(app):
             return jsonify([{
                 'id': t.id,
                 'service': t.queue.service or "Desconhecido",
-                'institution': t.queue.department.branch.institution.name if t.queue.department and t.queue.department.branch and t.queue.department.branch.institution else "Desconhecida",
+                'institution': {
+                    'name': t.queue.department.branch.institution.name if t.queue.department and t.queue.department.branch and t.queue.department.branch.institution else "Desconhecida",
+                    'type': {
+                        'id': t.queue.department.branch.institution.type.id if t.queue.department and t.queue.department.branch and t.queue.department.branch.institution and t.queue.department.branch.institution.type else None,
+                        'name': t.queue.department.branch.institution.type.name if t.queue.department and t.queue.department.branch and t.queue.department.branch.institution and t.queue.department.branch.institution.type else "Desconhecido"
+                    }
+                },
                 'branch': t.queue.department.branch.name if t.queue.department and t.queue.department.branch else "Desconhecida",
                 'number': f"{t.queue.prefix}{t.ticket_number}",
                 'position': max(0, t.ticket_number - t.queue.current_ticket),
@@ -853,17 +891,13 @@ def init_queue_routes(app):
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
 
         try:
-            # Determinar o escopo dos tickets com base na função do usuário
             if user.user_role == UserRole.DEPARTMENT_ADMIN:
-                # Apenas tickets do departamento do usuário
                 tickets = Ticket.query.join(Queue).filter(Queue.department_id == user.department_id).all()
             elif user.user_role == UserRole.INSTITUTION_ADMIN:
-                # Apenas tickets da instituição do usuário
                 tickets = Ticket.query.join(Queue).join(Department).join(Branch).filter(
                     Branch.institution_id == user.institution_id
                 ).all()
-            else:  # SYSTEM_ADMIN
-                # Todos os tickets
+            else:
                 tickets = Ticket.query.all()
 
             result = []
@@ -876,7 +910,13 @@ def init_queue_routes(app):
                 result.append({
                     'id': ticket.id,
                     'service': queue.service or "Desconhecido",
-                    'institution': queue.department.branch.institution.name if queue.department and queue.department.branch and queue.department.branch.institution else "Desconhecida",
+                    'institution': {
+                        'name': queue.department.branch.institution.name if queue.department and queue.department.branch and queue.department.branch.institution else "Desconhecida",
+                        'type': {
+                            'id': queue.department.branch.institution.type.id if queue.department and queue.department.branch and queue.department.branch.institution and queue.department.branch.institution.type else None,
+                            'name': queue.department.branch.institution.type.name if queue.department and queue.department.branch and queue.department.branch.institution and queue.department.branch.institution.type else "Desconhecido"
+                        }
+                    },
                     'branch': queue.department.branch.name if queue.department and queue.department.branch else "Desconhecida",
                     'department': queue.department.name if queue.department else "Desconhecido",
                     'number': f"{queue.prefix}{ticket.ticket_number}",
@@ -1065,7 +1105,6 @@ def init_queue_routes(app):
                 'predicted_demand': float(predicted_demand)
             }
 
-            # Cachear resultado por 5 minutos
             cache_key = f"stats:queue:{queue_id}"
             if redis_client:
                 try:
@@ -1084,14 +1123,12 @@ def init_queue_routes(app):
     @require_auth
     def search_all_services():
         try:
-            # Obter user_id do contexto de autenticação
             user_id = request.user_id if hasattr(request, 'user_id') else None
             email = request.args.get('email')
             if email and not user_id:
                 user = User.query.filter_by(email=email).first()
                 user_id = user.id if user else None
 
-            # Parâmetros da query
             query = request.args.get('query', '').strip()
             user_lat = request.args.get('latitude')
             user_lon = request.args.get('longitude')
@@ -1103,8 +1140,8 @@ def init_queue_routes(app):
             sort_by = request.args.get('sort_by', 'score')
             page = request.args.get('page', '1')
             per_page = request.args.get('per_page', '20')
+            institution_type_id = request.args.get('institution_type_id')
 
-            # Validações
             if query and not re.match(r'^[A-Za-zÀ-ÿ\s]{1,100}$', query):
                 logger.warning(f"Query inválida: {query}")
                 return jsonify({'error': 'Query inválida'}), 400
@@ -1156,9 +1193,11 @@ def init_queue_routes(app):
             if per_page > 100:
                 logger.warning(f"Per_page excede o máximo: {per_page}")
                 return jsonify({'error': 'Máximo de itens por página é 100'}), 400
+            if institution_type_id and not isinstance(institution_type_id, str):
+                logger.warning(f"institution_type_id inválido: {institution_type_id}")
+                return jsonify({'error': 'institution_type_id deve ser uma string'}), 400
 
-            # Verificar cache
-            cache_key = f"services:{query}:{neighborhood}:{category_id}:{tags}:{max_wait_time}:{min_quality_score}:{sort_by}:{page}:{per_page}"
+            cache_key = f"services:{query}:{neighborhood}:{category_id}:{tags}:{max_wait_time}:{min_quality_score}:{sort_by}:{page}:{per_page}:{institution_type_id}"
             cached_data = None
             if redis_client:
                 try:
@@ -1169,17 +1208,16 @@ def init_queue_routes(app):
                 except Exception as e:
                     logger.warning(f"Erro ao acessar Redis para {cache_key}: {e}")
 
-            # Consulta ao banco
-            queues_query = Queue.query.join(Department).join(Branch).join(Institution).outerjoin(ServiceTag).outerjoin(QueueSchedule).outerjoin(ServiceCategory)
+            queues_query = Queue.query.join(Department).join(Branch).join(Institution).join(InstitutionType).outerjoin(ServiceTag).outerjoin(QueueSchedule).outerjoin(ServiceCategory)
 
-            # Filtros
             if query:
                 queues_query = queues_query.filter(
                     or_(
                         Queue.service.ilike(f'%{query}%'),
                         ServiceCategory.name.ilike(f'%{query}%'),
                         Branch.name.ilike(f'%{query}%'),
-                        Institution.name.ilike(f'%{query}%')
+                        Institution.name.ilike(f'%{query}%'),
+                        InstitutionType.name.ilike(f'%{query}%')
                     )
                 )
             if category_id:
@@ -1188,13 +1226,14 @@ def init_queue_routes(app):
                 queues_query = queues_query.filter(ServiceTag.tag.in_(tags))
             if neighborhood:
                 queues_query = queues_query.filter(Branch.neighborhood.ilike(f'%{neighborhood}%'))
+            if institution_type_id:
+                queues_query = queues_query.filter(Institution.institution_type_id == institution_type_id)
 
-            # Filtrar por filas abertas
             now = datetime.utcnow()
             current_weekday = now.strftime('%A').upper()
             try:
                 weekday_enum = getattr(Weekday, current_weekday)
-                queues_query = queues_query.join(QueueSchedule).filter(
+                queues_query = queues_query.filter(
                     and_(
                         QueueSchedule.weekday == weekday_enum,
                         QueueSchedule.is_closed == False,
@@ -1207,21 +1246,21 @@ def init_queue_routes(app):
                 logger.error(f"Dia da semana inválido: {current_weekday}")
                 return jsonify({'error': 'Dia da semana inválido'}), 500
 
-            # Executar consulta
             queues = queues_query.all()
             result = {'branches': [], 'total': len(queues)}
             branch_data = {}
 
-            # Preferências do usuário
             user_prefs = UserPreference.query.filter_by(user_id=user_id).all() if user_id else []
             preferred_categories = {p.service_category_id for p in user_prefs if p.service_category_id}
             preferred_neighborhoods = {p.neighborhood for p in user_prefs if p.neighborhood}
+            preferred_institution_types = {p.institution_type_id for p in user_prefs if p.institution_type_id}
 
             for queue in queues:
                 branch = queue.department.branch
                 institution = branch.institution if branch else None
+                institution_type = institution.type if institution else None
 
-                if not (queue.department and branch and institution):
+                if not (queue.department and branch and institution and institution_type):
                     logger.warning(f"Dados incompletos para queue_id={queue.id}")
                     continue
 
@@ -1246,12 +1285,20 @@ def init_queue_routes(app):
                     composite_score += 0.15
                 if branch.neighborhood in preferred_neighborhoods:
                     composite_score += 0.1
+                if institution.institution_type_id in preferred_institution_types:
+                    composite_score += 0.1
 
                 branch_key = branch.id
                 if branch_key not in branch_data:
                     branch_data[branch_key] = {
                         'id': branch.id,
-                        'institution_name': institution.name or "Desconhecida",
+                        'institution': {
+                            'name': institution.name or "Desconhecida",
+                            'type': {
+                                'id': institution_type.id if institution_type else None,
+                                'name': institution_type.name if institution_type else "Desconhecido"
+                            }
+                        },
                         'name': branch.name or "Desconhecida",
                         'location': branch.location or "Desconhecida",
                         'neighborhood': branch.neighborhood or "Desconhecido",
