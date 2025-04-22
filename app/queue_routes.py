@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 def init_queue_routes(app):
     def emit_ticket_update(ticket):
-        """Emite atualização de ticket via WebSocket no namespace /tickets."""
         try:
             wait_time = QueueService.calculate_wait_time(
                 ticket.queue.id, ticket.ticket_number, ticket.priority
@@ -46,7 +45,6 @@ def init_queue_routes(app):
             logger.error(f"Erro ao emitir atualização via WebSocket: {e}")
 
     def emit_dashboard_update(institution_id, queue_id, event_type, data):
-        """Emite atualização ao painel via WebSocket no namespace /dashboard."""
         try:
             socketio.emit('dashboard_update', {
                 'institution_id': institution_id,
@@ -61,7 +59,7 @@ def init_queue_routes(app):
     @app.route('/api/suggest-service', methods=['GET'])
     @require_auth
     def suggest_service():
-        service = request.args.get('service')
+        service = request.args.get('service', '').strip()
         user_lat = request.args.get('lat')
         user_lon = request.args.get('lon')
         neighborhood = request.args.get('neighborhood')
@@ -69,10 +67,6 @@ def init_queue_routes(app):
         min_quality_score = request.args.get('min_quality_score')
         category_id = request.args.get('category_id')
         tags = request.args.get('tags')
-
-        if not service or not isinstance(service, str) or not service.strip():
-            logger.warning("Parâmetro 'service' não fornecido ou inválido.")
-            return jsonify({'error': "O parâmetro 'service' é obrigatório e deve ser uma string."}), 400
 
         if user_lat is not None:
             try:
@@ -130,10 +124,10 @@ def init_queue_routes(app):
                 min_quality_score=min_quality_score,
                 sort_by='score'
             )
-            logger.info(f"Sugestões geradas para o serviço '{service}': {len(suggestions['services'])} resultados.")
+            logger.info(f"Sugestões geradas para user_id={user_id}: {len(suggestions['services'])} resultados")
             return jsonify(suggestions), 200
         except Exception as e:
-            logger.error(f"Erro ao gerar sugestões para o serviço '{service}': {e}")
+            logger.error(f"Erro ao gerar sugestões: {e}")
             return jsonify({'error': "Erro ao gerar sugestões."}), 500
 
     @app.route('/api/update_location', methods=['POST'])
@@ -305,10 +299,11 @@ def init_queue_routes(app):
         db.session.delete(queue)
         db.session.commit()
         logger.info(f"Fila excluída: {id}")
-        try:
-            redis_client.delete(f"cache:search:*")
-        except Exception as e:
-            logger.warning(f"Erro ao invalidar cache Redis: {e}")
+        if redis_client:
+            try:
+                redis_client.delete(f"cache:search:*")
+            except Exception as e:
+                logger.warning(f"Erro ao invalidar cache Redis: {e}")
         return jsonify({'message': 'Fila excluída'}), 200
 
     @app.route('/api/queue/<service>/ticket', methods=['POST'])
@@ -858,337 +853,239 @@ def init_queue_routes(app):
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
 
         try:
-            if user.user_role == UserRole.SYSTEM_ADMIN:
-                tickets = Ticket.query.all()
+            # Determinar o escopo dos tickets com base na função do usuário
+            if user.user_role == UserRole.DEPARTMENT_ADMIN:
+                # Apenas tickets do departamento do usuário
+                tickets = Ticket.query.join(Queue).filter(Queue.department_id == user.department_id).all()
             elif user.user_role == UserRole.INSTITUTION_ADMIN:
+                # Apenas tickets da instituição do usuário
                 tickets = Ticket.query.join(Queue).join(Department).join(Branch).filter(
                     Branch.institution_id == user.institution_id
                 ).all()
-            else:
-                tickets = Ticket.query.filter(
-                    Ticket.queue_id.in_(
-                        db.session.query(Queue.id).filter_by(department_id=user.department_id)
-                    )
-                ).all()
+            else:  # SYSTEM_ADMIN
+                # Todos os tickets
+                tickets = Ticket.query.all()
 
-            return jsonify([{
-                'id': t.id,
-                'service': t.queue.service or "Desconhecido",
-                'institution': t.queue.department.branch.institution.name if t.queue.department and t.queue.department.branch and t.queue.department.branch.institution else "Desconhecida",
-                'branch': t.queue.department.branch.name if t.queue.department and t.queue.department.branch else "Desconhecida",
-                'number': f"{t.queue.prefix}{t.ticket_number}",
-                'status': t.status,
-                'counter': f"{t.counter:02d}" if t.counter else None,
-                'position': max(0, t.ticket_number - t.queue.current_ticket) if t.status == 'Pendente' else 0,
-                'wait_time': f"{int(wait_time)} minutos" if isinstance((wait_time := QueueService.calculate_wait_time(t.queue.id, t.ticket_number, t.priority)), (int, float)) else "N/A",
-                'qr_code': t.qr_code,
-                'trade_available': t.trade_available,
-                'user_id': t.user_id,
-                'quality_score': float(service_recommendation_predictor.predict(t.queue, user_id=None)),
-                'predicted_demand': float(demand_model.predict(t.queue.id, hours_ahead=1))
-            } for t in tickets]), 200
-        except Exception as e:
-            logger.error(f"Erro ao listar todos os tickets para user_id={request.user_id}: {str(e)}")
-            return jsonify({'error': 'Erro ao listar tickets'}), 500
+            result = []
+            for ticket in tickets:
+                queue = ticket.queue
+                wait_time = QueueService.calculate_wait_time(queue.id, ticket.ticket_number, ticket.priority)
+                quality_score = service_recommendation_predictor.predict(queue, ticket.user_id)
+                predicted_demand = demand_model.predict(queue.id, hours_ahead=1)
 
-    @app.route('/api/update_fcm_token', methods=['POST'])
-    @require_auth
-    def update_fcm_token():
-        user_id = request.user_id
-        data = request.get_json() or {}
-        fcm_token = data.get('fcm_token')
-        email = data.get('email')
+                result.append({
+                    'id': ticket.id,
+                    'service': queue.service or "Desconhecido",
+                    'institution': queue.department.branch.institution.name if queue.department and queue.department.branch and queue.department.branch.institution else "Desconhecida",
+                    'branch': queue.department.branch.name if queue.department and queue.department.branch else "Desconhecida",
+                    'department': queue.department.name if queue.department else "Desconhecido",
+                    'number': f"{queue.prefix}{ticket.ticket_number}",
+                    'status': ticket.status,
+                    'counter': f"{ticket.counter:02d}" if ticket.counter else None,
+                    'position': max(0, ticket.ticket_number - queue.current_ticket) if ticket.status == 'Pendente' else 0,
+                    'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else "N/A",
+                    'priority': ticket.priority,
+                    'is_physical': ticket.is_physical,
+                    'user_id': ticket.user_id,
+                    'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None,
+                    'qr_code': ticket.qr_code,
+                    'trade_available': ticket.trade_available,
+                    'quality_score': float(quality_score),
+                    'predicted_demand': float(predicted_demand)
+                })
 
-        if not fcm_token or not email:
-            logger.error(f"FCM token ou email não fornecidos por user_id={user_id}")
-            return jsonify({'error': 'FCM token e email são obrigatórios'}), 400
-
-        user = User.query.get(user_id)
-        if not user:
-            user = User(id=user_id, email=email, name="Usuário Desconhecido", active=True)
-            db.session.add(user)
-            logger.info(f"Novo usuário criado: user_id={user_id}, email={email}")
-        else:
-            if user.email != email:
-                logger.warning(f"Email fornecido ({email}) não corresponde ao user_id={user_id}")
-                return jsonify({'error': 'Email não corresponde ao usuário autenticado'}), 403
-            user.fcm_token = fcm_token
-
-        db.session.commit()
-        logger.info(f"FCM token atualizado para user_id={user_id}, email={email}")
-        QueueService.check_proximity_notifications(user_id, user.last_known_lat, user.last_known_lon)
-        return jsonify({'message': 'FCM token atualizado com sucesso'}), 200
-
-    @app.route('/api/service/<institution_name>/<service>/current', methods=['GET'])
-    @require_auth
-    def get_currently_serving(institution_name, service):
-        institution = Institution.query.filter_by(name=institution_name).first()
-        if not institution:
-            logger.error(f"Instituição não encontrada: {institution_name}")
-            return jsonify({'error': 'Instituição não encontrada'}), 404
-
-        branch = Branch.query.filter_by(institution_id=institution.id).first()
-        if not branch:
-            logger.error(f"Filial não encontrada para institution_name={institution_name}")
-            return jsonify({'error': 'Filial não encontrada'}), 404
-
-        department = Department.query.filter_by(branch_id=branch.id).first()
-        if not department:
-            logger.error(f"Departamento não encontrado para institution_name={institution_name}")
-            return jsonify({'error': 'Departamento não encontrado'}), 404
-
-        queue = Queue.query.filter_by(department_id=department.id, service=service).first()
-        if not queue:
-            logger.error(f"Fila não encontrada para institution_name={institution_name}, service={service}")
-            return jsonify({'error': 'Fila não encontrada'}), 404
-
-        current_ticket = queue.current_ticket
-        wait_time = QueueService.calculate_wait_time(queue.id, queue.current_ticket + 1, 0)
-        quality_score = service_recommendation_predictor.predict(queue)
-        predicted_demand = demand_model.predict(queue.id, hours_ahead=1)
-
-        if current_ticket == 0:
-            return jsonify({
-                'current_ticket': 'N/A',
-                'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else "N/A",
-                'quality_score': float(quality_score),
-                'predicted_demand': float(predicted_demand)
-            }), 200
-
-        return jsonify({
-            'current_ticket': f"{queue.prefix}{current_ticket:03d}",
-            'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else "N/A",
-            'quality_score': float(quality_score),
-            'predicted_demand': float(predicted_demand)
-        }), 200
-
-    @app.route('/api/calculate_distance', methods=['POST'])
-    @require_auth
-    def calculate_distance():
-        data = request.get_json() or {}
-        user_lat = data.get('latitude')
-        user_lon = data.get('longitude')
-        institution_id = data.get('institution_id')
-
-        if not all([user_lat, user_lon, institution_id]):
-            logger.warning("Requisição de distância sem latitude, longitude ou institution_id")
-            return jsonify({'error': 'Latitude, longitude e institution_id são obrigatórios'}), 400
-
-        try:
-            user_lat = float(user_lat)
-            user_lon = float(user_lon)
-        except (ValueError, TypeError):
-            logger.warning(f"Latitude ou longitude inválidos: lat={user_lat}, lon={user_lon}")
-            return jsonify({'error': 'Latitude e longitude devem ser números'}), 400
-
-        institution = Institution.query.get(institution_id)
-        if not institution:
-            logger.error(f"Instituição não encontrada para institution_id={institution_id}")
-            return jsonify({'error': 'Instituição não encontrada'}), 404
-
-        branch = Branch.query.filter_by(institution_id=institution_id).first()
-        if not branch:
-            logger.error(f"Filial não encontrada para institution_id={institution_id}")
-            return jsonify({'error': 'Filial não encontrada'}), 404
-
-        distance = QueueService.calculate_distance(user_lat, user_lon, branch)
-        if distance is None:
-            logger.error(f"Erro ao calcular distância para institution_id={institution_id}")
-            return jsonify({'error': 'Erro ao calcular distância'}), 500
-
-        logger.info(f"Distância calculada: {distance:.2f} km entre usuário ({user_lat}, {user_lon}) e {institution.name}")
-        return jsonify({'distance': distance}), 200
-
-    @app.route('/api/institutions/<string:institution_id>/services/search', methods=['GET'])
-    def search_services(institution_id):
-        try:
-            institution = Institution.query.get_or_404(institution_id)
-            user_id = request.user_id if hasattr(request, 'user_id') else None
-
-            service_name = request.args.get('service_name', '').strip()
-            neighborhood = request.args.get('neighborhood')
-            user_lat = request.args.get('latitude')
-            user_lon = request.args.get('longitude')
-            category_id = request.args.get('category_id')
-            tags = request.args.get('tags')
-            max_wait_time = request.args.get('max_wait_time')
-            min_quality_score = request.args.get('min_quality_score')
-            sort_by = request.args.get('sort_by', 'score')
-            page = request.args.get('page', '1')
-            per_page = request.args.get('per_page', '20')
-
-            if service_name and not re.match(r'^[A-Za-zÀ-ÿ\s]{1,100}$', service_name):
-                logger.warning(f"Nome do serviço inválido: {service_name}")
-                return jsonify({'error': 'Nome do serviço inválido'}), 400
-            if neighborhood and not re.match(r'^[A-Za-zÀ-ÿ\s,]{1,100}$', neighborhood):
-                logger.warning(f"Bairro inválido: {neighborhood}")
-                return jsonify({'error': 'Bairro inválido'}), 400
-            if user_lat and user_lon:
-                try:
-                    user_lat = float(user_lat)
-                    user_lon = float(user_lon)
-                except (ValueError, TypeError):
-                    logger.warning(f"Latitude ou longitude inválidos: lat={user_lat}, lon={user_lon}")
-                    return jsonify({'error': 'Latitude e longitude devem ser números'}), 400
-            if category_id and not isinstance(category_id, str):
-                logger.warning(f"category_id inválido: {category_id}")
-                return jsonify({'error': 'category_id deve ser uma string'}), 400
-            if tags:
-                tags = tags.split(',')
-                if not all(re.match(r'^[A-Za-zÀ-ÿ\s]{1,50}$', tag.strip()) for tag in tags):
-                    logger.warning(f"Tags inválidas: {tags}")
-                    return jsonify({'error': 'Tags inválidas'}), 400
-            if max_wait_time:
-                try:
-                    max_wait_time = float(max_wait_time)
-                    if max_wait_time <= 0:
-                        raise ValueError
-                except (ValueError, TypeError):
-                    logger.warning(f"max_wait_time inválido: {max_wait_time}")
-                    return jsonify({'error': 'max_wait_time deve ser um número positivo'}), 400
-            if min_quality_score:
-                try:
-                    min_quality_score = float(min_quality_score)
-                    if not 0 <= min_quality_score <= 1:
-                        raise ValueError
-                except (ValueError, TypeError):
-                    logger.warning(f"min_quality_score inválido: {min_quality_score}")
-                    return jsonify({'error': 'min_quality_score deve estar entre 0 e 1'}), 400
-            if sort_by not in ['score', 'wait_time', 'distance', 'quality_score']:
-                logger.warning(f"sort_by inválido: {sort_by}")
-                return jsonify({'error': 'sort_by deve ser score, wait_time, distance ou quality_score'}), 400
-            try:
-                page = int(page)
-                per_page = int(per_page)
-            except (ValueError, TypeError):
-                logger.warning(f"Página ou per_page inválidos: page={page}, per_page={per_page}")
-                return jsonify({'error': 'Página e itens por página devem ser números inteiros'}), 400
-            if per_page > 100:
-                logger.warning(f"Per_page excede o máximo: {per_page}")
-                return jsonify({'error': 'Máximo de itens por página é 100'}), 400
-
-            cache_key = f"search:{institution_id}:{service_name}:{neighborhood}:{category_id}:{tags}:{max_wait_time}:{min_quality_score}:{sort_by}:{page}:{per_page}"
-            try:
-                cached_data = redis_client.get(cache_key)
-                if cached_data:
-                    logger.info(f"Retornando resultado do cache para {cache_key}")
-                    return jsonify(json.loads(cached_data))
-            except Exception as e:
-                logger.warning(f"Erro ao acessar Redis para {cache_key}: {e}")
-
-            result = QueueService.search_services(
-                query=service_name,
-                user_id=user_id,
-                user_lat=user_lat,
-                user_lon=user_lon,
-                institution_id=institution_id,
-                neighborhood=neighborhood,
-                category_id=category_id,
-                tags=tags,
-                max_wait_time=max_wait_time,
-                min_quality_score=min_quality_score,
-                sort_by=sort_by,
-                page=page,
-                per_page=per_page
-            )
-
-            try:
-                redis_client.setex(cache_key, 30, json.dumps(result, default=str))
-            except Exception as e:
-                logger.warning(f"Erro ao salvar cache para {cache_key}: {e}")
-
-            logger.info(f"Serviços buscados para institution_id={institution_id}: {result['total']} resultados")
+            logger.info(f"Lista de tickets retornada para user_id={user.id}: {len(result)} tickets encontrados")
             return jsonify(result), 200
         except Exception as e:
-            db.session.rollback()
-            logger.error(f"Erro ao buscar serviços para institution_id={institution_id}: {str(e)}")
-            return jsonify({'error': f'Erro ao buscar serviços: {str(e)}'}), 500
+            logger.error(f"Erro ao listar tickets para admin user_id={request.user_id}: {str(e)}")
+            return jsonify({'error': 'Erro ao listar tickets'}), 500
 
-    @app.route('/api/institutions/<string:institution_id>/physical-ticket', methods=['POST'])
-    def generate_physical_ticket(institution_id):
-        institution = Institution.query.get_or_404(institution_id)
+    @app.route('/api/queue/<queue_id>/schedule', methods=['POST'])
+    @require_auth
+    def create_queue_schedule(queue_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role not in [UserRole.DEPARTMENT_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+            logger.warning(f"Tentativa não autorizada de criar horário para fila {queue_id} por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores'}), 403
+
+        queue = Queue.query.get_or_404(queue_id)
+        if user.user_role == UserRole.DEPARTMENT_ADMIN and queue.department_id != user.department_id:
+            logger.warning(f"Usuário {user.id} não tem permissão para criar horário na fila {queue_id}")
+            return jsonify({'error': 'Sem permissão para esta fila'}), 403
+        if user.user_role == UserRole.INSTITUTION_ADMIN and queue.department.branch.institution_id != user.institution_id:
+            logger.warning(f"Usuário {user.id} não tem permissão para criar horário na instituição {queue.department.branch.institution_id}")
+            return jsonify({'error': 'Sem permissão para esta instituição'}), 403
 
         data = request.get_json() or {}
-        queue_id = data.get('queue_id')
-        branch_id = data.get('branch_id')
-
-        if not queue_id or not branch_id:
-            logger.warning(f"queue_id ou branch_id inválidos: queue_id={queue_id}, branch_id={branch_id}")
-            return jsonify({'error': 'queue_id e branch_id são obrigatórios'}), 400
-
-        queue = Queue.query.get(queue_id)
-        if not queue or queue.department.branch.institution_id != institution_id or queue.department.branch_id != branch_id:
-            logger.warning(f"Fila {queue_id} não encontrada ou não pertence à institution_id={institution_id} ou branch_id={branch_id}")
-            return jsonify({'error': 'Fila não encontrada ou não pertence à instituição/filial'}), 404
-
-        client_ip = request.remote_addr
+        required = ['weekday', 'open_time', 'end_time']
+        if not all(f in data for f in required):
+            logger.warning(f"Campos obrigatórios faltando para criar horário na fila {queue_id}")
+            return jsonify({'error': 'Campos obrigatórios faltando'}), 400
 
         try:
-            result = QueueService.generate_physical_ticket_for_totem(queue_id, client_ip)
-            ticket = Ticket.query.get(result['ticket']['id'])
-            emit_ticket_update(ticket)
-            emit_dashboard_update(
-                institution_id=institution_id,
+            weekday = data['weekday'].upper()
+            if weekday not in Weekday.__members__:
+                logger.warning(f"Dia da semana inválido: {weekday}")
+                return jsonify({'error': 'Dia da semana inválido'}), 400
+            weekday_enum = Weekday[weekday]
+
+            open_time = datetime.strptime(data['open_time'], '%H:%M').time()
+            end_time = datetime.strptime(data['end_time'], '%H:%M').time()
+            is_closed = data.get('is_closed', False)
+
+            if QueueSchedule.query.filter_by(queue_id=queue_id, weekday=weekday_enum).first():
+                logger.warning(f"Já existe um horário para {weekday} na fila {queue_id}")
+                return jsonify({'error': f'Horário já existe para {weekday}'}), 400
+
+            schedule = QueueSchedule(
                 queue_id=queue_id,
-                event_type='physical_ticket',
-                data={
-                    'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
-                    'timestamp': ticket.issued_at.isoformat(),
-                    'wait_time': f"{int(wait_time)} minutos" if isinstance((wait_time := QueueService.calculate_wait_time(queue_id, ticket.ticket_number, 0)), (int, float)) else "N/A"
-                }
+                weekday=weekday_enum,
+                open_time=open_time,
+                end_time=end_time,
+                is_closed=is_closed
             )
-            logger.info(f"Ticket físico gerado para queue_id={queue_id}, institution_id={institution_id}")
-            return send_file(
-                io.BytesIO(bytes.fromhex(result['pdf'])),
-                as_attachment=True,
-                download_name=f"ticket_{ticket.queue.prefix}{ticket.ticket_number}.pdf",
-                mimetype='application/pdf'
-            )
+            db.session.add(schedule)
+            db.session.commit()
+            logger.info(f"Horário criado para fila {queue_id} no dia {weekday}")
+            return jsonify({'message': f'Horário criado para {weekday}', 'schedule_id': schedule.id}), 201
         except ValueError as e:
-            logger.error(f"Erro ao gerar ticket físico para queue_id={queue_id}: {str(e)}")
-            return jsonify({'error': str(e)}), 400
+            logger.error(f"Erro ao processar horário para fila {queue_id}: {str(e)}")
+            return jsonify({'error': 'Formato de horário inválido'}), 400
         except Exception as e:
-            db.session.rollback()
-            logger.error(f"Erro inesperado ao gerar ticket físico para queue_id={queue_id}: {str(e)}")
-            return jsonify({'error': f'Erro ao gerar ticket: {str(e)}'}), 500
+            logger.error(f"Erro inesperado ao criar horário para fila {queue_id}: {str(e)}")
+            return jsonify({'error': 'Erro ao criar horário'}), 500
 
-    @app.route('/api/institutions/<string:institution_id>/dashboard', methods=['GET'])
-    def get_dashboard(institution_id):
+    @app.route('/api/queue/<queue_id>/schedule', methods=['PUT'])
+    @require_auth
+    def update_queue_schedule(queue_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role not in [UserRole.DEPARTMENT_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+            logger.warning(f"Tentativa não autorizada de atualizar horário para fila {queue_id} por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores'}), 403
+
+        queue = Queue.query.get_or_404(queue_id)
+        if user.user_role == UserRole.DEPARTMENT_ADMIN and queue.department_id != user.department_id:
+            logger.warning(f"Usuário {user.id} não tem permissão para atualizar horário na fila {queue_id}")
+            return jsonify({'error': 'Sem permissão para esta fila'}), 403
+        if user.user_role == UserRole.INSTITUTION_ADMIN and queue.department.branch.institution_id != user.institution_id:
+            logger.warning(f"Usuário {user.id} não tem permissão para atualizar horário na instituição {queue.department.branch.institution_id}")
+            return jsonify({'error': 'Sem permissão para esta instituição'}), 403
+
+        data = request.get_json() or {}
+        if 'weekday' not in data:
+            logger.warning(f"Campo 'weekday' faltando para atualizar horário na fila {queue_id}")
+            return jsonify({'error': 'Dia da semana é obrigatório'}), 400
+
         try:
-            institution = Institution.query.get_or_404(institution_id)
+            weekday = data['weekday'].upper()
+            if weekday not in Weekday.__members__:
+                logger.warning(f"Dia da semana inválido: {weekday}")
+                return jsonify({'error': 'Dia da semana inválido'}), 400
+            weekday_enum = Weekday[weekday]
 
-            cache_key = f'dashboard:{institution_id}'
-            refresh = request.args.get('refresh', 'false').lower() == 'true'
-            if not refresh:
-                try:
-                    cached_data = redis_client.get(cache_key)
-                    if cached_data:
-                        logger.info(f"Retornando dashboard do cache para institution_id={institution_id}")
-                        return jsonify(json.loads(cached_data))
-                except Exception as e:
-                    logger.warning(f"Erro ao acessar Redis para dashboard {institution_id}: {str(e)}")
+            schedule = QueueSchedule.query.filter_by(queue_id=queue_id, weekday=weekday_enum).first()
+            if not schedule:
+                logger.warning(f"Horário não encontrado para {weekday} na fila {queue_id}")
+                return jsonify({'error': f'Horário não encontrado para {weekday}'}), 404
 
-            data = QueueService.get_dashboard_data(institution_id)
-            try:
-                redis_client.setex(cache_key, 300, json.dumps(data, default=str))
-            except Exception as e:
-                logger.warning(f"Erro ao salvar cache no Redis para dashboard {institution_id}: {str(e)}")
+            if 'open_time' in data:
+                schedule.open_time = datetime.strptime(data['open_time'], '%H:%M').time()
+            if 'end_time' in data:
+                schedule.end_time = datetime.strptime(data['end_time'], '%H:%M').time()
+            if 'is_closed' in data:
+                schedule.is_closed = data['is_closed']
 
-            logger.info(f"Dashboard retornado para institution_id={institution_id}")
-            return jsonify(data), 200
+            db.session.commit()
+            logger.info(f"Horário atualizado para fila {queue_id} no dia {weekday}")
+            return jsonify({'message': f'Horário atualizado para {weekday}'}), 200
         except ValueError as e:
-            logger.error(f"Erro ao obter dashboard para institution_id={institution_id}: {str(e)}")
-            return jsonify({'error': str(e)}), 400
+            logger.error(f"Erro ao processar atualização de horário para fila {queue_id}: {str(e)}")
+            return jsonify({'error': 'Formato de horário inválido'}), 400
         except Exception as e:
-            logger.error(f"Erro inesperado ao obter dashboard para institution_id={institution_id}: {str(e)}")
-            return jsonify({'error': 'Erro ao obter dados do dashboard'}), 500
+            logger.error(f"Erro inesperado ao atualizar horário para fila {queue_id}: {str(e)}")
+            return jsonify({'error': 'Erro ao atualizar horário'}), 500
+
+    @app.route('/api/queue/<queue_id>/schedule', methods=['GET'])
+    @require_auth
+    def get_queue_schedule(queue_id):
+        queue = Queue.query.get_or_404(queue_id)
+        try:
+            schedules = QueueSchedule.query.filter_by(queue_id=queue_id).all()
+            result = [{
+                'weekday': schedule.weekday.name,
+                'open_time': schedule.open_time.strftime('%H:%M') if schedule.open_time else None,
+                'end_time': schedule.end_time.strftime('%H:%M') if schedule.end_time else None,
+                'is_closed': schedule.is_closed
+            } for schedule in schedules]
+
+            logger.info(f"Horários retornados para fila {queue_id}: {len(result)} horários encontrados")
+            return jsonify(result), 200
+        except Exception as e:
+            logger.error(f"Erro ao listar horários para fila {queue_id}: {str(e)}")
+            return jsonify({'error': 'Erro ao listar horários'}), 500
+
+    @app.route('/api/queue/<queue_id>/stats', methods=['GET'])
+    @require_auth
+    def queue_stats(queue_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role not in [UserRole.DEPARTMENT_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+            logger.warning(f"Tentativa não autorizada de acessar estatísticas da fila {queue_id} por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores'}), 403
+
+        queue = Queue.query.get_or_404(queue_id)
+        if user.user_role == UserRole.DEPARTMENT_ADMIN and queue.department_id != user.department_id:
+            logger.warning(f"Usuário {user.id} não tem permissão para acessar estatísticas da fila {queue_id}")
+            return jsonify({'error': 'Sem permissão para esta fila'}), 403
+        if user.user_role == UserRole.INSTITUTION_ADMIN and queue.department.branch.institution_id != user.institution_id:
+            logger.warning(f"Usuário {user.id} não tem permissão para acessar estatísticas na instituição {queue.department.branch.institution_id}")
+            return jsonify({'error': 'Sem permissão para esta instituição'}), 403
+
+        try:
+            tickets = Ticket.query.filter_by(queue_id=queue_id).all()
+            total_tickets = len(tickets)
+            pending_tickets = len([t for t in tickets if t.status == 'Pendente'])
+            attended_tickets = len([t for t in tickets if t.status == 'Atendido'])
+            avg_service_time = sum(t.service_time for t in tickets if t.service_time) / attended_tickets if attended_tickets else 0
+            wait_time = QueueService.calculate_wait_time(queue_id, queue.current_ticket + 1, 0)
+            quality_score = service_recommendation_predictor.predict(queue)
+            predicted_demand = demand_model.predict(queue_id, hours_ahead=1)
+
+            result = {
+                'queue_id': queue_id,
+                'service': queue.service or "Desconhecido",
+                'total_tickets': total_tickets,
+                'pending_tickets': pending_tickets,
+                'attended_tickets': attended_tickets,
+                'avg_service_time': f"{int(avg_service_time)} minutos" if avg_service_time else "N/A",
+                'current_wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else "N/A",
+                'active_tickets': queue.active_tickets,
+                'daily_limit': queue.daily_limit,
+                'num_counters': queue.num_counters,
+                'quality_score': float(quality_score),
+                'predicted_demand': float(predicted_demand)
+            }
+
+            # Cachear resultado por 5 minutos
+            cache_key = f"stats:queue:{queue_id}"
+            if redis_client:
+                try:
+                    redis_client.setex(cache_key, 300, json.dumps(result, default=str))
+                    logger.info(f"Estatísticas armazenadas no cache para {cache_key}")
+                except Exception as e:
+                    logger.warning(f"Erro ao salvar cache para {cache_key}: {e}")
+
+            logger.info(f"Estatísticas retornadas para fila {queue_id}")
+            return jsonify(result), 200
+        except Exception as e:
+            logger.error(f"Erro ao obter estatísticas para fila {queue_id}: {str(e)}")
+            return jsonify({'error': 'Erro ao obter estatísticas'}), 500
 
     @app.route('/api/services/search', methods=['GET'])
+    @require_auth
     def search_all_services():
         try:
-            # Obter user_id do contexto de autenticação (Firebase uid mapeado para User.id)
+            # Obter user_id do contexto de autenticação
             user_id = request.user_id if hasattr(request, 'user_id') else None
-            # Suporte para email como fallback (ex.: para usuários não autenticados)
             email = request.args.get('email')
             if email and not user_id:
                 user = User.query.filter_by(email=email).first()
@@ -1207,7 +1104,7 @@ def init_queue_routes(app):
             page = request.args.get('page', '1')
             per_page = request.args.get('per_page', '20')
 
-            # Validações dos parâmetros
+            # Validações
             if query and not re.match(r'^[A-Za-zÀ-ÿ\s]{1,100}$', query):
                 logger.warning(f"Query inválida: {query}")
                 return jsonify({'error': 'Query inválida'}), 400
@@ -1260,22 +1157,22 @@ def init_queue_routes(app):
                 logger.warning(f"Per_page excede o máximo: {per_page}")
                 return jsonify({'error': 'Máximo de itens por página é 100'}), 400
 
-            # Tentar recuperar do cache
+            # Verificar cache
             cache_key = f"services:{query}:{neighborhood}:{category_id}:{tags}:{max_wait_time}:{min_quality_score}:{sort_by}:{page}:{per_page}"
             cached_data = None
-            try:
-                cached_data = redis_client.get(cache_key)
-                if cached_data:
-                    logger.info(f"Retornando resultado do cache para {cache_key}")
-                    return jsonify(json.loads(cached_data)), 200
-            except Exception as e:
-                logger.warning(f"Erro ao acessar Redis para {cache_key}: {e}")
-                # Fallback: continuar com a consulta ao banco
+            if redis_client:
+                try:
+                    cached_data = redis_client.get(cache_key)
+                    if cached_data:
+                        logger.info(f"Retornando resultado do cache para {cache_key}")
+                        return jsonify(json.loads(cached_data)), 200
+                except Exception as e:
+                    logger.warning(f"Erro ao acessar Redis para {cache_key}: {e}")
 
-            # Construir consulta base com outer joins para evitar exclusão de filas
-            queues_query = Queue.query.join(Department).join(Branch).join(Institution).outerjoin(ServiceTag).outerjoin(QueueSchedule)
+            # Consulta ao banco
+            queues_query = Queue.query.join(Department).join(Branch).join(Institution).outerjoin(ServiceTag).outerjoin(QueueSchedule).outerjoin(ServiceCategory)
 
-            # Aplicar filtros
+            # Filtros
             if query:
                 queues_query = queues_query.filter(
                     or_(
@@ -1286,18 +1183,18 @@ def init_queue_routes(app):
                     )
                 )
             if category_id:
-                queues_query = queues_query.filter(Queue.category_id == category_id)
+                queues_query = queues_query.filter(ServiceCategory.id == category_id)
             if tags:
                 queues_query = queues_query.filter(ServiceTag.tag.in_(tags))
             if neighborhood:
                 queues_query = queues_query.filter(Branch.neighborhood.ilike(f'%{neighborhood}%'))
 
-            # Filtrar por filas abertas e com capacidade disponível
+            # Filtrar por filas abertas
             now = datetime.utcnow()
             current_weekday = now.strftime('%A').upper()
             try:
                 weekday_enum = getattr(Weekday, current_weekday)
-                queues_query = queues_query.filter(
+                queues_query = queues_query.join(QueueSchedule).filter(
                     and_(
                         QueueSchedule.weekday == weekday_enum,
                         QueueSchedule.is_closed == False,
@@ -1315,7 +1212,7 @@ def init_queue_routes(app):
             result = {'branches': [], 'total': len(queues)}
             branch_data = {}
 
-            # Obter preferências do usuário, se disponível
+            # Preferências do usuário
             user_prefs = UserPreference.query.filter_by(user_id=user_id).all() if user_id else []
             preferred_categories = {p.service_category_id for p in user_prefs if p.service_category_id}
             preferred_neighborhoods = {p.neighborhood for p in user_prefs if p.neighborhood}
@@ -1324,26 +1221,21 @@ def init_queue_routes(app):
                 branch = queue.department.branch
                 institution = branch.institution if branch else None
 
-                # Verificar se as relações são válidas
                 if not (queue.department and branch and institution):
-                    logger.warning(f"Dados incompletos para queue_id={queue.id}: department={queue.department}, branch={branch}, institution={institution}")
+                    logger.warning(f"Dados incompletos para queue_id={queue.id}")
                     continue
 
-                # Calcular tempo de espera
                 wait_time = QueueService.calculate_wait_time(queue.id, queue.active_tickets + 1, 0, user_lat, user_lon)
                 if max_wait_time and isinstance(wait_time, (int, float)) and wait_time > max_wait_time:
                     continue
 
-                # Calcular qualidade
                 quality_score = service_recommendation_predictor.predict(queue, user_id, user_lat, user_lon)
                 if min_quality_score and quality_score < min_quality_score:
                     continue
 
-                # Calcular distância
                 distance = QueueService.calculate_distance(user_lat, user_lon, branch) if user_lat and user_lon else float('inf')
                 predicted_demand = demand_model.predict(queue.id, hours_ahead=1)
 
-                # Calcular pontuação composta
                 composite_score = (
                     (1 / (1 + distance)) * 0.4 +
                     quality_score * 0.3 +
@@ -1355,7 +1247,6 @@ def init_queue_routes(app):
                 if branch.neighborhood in preferred_neighborhoods:
                     composite_score += 0.1
 
-                # Agrupar por filial
                 branch_key = branch.id
                 if branch_key not in branch_data:
                     branch_data[branch_key] = {
@@ -1384,7 +1275,6 @@ def init_queue_routes(app):
                     branch_data[branch_key]['max_composite_score'], composite_score
                 )
 
-            # Converter para lista e ordenar
             branches = list(branch_data.values())
             if sort_by == 'distance':
                 branches.sort(key=lambda x: x['distance'] if x['distance'] is not None else float('inf'))
@@ -1395,10 +1285,9 @@ def init_queue_routes(app):
                 ))
             elif sort_by == 'quality_score':
                 branches.sort(key=lambda x: max((q['quality_score'] for q in x['queues']), default=0), reverse=True)
-            else:  # score
+            else:
                 branches.sort(key=lambda x: x['max_composite_score'], reverse=True)
 
-            # Paginação
             start = (page - 1) * per_page
             end = start + per_page
             paginated_branches = branches[start:end]
@@ -1408,34 +1297,89 @@ def init_queue_routes(app):
             result['per_page'] = per_page
             result['total_pages'] = (len(branches) + per_page - 1) // per_page
 
-            # Armazenar no cache
-            try:
-                redis_client.setex(cache_key, 30, json.dumps(result, default=str))
-                logger.info(f"Resultado armazenado no cache para {cache_key}")
-            except Exception as e:
-                logger.warning(f"Erro ao salvar cache para {cache_key}: {e}")
+            if redis_client:
+                try:
+                    redis_client.setex(cache_key, 30, json.dumps(result, default=str))
+                    logger.info(f"Resultado armazenado no cache para {cache_key}")
+                except Exception as e:
+                    logger.warning(f"Erro ao salvar cache para {cache_key}: {e}")
 
             logger.info(f"Serviços buscados: {len(branches)} filiais encontradas, {len(queues)} filas totais")
             return jsonify(result), 200
         except Exception as e:
             logger.error(f"Erro ao buscar serviços: {str(e)}")
             return jsonify({'error': f'Erro ao buscar serviços: {str(e)}'}), 500
-        from flask import jsonify
 
-
-    @app.route('/api/categories', methods=['GET'])
-    def get_categories():
+    # WebSocket handlers
+    @socketio.on('connect', namespace='/tickets')
+    def handle_connect():
         try:
-            categories = ServiceCategory.query.all()
-            result = [
-                {
-                    'id': category.id,
-                    'name': category.name or "Sem Nome"
-                }
-                for category in categories
-            ]
-            logger.info(f"Categorias buscadas: {len(result)} encontradas")
-            return jsonify({'categories': result}), 200
+            token = request.args.get('token')
+            if not token:
+                logger.warning("Tentativa de conexão WebSocket sem token")
+                raise ConnectionRefusedError('Token não fornecido')
+
+            decoded_token = auth.verify_id_token(token)
+            user_id = decoded_token.get('uid')
+            join_room(user_id)
+            logger.info(f"Usuário {user_id} conectado ao WebSocket namespace /tickets")
         except Exception as e:
-            logger.error(f"Erro ao buscar categorias: {str(e)}")
-            return jsonify({'error': f'Erro ao buscar categorias: {str(e)}'}), 500
+            logger.error(f"Erro na conexão WebSocket: {str(e)}")
+            raise ConnectionRefusedError(str(e))
+
+    @socketio.on('disconnect', namespace='/tickets')
+    def handle_disconnect():
+        try:
+            token = request.args.get('token')
+            if token:
+                decoded_token = auth.verify_id_token(token)
+                user_id = decoded_token.get('uid')
+                leave_room(user_id)
+                logger.info(f"Usuário {user_id} desconectado do WebSocket namespace /tickets")
+        except Exception as e:
+            logger.error(f"Erro na desconexão WebSocket: {str(e)}")
+
+    @socketio.on('connect', namespace='/dashboard')
+    def handle_dashboard_connect():
+        try:
+            token = request.args.get('token')
+            if not token:
+                logger.warning("Tentativa de conexão WebSocket sem token no namespace /dashboard")
+                raise ConnectionRefusedError('Token não fornecido')
+
+            decoded_token = auth.verify_id_token(token)
+            user_id = decoded_token.get('uid')
+            user = User.query.get(user_id)
+            if not user or user.user_role not in [UserRole.DEPARTMENT_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+                logger.warning(f"Tentativa não autorizada de conexão ao dashboard por user_id={user_id}")
+                raise ConnectionRefusedError('Acesso restrito a administradores')
+
+            if user.user_role == UserRole.INSTITUTION_ADMIN:
+                join_room(user.institution_id)
+            elif user.user_role == UserRole.DEPARTMENT_ADMIN:
+                join_room(user.department_id)
+            else:
+                join_room('system_admin')
+            logger.info(f"Usuário {user_id} conectado ao WebSocket namespace /dashboard")
+        except Exception as e:
+            logger.error(f"Erro na conexão WebSocket no namespace /dashboard: {str(e)}")
+            raise ConnectionRefusedError(str(e))
+
+    @socketio.on('disconnect', namespace='/dashboard')
+    def handle_dashboard_disconnect():
+        try:
+            token = request.args.get('token')
+            if token:
+                decoded_token = auth.verify_id_token(token)
+                user_id = decoded_token.get('uid')
+                user = User.query.get(user_id)
+                if user:
+                    if user.user_role == UserRole.INSTITUTION_ADMIN:
+                        leave_room(user.institution_id)
+                    elif user.user_role == UserRole.DEPARTMENT_ADMIN:
+                        leave_room(user.department_id)
+                    else:
+                        leave_room('system_admin')
+                    logger.info(f"Usuário {user_id} desconectado do WebSocket namespace /dashboard")
+        except Exception as e:
+            logger.error(f"Erro na desconexão WebSocket no namespace /dashboard: {str(e)}")

@@ -12,4 +12,4 @@ def gerar_token(usuario_id):
         token = token.decode('utf-8')
     return token
 
-print(gerar_token("admin"))
+print(gerar_token("admin8"))
