@@ -33,7 +33,7 @@ def init_queue_routes(app):
                 'position': max(0, ticket.ticket_number - ticket.queue.current_ticket),
                 'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else "N/A",
                 'number': f"{ticket.queue.prefix}{ticket.ticket_number}"  # Adiciona número do ticket
-            }, room=ticket.user_id, namespace='/')  # Envia para a sala do usuário
+            }, room=ticket.user_id, namespace='/tickets')  # Envia para a sala do usuário
             logger.info(f"Atualização de ticket emitida via WebSocket: ticket_id={ticket.id}, user_id={ticket.user_id}")
             QueueService.send_notification(
                 fcm_token=None,
