@@ -376,7 +376,8 @@ def populate_initial_data(app):
                     ]
                     type_map = {}
                     for inst_type in types:
-                        existing_type = InstitutionType.query.filter_by(name=inst_type['name']).first()
+                        # Evitar acesso direto a InstitutionType.query para minimizar conflitos
+                        existing_type = db.session.query(InstitutionType).filter(InstitutionType.name == inst_type['name']).first()
                         if existing_type:
                             type_map[inst_type['name']] = existing_type.id
                             continue
@@ -418,7 +419,7 @@ def populate_initial_data(app):
                     ]
                     category_map = {}
                     for cat in categories:
-                        existing_cat = ServiceCategory.query.filter_by(name=cat['name']).first()
+                        existing_cat = db.session.query(ServiceCategory).filter(ServiceCategory.name == cat['name']).first()
                         if existing_cat:
                             category_map[cat['name']] = existing_cat.id
                             continue
@@ -432,7 +433,7 @@ def populate_initial_data(app):
                         db.session.flush()
                         category_map[cat['name']] = category.id
                     # Definir parent_id para Consulta Médica
-                    consulta_medica = ServiceCategory.query.filter_by(name='Consulta Médica').first()
+                    consulta_medica = db.session.query(ServiceCategory).filter(ServiceCategory.name == 'Consulta Médica').first()
                     if consulta_medica and not consulta_medica.parent_id:
                         consulta_medica.parent_id = category_map['Saúde']
                         db.session.flush()
@@ -473,12 +474,12 @@ def populate_initial_data(app):
                     """
                     Cria uma fila com agendamentos e tags, conforme models.py.
                     """
-                    existing_queue = Queue.query.filter_by(id=queue_data['id']).first()
+                    existing_queue = db.session.query(Queue).filter(Queue.id == queue_data['id']).first()
                     if not existing_queue:
-                        existing_queue = Queue.query.filter_by(
-                            department_id=department_id, 
-                            service=queue_data['service'],
-                            prefix=queue_data['prefix']
+                        existing_queue = db.session.query(Queue).filter(
+                            Queue.department_id == department_id, 
+                            Queue.service == queue_data['service'],
+                            Queue.prefix == queue_data['prefix']
                         ).first()
                     
                     if existing_queue:
@@ -505,7 +506,10 @@ def populate_initial_data(app):
                     db.session.flush()
 
                     for schedule in queue_data['schedules']:
-                        existing_schedule = QueueSchedule.query.filter_by(queue_id=queue.id, weekday=schedule['weekday']).first()
+                        existing_schedule = db.session.query(QueueSchedule).filter(
+                            QueueSchedule.queue_id == queue.id, 
+                            QueueSchedule.weekday == schedule['weekday']
+                        ).first()
                         if existing_schedule:
                             continue
                         queue_schedule = QueueSchedule(
@@ -519,7 +523,10 @@ def populate_initial_data(app):
                         db.session.add(queue_schedule)
 
                     for tag_name in queue_data['tags']:
-                        existing_tag = ServiceTag.query.filter_by(queue_id=queue.id, tag=tag_name).first()
+                        existing_tag = db.session.query(ServiceTag).filter(
+                            ServiceTag.queue_id == queue.id, 
+                            ServiceTag.tag == tag_name
+                        ).first()
                         if existing_tag:
                             continue
                         tag = ServiceTag(
@@ -535,7 +542,10 @@ def populate_initial_data(app):
                     """
                     Cria um departamento com suas filas.
                     """
-                    existing_dept = Department.query.filter_by(branch_id=branch_id, name=dept_data['name']).first()
+                    existing_dept = db.session.query(Department).filter(
+                        Department.branch_id == branch_id, 
+                        Department.name == dept_data['name']
+                    ).first()
                     if existing_dept:
                         app.logger.info(f"Departamento {dept_data['name']} já existe na filial, pulando.")
                         return existing_dept
@@ -558,11 +568,17 @@ def populate_initial_data(app):
                     """
                     Cria uma filial com seus departamentos.
                     """
-                    existing_branch = Branch.query.filter_by(institution_id=institution_id, name=branch_data['name']).first()
+                    existing_branch = db.session.query(Branch).filter(
+                        Branch.institution_id == institution_id, 
+                        Branch.name == branch_data['name']
+                    ).first()
                     if existing_branch:
                         app.logger.info(f"Filial {branch_data['name']} já existe na instituição, pulando.")
                         for dept_data in branch_data['departments']:
-                            existing_dept = Department.query.filter_by(branch_id=existing_branch.id, name=dept_data['name']).first()
+                            existing_dept = db.session.query(Department).filter(
+                                Department.branch_id == existing_branch.id, 
+                                Department.name == dept_data['name']
+                            ).first()
                             if not existing_dept:
                                 create_department(existing_branch.id, dept_data)
                             else:
@@ -591,16 +607,22 @@ def populate_initial_data(app):
                     """
                     Cria uma instituição com suas filiais.
                     """
-                    existing_inst = Institution.query.filter_by(name=inst_data['name']).first()
+                    existing_inst = db.session.query(Institution).filter(Institution.name == inst_data['name']).first()
                     if existing_inst:
                         app.logger.info(f"Instituição {inst_data['name']} já existe, atualizando filiais se necessário.")
                         for branch_data in inst_data['branches']:
-                            existing_branch = Branch.query.filter_by(institution_id=existing_inst.id, name=branch_data['name']).first()
+                            existing_branch = db.session.query(Branch).filter(
+                                Branch.institution_id == existing_inst.id, 
+                                Branch.name == branch_data['name']
+                            ).first()
                             if not existing_branch:
                                 create_branch(existing_inst.id, branch_data)
                             else:
                                 for dept_data in branch_data['departments']:
-                                    existing_dept = Department.query.filter_by(branch_id=existing_branch.id, name=dept_data['name']).first()
+                                    existing_dept = db.session.query(Department).filter(
+                                        Department.branch_id == existing_branch.id, 
+                                        Department.name == dept_data['name']
+                                    ).first()
                                     if not existing_dept:
                                         create_department(existing_branch.id, dept_data)
                                     else:
@@ -637,7 +659,7 @@ def populate_initial_data(app):
                     Garante emails únicos para DEPARTMENT_ADMIN.
                     """
                     users = []
-                    if not User.query.filter_by(email='sysadmin@queue.com').first():
+                    if not db.session.query(User).filter(User.email == 'sysadmin@queue.com').first():
                         super_admin = User(
                             id=str(uuid.uuid4()),
                             email='sysadmin@queue.com',
@@ -650,9 +672,9 @@ def populate_initial_data(app):
                         db.session.add(super_admin)
                         users.append(super_admin)
 
-                    for inst in Institution.query.all():
+                    for inst in db.session.query(Institution).all():
                         email = f'admin_{inst.name.lower().replace(" ", "_")}@queue.com'
-                        if not User.query.filter_by(email=email).first():
+                        if not db.session.query(User).filter(User.email == email).first():
                             admin = User(
                                 id=str(uuid.uuid4()),
                                 email=email,
@@ -666,11 +688,11 @@ def populate_initial_data(app):
                             db.session.add(admin)
                             users.append(admin)
 
-                    for dept in Department.query.all():
+                    for dept in db.session.query(Department).all():
                         inst_name = dept.branch.institution.name.lower().replace(" ", "_")
                         branch_name = dept.branch.name.lower().replace(" ", "_")
                         email = f'manager_{dept.name.lower().replace(" ", "_")}_{inst_name}_{branch_name}@queue.com'
-                        if not User.query.filter_by(email=email).first():
+                        if not db.session.query(User).filter(User.email == email).first():
                             manager = User(
                                 id=str(uuid.uuid4()),
                                 email=email,
@@ -685,11 +707,11 @@ def populate_initial_data(app):
                             db.session.add(manager)
                             users.append(manager)
 
-                    user_count = User.query.filter_by(user_role=UserRole.USER).count()
+                    user_count = db.session.query(User).filter(User.user_role == UserRole.USER).count()
                     if user_count < 10:
                         for i in range(10 - user_count):
                             email = f'user_{i}@queue.com'
-                            if not User.query.filter_by(email=email).first():
+                            if not db.session.query(User).filter(User.email == email).first():
                                 user = User(
                                     id=str(uuid.uuid4()),
                                     email=email,
@@ -715,18 +737,21 @@ def populate_initial_data(app):
                     """
                     Cria 20 preferências (2 por usuário USER).
                     """
-                    user_list = User.query.filter_by(user_role=UserRole.USER).limit(10).all()
+                    user_list = db.session.query(User).filter(User.user_role == UserRole.USER).limit(10).all()
                     for i, user in enumerate(user_list):
-                        categories = ServiceCategory.query.filter(ServiceCategory.name.in_(['Saúde', 'Administrativo', 'Bancário'])).all()
+                        categories = db.session.query(ServiceCategory).filter(ServiceCategory.name.in_(['Saúde', 'Administrativo', 'Bancário'])).all()
                         for category in categories[:2]:
-                            existing_pref = UserPreference.query.filter_by(user_id=user.id, service_category_id=category.id).first()
+                            existing_pref = db.session.query(UserPreference).filter(
+                                UserPreference.user_id == user.id, 
+                                UserPreference.service_category_id == category.id
+                            ).first()
                             if not existing_pref:
                                 preference = UserPreference(
                                     id=str(uuid.uuid4()),
                                     user_id=user.id,
                                     service_category_id=category.id,
-                                    institution_type_id=InstitutionType.query.filter_by(name=category.name).first().id if category.name in ['Saúde', 'Administrativo', 'Bancário'] else None,
-                                    institution_id=Institution.query.offset(i % 3).first().id,
+                                    institution_type_id=db.session.query(InstitutionType).filter(InstitutionType.name == category.name).first().id if category.name in ['Saúde', 'Administrativo', 'Bancário'] else None,
+                                    institution_id=db.session.query(Institution).offset(i % 3).first().id,
                                     neighborhood=neighborhoods[i % len(neighborhoods)]['name']
                                 )
                                 db.session.add(preference)
@@ -743,28 +768,28 @@ def populate_initial_data(app):
                     Cria 25 tickets por fila, com ticket_number e qr_code únicos.
                     """
                     now = datetime.utcnow()
-                    for queue in Queue.query.all():
-                        existing_tickets = Ticket.query.filter_by(queue_id=queue.id).count()
+                    for queue in db.session.query(Queue).all():
+                        existing_tickets = db.session.query(Ticket).filter(Ticket.queue_id == queue.id).count()
                         if existing_tickets >= 25:
                             app.logger.info(f"Fila {queue.service} já tem {existing_tickets} tickets, pulando.")
                             continue
 
-                        department = Department.query.filter_by(id=queue.department_id).first()
+                        department = db.session.query(Department).filter(Department.id == queue.department_id).first()
                         branch_id = department.branch_id
                         branch_code = branch_id[-4:]
 
                         for i in range(25 - existing_tickets):
-                            max_ticket_number = db.session.query(db.func.max(Ticket.ticket_number)).filter_by(queue_id=queue.id).scalar() or 0
+                            max_ticket_number = db.session.query(db.func.max(Ticket.ticket_number)).filter(Ticket.queue_id == queue.id).scalar() or 0
                             ticket_number = max_ticket_number + i + 1
                             qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
-                            if Ticket.query.filter_by(qr_code=qr_code).first():
+                            if db.session.query(Ticket).filter(Ticket.qr_code == qr_code).first():
                                 qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}-{int(now.timestamp())}"
 
                             status = 'Atendido' if i % 2 == 0 else 'Pendente'
                             ticket = Ticket(
                                 id=str(uuid.uuid4()),
                                 queue_id=queue.id,
-                                user_id=User.query.filter_by(user_role=UserRole.USER).offset(i % 10).first().id,
+                                user_id=db.session.query(User).filter(User.user_role == UserRole.USER).offset(i % 10).first().id,
                                 ticket_number=ticket_number,
                                 qr_code=qr_code,
                                 priority=1 if i % 3 == 0 else 0,
@@ -790,8 +815,12 @@ def populate_initial_data(app):
                     Cria logs de auditoria para criação de usuários.
                     """
                     now = datetime.utcnow()
-                    for user in User.query.limit(10).all():
-                        existing_log = AuditLog.query.filter_by(user_id=user.id, action='CREATE', resource_id=user.id).first()
+                    for user in db.session.query(User).limit(10).all():
+                        existing_log = db.session.query(AuditLog).filter(
+                            AuditLog.user_id == user.id, 
+                            AuditLog.action == 'CREATE', 
+                            AuditLog.resource_id == user.id
+                        ).first()
                         if not existing_log:
                             audit_log = AuditLog(
                                 id=str(uuid.uuid4()),
