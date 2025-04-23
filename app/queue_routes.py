@@ -1557,7 +1557,6 @@ def init_queue_routes(app):
                 result.append({
                     'id': inst.id,
                     'name': inst.name,
-                    'logo': inst.logo_url or 'https://via.placeholder.com/40',
                     'description': inst.description or '',
                     'quality_score': round(quality_score, 2),
                     'avg_wait_time': avg_wait_time
@@ -1584,7 +1583,7 @@ def init_queue_routes(app):
                                             alt_institutions.append({
                                                 'id': alt_inst.id,
                                                 'name': alt_inst.name,
-                                                'logo': alt_inst.logo_url or 'https://via.placeholder.com/40',
+                                
                                                 'description': alt_inst.description or '',
                                                 'quality_score': 0.5,  # Pode calcular se necessário
                                                 'avg_wait_time': None
@@ -1668,7 +1667,6 @@ def init_queue_routes(app):
                     'id': branch.id,
                     'name': branch.name,
                     'neighborhood': branch.neighborhood or 'Desconhecido',
-                    'logo': branch.logo_url or 'https://via.placeholder.com/40',
                     'latitude': branch.latitude,
                     'longitude': branch.longitude,
                     'quality_score': round(quality_score, 2),
@@ -1701,7 +1699,6 @@ def init_queue_routes(app):
                                         'id': alt_branch.id,
                                         'name': alt_branch.name,
                                         'neighborhood': alt_branch.neighborhood or 'Desconhecido',
-                                        'logo': alt_branch.logo_url or 'https://via.placeholder.com/40',
                                         'avg_wait_time': alt_avg_wait_time
                                     })
                         branch_data['alternatives'] = alt_branches
