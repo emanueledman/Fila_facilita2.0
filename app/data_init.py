@@ -874,19 +874,6 @@ institutions_data = [
     }
 ]
 
-import uuid
-from datetime import time, datetime, timedelta
-from .models import AuditLog, Institution, Queue, User, Ticket, Department, UserPreference, UserRole, QueueSchedule, Weekday, Branch, ServiceCategory, ServiceTag, InstitutionType
-from . import db
-import os
-from sqlalchemy.exc import SQLAlchemyError
-
-# Dados de teste (mantidos idênticos ao fornecidos anteriormente)
-institutions_data = [
-    # ... (os dados de teste fornecidos anteriormente, com 5 instituições, 3 filiais cada, etc.)
-    # Para evitar repetição, assumo que você tem os dados completos da resposta anterior
-]
-
 def populate_initial_data(app):
     """
     Popula o banco de dados com dados iniciais para testes, incluindo 5 instituições (SIAC, Banco BIC, Hospital Josina Machel, Banco BAI, Banco BFA),
