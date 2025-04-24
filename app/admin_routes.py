@@ -332,7 +332,7 @@ def init_admin_routes(app):
 
     @app.route('/api/admin/institutions/<institution_id>/branches', methods=['GET'])
     @require_auth
-    def list_branches(institution_id):
+    def list_branche(institution_id):
         user = User.query.get(request.user_id)
         if not user or not (
             user.user_role == UserRole.SYSTEM_ADMIN or
