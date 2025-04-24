@@ -153,9 +153,3 @@ def create_app():
         app.logger.info("Aplicação configurada para modo de desenvolvimento")
 
     return app
-
-app = create_app()
-
-if __name__ == '__main__':
-    port = int(os.getenv('PORT', 10000))
-    socketio.run(app, host='0.0.0.0', port=port)
