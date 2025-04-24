@@ -1052,7 +1052,6 @@ def populate_initial_data(app):
                             id=str(uuid.uuid4()),
                             user_id=user.id,
                             action=action,
-                            entity_type='USER' if action in ['USER_LOGIN', 'USER_PROFILE_UPDATED'] else 'TICKET' if action in ['TICKET_CREATED', 'TICKET_UPDATED'] else 'QUEUE' if action == 'QUEUE_MODIFIED' else 'DEPARTMENT',
                             entity_id=str(uuid.uuid4()),
                             description=f"{action} realizado por {user.email}",
                             created_at=now - timedelta(days=i % 30, hours=i % 24)
@@ -1060,7 +1059,6 @@ def populate_initial_data(app):
                         db.session.add(log)
                     db.session.flush()
                     app.logger.info("Logs de auditoria criados com sucesso.")
-
                 create_audit_logs()
 
                 # --------------------------------------
