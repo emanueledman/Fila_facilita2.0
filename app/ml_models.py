@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class WaitTimePredictor:
     """Modelo para prever tempo de espera por fila."""
-    MIN_SAMPLES = 5  # Reduzido de 10 para 5
+    MIN_SAMPLES = 5
     MAX_DAYS = 30
     MODEL_PATH = "wait_time_model_{queue_id}.joblib"
     FALLBACK_TIME = 5
@@ -90,7 +90,7 @@ class WaitTimePredictor:
                     position = max(0, ticket.ticket_number - queue.current_ticket)
                     hour_of_day = ticket.issued_at.hour
                     sector_encoded = self.get_sector_id(queue.department.sector if queue.department else None)
-                    categoryEncoded = self.get_category_id(queue.category_id)
+                    category_encoded = self.get_category_id(queue.category_id)  # Corrigido: category_encoded
                     data.append({
                         'position': position,
                         'active_tickets': queue.active_tickets,
@@ -219,7 +219,7 @@ class WaitTimePredictor:
 
 class ServiceRecommendationPredictor:
     """Modelo para prever pontuação de qualidade de filas."""
-    MIN_SAMPLES = 5  # Reduzido de 10 para 5
+    MIN_SAMPLES = 5
     MODEL_PATH = "service_recommendation_model.joblib"
     DEFAULT_SCORE = 0.5
 
@@ -229,7 +229,7 @@ class ServiceRecommendationPredictor:
         self.is_trained = False
         self.sector_mapping = {}
         self.category_mapping = {}
-        self.institution_type_mapping = {}  # Novo mapeamento
+        self.institution_type_mapping = {}
         self.next_sector_id = 1
         self.next_category_id = 1
         self.next_institution_type_id = 1
@@ -295,7 +295,7 @@ class ServiceRecommendationPredictor:
                 availability = max(0, queue.daily_limit - queue.active_tickets)
                 is_open = (
                     1 if any(
-                        s.weekday == Weekday(datetime.utcnow().weekday()).name
+                        s.weekday == datetime.utcnow().strftime('%A').lower()  # Corrigido: Usar string de dia da semana
                         and s.open_time <= datetime.utcnow().time() <= s.end_time
                         and not s.is_closed
                         for s in queue.schedules
@@ -388,7 +388,7 @@ class ServiceRecommendationPredictor:
             availability = max(0, queue.daily_limit - queue.active_tickets)
             is_open = (
                 1 if any(
-                    s.weekday == Weekday(datetime.utcnow().weekday()).name
+                    s.weekday == datetime.utcnow().strftime('%A').lower()  # Corrigido
                     and s.open_time <= datetime.utcnow().time() <= s.end_time
                     and not s.is_closed
                     for s in queue.schedules
@@ -424,10 +424,10 @@ class ServiceRecommendationPredictor:
 class CollaborativeFilteringModel:
     """Modelo de filtragem colaborativa para recomendações baseadas em padrões de usuários."""
     MODEL_PATH = "collaborative_model.joblib"
-    MIN_INTERACTIONS = 3  # Reduzido de 10 para 3
+    MIN_INTERACTIONS = 3
 
     def __init__(self):
-        self.svd = TruncatedSVD(n_components=50, random_state=42)
+        self.svd = None  # Inicializar depois de calcular n_features
         self.user_mapping = {}
         self.queue_mapping = {}
         self.is_trained = False
@@ -473,7 +473,10 @@ class CollaborativeFilteringModel:
                 rows.append(self.user_mapping[user_id])
                 cols.append(self.queue_mapping[queue_id])
 
-            interaction_matrix = csr_matrix((data, (rows, cols)), shape=(len(users), len(queues)))
+            n_features = len(queues)
+            n_components = min(50, n_features - 1) if n_features > 1 else 1  # Corrigido: Ajustar n_components
+            self.svd = TruncatedSVD(n_components=n_components, random_state=42)
+            interaction_matrix = csr_matrix((data, (rows, cols)), shape=(len(users), n_features))
             return interaction_matrix
         except Exception as e:
             logger.error(f"Erro ao preparar dados colaborativos: {e}")
@@ -517,7 +520,7 @@ class CollaborativeFilteringModel:
 class DemandForecastingModel:
     """Modelo para prever demanda futura de filas."""
     MODEL_PATH = "demand_model_{queue_id}.joblib"
-    MIN_DAYS = 3  # Reduzido de 7 para 3
+    MIN_DAYS = 3
 
     def __init__(self):
         self.models = {}
@@ -601,14 +604,14 @@ class DemandForecastingModel:
 class ServiceClusteringModel:
     """Modelo para agrupar filas semelhantes e sugerir alternativas."""
     MODEL_PATH = "clustering_model.joblib"
-    MIN_QUEUES = 5  # Reduzido de 10 para 5
+    MIN_QUEUES = 5
 
     def __init__(self):
         self.kmeans = KMeans(n_clusters=10, random_state=42)
         self.queue_mapping = {}
         self.is_trained = False
         self.tag_set = set()
-        self.institution_type_mapping = {}  # Novo mapeamento
+        self.institution_type_mapping = {}
         self.next_institution_type_id = 1
 
     def get_category_id(self, category_id):
@@ -641,16 +644,16 @@ class ServiceClusteringModel:
                 institution = Institution.query.get(branch.institution_id) if branch else None
                 data.append({
                     'queue_id': queue.id,
-                    'category_encoded': self.get_category_id(queue.category_id),
-                    'sector_encoded': self.get_sector_id(queue.department.sector if queue.department else None),
-                    'institution_type_encoded': self.get_institution_type_id(institution.institution_type_id if institution else None),
+                    'category_encoded': float(self.get_category_id(queue.category_id)),  # Corrigido: Converter para float
+                    'sector_encoded': float(self.get_sector_id(queue.department.sector if queue.department else None)),
+                    'institution_type_encoded': float(self.get_institution_type_id(institution.institution_type_id if institution else None)),
                     'tag_vector': tag_vector
                 })
 
             X = np.array([
                 [d['category_encoded'], d['sector_encoded'], d['institution_type_encoded']] + d['tag_vector']
                 for d in data
-            ])
+            ], dtype=float)  # Corrigido: Garantir tipo float
             self.queue_mapping = {d['queue_id']: i for i, d in enumerate(data)}
             return X
         except Exception as e:
@@ -664,6 +667,8 @@ class ServiceClusteringModel:
                 self.is_trained = False
                 return
 
+            n_clusters = min(10, len(X))  # Ajustar número de clusters dinamicamente
+            self.kmeans = KMeans(n_clusters=n_clusters, random_state=42)
             self.kmeans.fit(X)
             self.is_trained = True
             joblib.dump((self.kmeans, self.queue_mapping, self.tag_set), self.MODEL_PATH)
