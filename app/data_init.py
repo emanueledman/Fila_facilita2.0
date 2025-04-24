@@ -1052,7 +1052,6 @@ def populate_initial_data(app):
                             id=str(uuid.uuid4()),
                             user_id=user.id,
                             action=action,
-                            entity_id=str(uuid.uuid4()),
                             description=f"{action} realizado por {user.email}",
                             created_at=now - timedelta(days=i % 30, hours=i % 24)
                         )

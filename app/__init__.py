@@ -85,7 +85,7 @@ def create_app():
     }})
     
     # Configurar Flask-Limiter com Redis
-    limiter.storage_uri = os.getenv('REDIS_URL', 'rediss://red-d053vpre5dus738stejg:yUiGYAY9yrGzyXvw2LyUPzoRqkdwY3Og@oregon-keyvalue.render.com:6379/0')
+    #limiter.storage_uri = os.getenv('REDIS_URL', 'rediss://red-d053vpre5dus738stejg:yUiGYAY9yrGzyXvw2LyUPzoRqkdwY3Og@oregon-keyvalue.render.com:6379/0')
     
     with app.app_context():
         from .models import Institution, Queue, User, Ticket, Department, UserPreference, UserRole, Branch, ServiceCategory, ServiceTag, QueueSchedule, AuditLog
