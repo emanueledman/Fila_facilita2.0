@@ -1418,7 +1418,7 @@ def init_queue_routes(app):
                 {
                     'id': t.id,
                     'name': t.name,
-                    'icon': t.icon_url or 'https://via.placeholder.com/48'
+                    'icon': 'https://www.bancobai.ao/media/1635/icones-104.png'
                 } for t in types
             ]
             return jsonify({'types': result}), 200
