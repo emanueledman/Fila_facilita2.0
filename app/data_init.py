@@ -1033,6 +1033,7 @@ def populate_initial_data(app):
                 # --------------------------------------
                 # Criar Logs de Auditoria
                 # --------------------------------------
+               
                 def create_audit_logs():
                     now = datetime.utcnow()
                     users = db.session.query(User).limit(20).all()
@@ -1040,6 +1041,15 @@ def populate_initial_data(app):
                         'USER_LOGIN', 'TICKET_CREATED', 'TICKET_UPDATED', 'QUEUE_MODIFIED',
                         'USER_PROFILE_UPDATED', 'DEPARTMENT_UPDATED'
                     ]
+                    # Mapeamento de ações para tipos de recursos
+                    action_resource_types = {
+                        'USER_LOGIN': 'User',
+                        'TICKET_CREATED': 'Ticket',
+                        'TICKET_UPDATED': 'Ticket',
+                        'QUEUE_MODIFIED': 'Queue',
+                        'USER_PROFILE_UPDATED': 'User',
+                        'DEPARTMENT_UPDATED': 'Department'
+                    }
                     existing_logs = db.session.query(AuditLog).count()
                     if existing_logs >= 100:
                         app.logger.info("Logs de auditoria já existem, pulando.")
@@ -1048,16 +1058,20 @@ def populate_initial_data(app):
                     for i in range(100 - existing_logs):
                         user = users[i % len(users)]
                         action = actions[i % len(actions)]
+                        resource_type = action_resource_types.get(action, 'Unknown')
                         log = AuditLog(
                             id=str(uuid.uuid4()),
                             user_id=user.id,
                             action=action,
-                            description=f"{action} realizado por {user.email}",
-                            created_at=now - timedelta(days=i % 30, hours=i % 24)
+                            resource_type=resource_type,
+                            resource_id=str(uuid.uuid4()),  # Substitui entity_id
+                            details=f"{action} realizado por {user.email}",  # Substitui description
+                            timestamp=now - timedelta(days=i % 30, hours=i % 24)  # Substitui created_at
                         )
                         db.session.add(log)
                     db.session.flush()
                     app.logger.info("Logs de auditoria criados com sucesso.")
+                                
                 create_audit_logs()
 
                 # --------------------------------------
