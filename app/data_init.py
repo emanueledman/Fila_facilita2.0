@@ -5,7 +5,7 @@ from . import db
 import os
 from sqlalchemy.exc import SQLAlchemyError
 
-# Dados de teste para 3 instituições, cada uma com 3 filiais
+# Dados de teste para 5 instituições, cada uma com 3 filiais
 institutions_data = [
     {
         "id": "018d6313-5bf1-7062-a3bd-0e99679fd099",
@@ -26,13 +26,33 @@ institutions_data = [
                         "queues": [
                             {
                                 "id": "018d6313-5bf1-7062-a3bd-0e99679fd100",
-                                "service": "Atendimento Geral",
+                                "service": "Atendimento Geral 24/7",
                                 "category_id": None,  # Será preenchido com Administrativo
                                 "prefix": "AG",
+                                "open_time": time(0, 0),
+                                "end_time": time(23, 59),
+                                "daily_limit": 100,
+                                "num_counters": 4,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                ],
+                                "tags": ["Atendimento", "Administrativo", "24/7"]
+                            },
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Emissão de Documentos",
+                                "category_id": None,  # Será preenchido com Administrativo
+                                "prefix": "ED",
                                 "open_time": time(8, 0),
                                 "end_time": time(15, 0),
-                                "daily_limit": 15,
-                                "num_counters": 4,
+                                "daily_limit": 100,
+                                "num_counters": 3,
                                 "schedules": [
                                     {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
                                     {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
@@ -42,7 +62,7 @@ institutions_data = [
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Atendimento", "Administrativo"]
+                                "tags": ["Documentos", "Administrativo"]
                             }
                         ]
                     }
@@ -61,13 +81,33 @@ institutions_data = [
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
-                                "service": "Atendimento Geral",
+                                "service": "Atendimento Geral 24/7",
                                 "category_id": None,
                                 "prefix": "AG",
+                                "open_time": time(0, 0),
+                                "end_time": time(23, 59),
+                                "daily_limit": 100,
+                                "num_counters": 4,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                ],
+                                "tags": ["Atendimento", "Administrativo", "24/7"]
+                            },
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Emissão de Documentos",
+                                "category_id": None,
+                                "prefix": "ED",
                                 "open_time": time(8, 0),
                                 "end_time": time(15, 0),
-                                "daily_limit": 15,
-                                "num_counters": 4,
+                                "daily_limit": 100,
+                                "num_counters": 3,
                                 "schedules": [
                                     {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
                                     {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
@@ -77,7 +117,7 @@ institutions_data = [
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Atendimento", "Administrativo"]
+                                "tags": ["Documentos", "Administrativo"]
                             }
                         ]
                     }
@@ -96,13 +136,33 @@ institutions_data = [
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
-                                "service": "Atendimento Geral",
+                                "service": "Atendimento Geral 24/7",
                                 "category_id": None,
                                 "prefix": "AG",
+                                "open_time": time(0, 0),
+                                "end_time": time(23, 59),
+                                "daily_limit": 100,
+                                "num_counters": 4,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                ],
+                                "tags": ["Atendimento", "Administrativo", "24/7"]
+                            },
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Emissão de Documentos",
+                                "category_id": None,
+                                "prefix": "ED",
                                 "open_time": time(8, 0),
                                 "end_time": time(15, 0),
-                                "daily_limit": 15,
-                                "num_counters": 4,
+                                "daily_limit": 100,
+                                "num_counters": 3,
                                 "schedules": [
                                     {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
                                     {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
@@ -112,7 +172,7 @@ institutions_data = [
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Atendimento", "Administrativo"]
+                                "tags": ["Documentos", "Administrativo"]
                             }
                         ]
                     }
@@ -139,13 +199,33 @@ institutions_data = [
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
-                                "service": "Atendimento Bancário",
+                                "service": "Atendimento Bancário 24/7",
                                 "category_id": None,  # Será preenchido com Bancário
                                 "prefix": "AB",
+                                "open_time": time(0, 0),
+                                "end_time": time(23, 59),
+                                "daily_limit": 100,
+                                "num_counters": 5,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                ],
+                                "tags": ["Bancário", "Atendimento", "24/7"]
+                            },
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Abertura de Conta",
+                                "category_id": None,  # Será preenchido com Bancário
+                                "prefix": "AC",
                                 "open_time": time(8, 30),
                                 "end_time": time(15, 30),
-                                "daily_limit": 20,
-                                "num_counters": 5,
+                                "daily_limit": 100,
+                                "num_counters": 3,
                                 "schedules": [
                                     {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
                                     {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
@@ -155,7 +235,7 @@ institutions_data = [
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Bancário", "Atendimento"]
+                                "tags": ["Bancário", "Conta"]
                             }
                         ]
                     }
@@ -174,13 +254,33 @@ institutions_data = [
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
-                                "service": "Atendimento Bancário",
+                                "service": "Atendimento Bancário 24/7",
                                 "category_id": None,
                                 "prefix": "AB",
+                                "open_time": time(0, 0),
+                                "end_time": time(23, 59),
+                                "daily_limit": 100,
+                                "num_counters": 5,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                ],
+                                "tags": ["Bancário", "Atendimento", "24/7"]
+                            },
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Abertura de Conta",
+                                "category_id": None,
+                                "prefix": "AC",
                                 "open_time": time(8, 30),
                                 "end_time": time(15, 30),
-                                "daily_limit": 20,
-                                "num_counters": 5,
+                                "daily_limit": 100,
+                                "num_counters": 3,
                                 "schedules": [
                                     {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
                                     {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
@@ -190,7 +290,7 @@ institutions_data = [
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Bancário", "Atendimento"]
+                                "tags": ["Bancário", "Conta"]
                             }
                         ]
                     }
@@ -209,13 +309,33 @@ institutions_data = [
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
-                                "service": "Atendimento Bancário",
+                                "service": "Atendimento Bancário 24/7",
                                 "category_id": None,
                                 "prefix": "AB",
+                                "open_time": time(0, 0),
+                                "end_time": time(23, 59),
+                                "daily_limit": 100,
+                                "num_counters": 5,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                ],
+                                "tags": ["Bancário", "Atendimento", "24/7"]
+                            },
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Abertura de Conta",
+                                "category_id": None,
+                                "prefix": "AC",
                                 "open_time": time(8, 30),
                                 "end_time": time(15, 30),
-                                "daily_limit": 20,
-                                "num_counters": 5,
+                                "daily_limit": 100,
+                                "num_counters": 3,
                                 "schedules": [
                                     {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
                                     {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
@@ -225,7 +345,7 @@ institutions_data = [
                                     {"weekday": Weekday.SATURDAY, "is_closed": True},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Bancário", "Atendimento"]
+                                "tags": ["Bancário", "Conta"]
                             }
                         ]
                     }
@@ -252,13 +372,33 @@ institutions_data = [
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
-                                "service": "Consulta Médica",
+                                "service": "Consulta Médica 24/7",
                                 "category_id": None,  # Será preenchido com Consulta Médica
                                 "prefix": "CM",
+                                "open_time": time(0, 0),
+                                "end_time": time(23, 59),
+                                "daily_limit": 100,
+                                "num_counters": 3,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                ],
+                                "tags": ["Saúde", "Consulta", "24/7"]
+                            },
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Exames Laboratoriais",
+                                "category_id": None,  # Será preenchido com Saúde
+                                "prefix": "EL",
                                 "open_time": time(7, 0),
                                 "end_time": time(17, 0),
-                                "daily_limit": 30,
-                                "num_counters": 3,
+                                "daily_limit": 100,
+                                "num_counters": 2,
                                 "schedules": [
                                     {"weekday": Weekday.MONDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
                                     {"weekday": Weekday.TUESDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
@@ -268,7 +408,7 @@ institutions_data = [
                                     {"weekday": Weekday.SATURDAY, "open_time": time(7, 0), "end_time": time(12, 0)},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Saúde", "Consulta"]
+                                "tags": ["Saúde", "Exames"]
                             }
                         ]
                     }
@@ -287,13 +427,33 @@ institutions_data = [
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
-                                "service": "Consulta Médica",
+                                "service": "Consulta Médica 24/7",
                                 "category_id": None,
                                 "prefix": "CM",
+                                "open_time": time(0, 0),
+                                "end_time": time(23, 59),
+                                "daily_limit": 100,
+                                "num_counters": 3,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                ],
+                                "tags": ["Saúde", "Consulta", "24/7"]
+                            },
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Exames Laboratoriais",
+                                "category_id": None,
+                                "prefix": "EL",
                                 "open_time": time(7, 0),
                                 "end_time": time(17, 0),
-                                "daily_limit": 30,
-                                "num_counters": 3,
+                                "daily_limit": 100,
+                                "num_counters": 2,
                                 "schedules": [
                                     {"weekday": Weekday.MONDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
                                     {"weekday": Weekday.TUESDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
@@ -303,7 +463,7 @@ institutions_data = [
                                     {"weekday": Weekday.SATURDAY, "open_time": time(7, 0), "end_time": time(12, 0)},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Saúde", "Consulta"]
+                                "tags": ["Saúde", "Exames"]
                             }
                         ]
                     }
@@ -322,13 +482,33 @@ institutions_data = [
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
-                                "service": "Consulta Médica",
+                                "service": "Consulta Médica 24/7",
                                 "category_id": None,
                                 "prefix": "CM",
+                                "open_time": time(0, 0),
+                                "end_time": time(23, 59),
+                                "daily_limit": 100,
+                                "num_counters": 3,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                ],
+                                "tags": ["Saúde", "Consulta", "24/7"]
+                            },
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Exames Laboratoriais",
+                                "category_id": None,
+                                "prefix": "EL",
                                 "open_time": time(7, 0),
                                 "end_time": time(17, 0),
-                                "daily_limit": 30,
-                                "num_counters": 3,
+                                "daily_limit": 100,
+                                "num_counters": 2,
                                 "schedules": [
                                     {"weekday": Weekday.MONDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
                                     {"weekday": Weekday.TUESDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
@@ -338,7 +518,355 @@ institutions_data = [
                                     {"weekday": Weekday.SATURDAY, "open_time": time(7, 0), "end_time": time(12, 0)},
                                     {"weekday": Weekday.SUNDAY, "is_closed": True}
                                 ],
-                                "tags": ["Saúde", "Consulta"]
+                                "tags": ["Saúde", "Exames"]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    },
+    # Nova instituição: Banco BAI
+    {
+        "id": str(uuid.uuid4()),
+        "name": "Banco BAI",
+        "description": "Serviços bancários em Luanda",
+        "institution_type_id": None,  # Será preenchido com Bancário
+        "branches": [
+            {
+                "name": "Agência Central",
+                "location": "Rua Rainha Ginga, Ingombota, Luanda",
+                "neighborhood": "Ingombota",
+                "latitude": -8.8170,
+                "longitude": 13.2350,
+                "departments": [
+                    {
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
+                        "queues": [
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Atendimento Bancário 24/7",
+                                "category_id": None,  # Será preenchido com Bancário
+                                "prefix": "AB",
+                                "open_time": time(0, 0),
+                                "end_time": time(23, 59),
+                                "daily_limit": 100,
+                                "num_counters": 5,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                ],
+                                "tags": ["Bancário", "Atendimento", "24/7"]
+                            },
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Empréstimos",
+                                "category_id": None,  # Será preenchido com Bancário
+                                "prefix": "EM",
+                                "open_time": time(8, 30),
+                                "end_time": time(15, 30),
+                                "daily_limit": 100,
+                                "num_counters": 3,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                ],
+                                "tags": ["Bancário", "Empréstimo"]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "Agência Talatona",
+                "location": "Via Expressa, Talatona, Luanda",
+                "neighborhood": "Talatona",
+                "latitude": -8.9180,
+                "longitude": 13.1840,
+                "departments": [
+                    {
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
+                        "queues": [
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Atendimento Bancário 24/7",
+                                "category_id": None,
+                                "prefix": "AB",
+                                "open_time": time(0, 0),
+                                "end_time": time(23, 59),
+                                "daily_limit": 100,
+                                "num_counters": 5,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                ],
+                                "tags": ["Bancário", "Atendimento", "24/7"]
+                            },
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Empréstimos",
+                                "category_id": None,
+                                "prefix": "EM",
+                                "open_time": time(8, 30),
+                                "end_time": time(15, 30),
+                                "daily_limit": 100,
+                                "num_counters": 3,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                ],
+                                "tags": ["Bancário", "Empréstimo"]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "Agência Viana",
+                "location": "Rua Principal, Viana, Luanda",
+                "neighborhood": "Viana",
+                "latitude": -8.9040,
+                "longitude": 13.3750,
+                "departments": [
+                    {
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
+                        "queues": [
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Atendimento Bancário 24/7",
+                                "category_id": None,
+                                "prefix": "AB",
+                                "open_time": time(0, 0),
+                                "end_time": time(23, 59),
+                                "daily_limit": 100,
+                                "num_counters": 5,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                ],
+                                "tags": ["Bancário", "Atendimento", "24/7"]
+                            },
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Empréstimos",
+                                "category_id": None,
+                                "prefix": "EM",
+                                "open_time": time(8, 30),
+                                "end_time": time(15, 30),
+                                "daily_limit": 100,
+                                "num_counters": 3,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                ],
+                                "tags": ["Bancário", "Empréstimo"]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    },
+    # Nova instituição: Banco BFA
+    {
+        "id": str(uuid.uuid4()),
+        "name": "Banco BFA",
+        "description": "Serviços bancários em Luanda",
+        "institution_type_id": None,  # Será preenchido com Bancário
+        "branches": [
+            {
+                "name": "Agência Maianga",
+                "location": "Rua Joaquim Kapango, Maianga, Luanda",
+                "neighborhood": "Maianga",
+                "latitude": -8.8150,
+                "longitude": 13.2310,
+                "departments": [
+                    {
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
+                        "queues": [
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Atendimento Bancário 24/7",
+                                "category_id": None,  # Será preenchido com Bancário
+                                "prefix": "AB",
+                                "open_time": time(0, 0),
+                                "end_time": time(23, 59),
+                                "daily_limit": 100,
+                                "num_counters": 5,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                ],
+                                "tags": ["Bancário", "Atendimento", "24/7"]
+                            },
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Investimentos",
+                                "category_id": None,  # Será preenchido com Bancário
+                                "prefix": "IN",
+                                "open_time": time(8, 30),
+                                "end_time": time(15, 30),
+                                "daily_limit": 100,
+                                "num_counters": 3,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                ],
+                                "tags": ["Bancário", "Investimento"]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "Agência Kilamba",
+                "location": "Avenida do Kilamba, Kilamba, Luanda",
+                "neighborhood": "Kilamba",
+                "latitude": -8.9340,
+                "longitude": 13.2670,
+                "departments": [
+                    {
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
+                        "queues": [
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Atendimento Bancário 24/7",
+                                "category_id": None,
+                                "prefix": "AB",
+                                "open_time": time(0, 0),
+                                "end_time": time(23, 59),
+                                "daily_limit": 100,
+                                "num_counters": 5,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                ],
+                                "tags": ["Bancário", "Atendimento", "24/7"]
+                            },
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Investimentos",
+                                "category_id": None,
+                                "prefix": "IN",
+                                "open_time": time(8, 30),
+                                "end_time": time(15, 30),
+                                "daily_limit": 100,
+                                "num_counters": 3,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                ],
+                                "tags": ["Bancário", "Investimento"]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "Agência Cazenga",
+                "location": "Avenida dos Combatentes, Cazenga, Luanda",
+                "neighborhood": "Cazenga",
+                "latitude": -8.8510,
+                "longitude": 13.2840,
+                "departments": [
+                    {
+                        "name": "Atendimento ao Cliente",
+                        "sector": "Bancário",
+                        "queues": [
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Atendimento Bancário 24/7",
+                                "category_id": None,
+                                "prefix": "AB",
+                                "open_time": time(0, 0),
+                                "end_time": time(23, 59),
+                                "daily_limit": 100,
+                                "num_counters": 5,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                ],
+                                "tags": ["Bancário", "Atendimento", "24/7"]
+                            },
+                            {
+                                "id": str(uuid.uuid4()),
+                                "service": "Investimentos",
+                                "category_id": None,
+                                "prefix": "IN",
+                                "open_time": time(8, 30),
+                                "end_time": time(15, 30),
+                                "daily_limit": 100,
+                                "num_counters": 3,
+                                "schedules": [
+                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                ],
+                                "tags": ["Bancário", "Investimento"]
                             }
                         ]
                     }
@@ -350,8 +878,9 @@ institutions_data = [
 
 def populate_initial_data(app):
     """
-    Popula o banco de dados com dados iniciais para testes, incluindo 3 instituições (SIAC, Banco BIC, Hospital Josina Machel),
-    cada uma com 3 filiais em Luanda. Mantém idempotência, logs em português, e compatibilidade com models.py.
+    Popula o banco de dados com dados iniciais para testes, incluindo 5 instituições (SIAC, Banco BIC, Hospital Josina Machel, Banco BAI, Banco BFA),
+    cada uma com 3 filiais em Luanda. Cada filial tem 2 filas (1 24/7 e 1 com horário comercial). Cada fila tem 50 tickets.
+    Mantém idempotência, logs em português, e compatibilidade com models.py.
     Usa bcrypt para senhas e respeita todos os relacionamentos, incluindo InstitutionType.
     Suporta modelos de ML com dados suficientes para treinamento inicial.
     """
@@ -376,7 +905,6 @@ def populate_initial_data(app):
                     ]
                     type_map = {}
                     for inst_type in types:
-                        # Evitar acesso direto a InstitutionType.query para minimizar conflitos
                         existing_type = db.session.query(InstitutionType).filter(InstitutionType.name == inst_type['name']).first()
                         if existing_type:
                             type_map[inst_type['name']] = existing_type.id
@@ -398,7 +926,7 @@ def populate_initial_data(app):
                 for inst in institutions_data:
                     if inst['name'] == 'SIAC':
                         inst['institution_type_id'] = institution_type_map['Administrativo']
-                    elif inst['name'] == 'Banco BIC':
+                    elif inst['name'] in ['Banco BIC', 'Banco BAI', 'Banco BFA']:
                         inst['institution_type_id'] = institution_type_map['Bancário']
                     elif inst['name'] == 'Hospital Josina Machel':
                         inst['institution_type_id'] = institution_type_map['Saúde']
@@ -408,14 +936,19 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_service_categories():
                     """
-                    Cria categorias de serviço necessárias (Saúde, Consulta Médica, Administrativo, Bancário).
+                    Cria categorias de serviço necessárias (Saúde, Consulta Médica, Administrativo, Bancário, Documentos, Exames, Conta, Empréstimo, Investimento).
                     Retorna um mapa de nomes para IDs.
                     """
                     categories = [
                         {'name': 'Saúde', 'description': 'Serviços de saúde e atendimento médico', 'parent_id': None},
                         {'name': 'Consulta Médica', 'description': 'Consultas gerais e especializadas', 'parent_id': None},
                         {'name': 'Administrativo', 'description': 'Serviços administrativos municipais e atendimento ao cidadão', 'parent_id': None},
-                        {'name': 'Bancário', 'description': 'Serviços financeiros e bancários', 'parent_id': None}
+                        {'name': 'Bancário', 'description': 'Serviços financeiros e bancários', 'parent_id': None},
+                        {'name': 'Documentos', 'description': 'Emissão e renovação de documentos', 'parent_id': None},
+                        {'name': 'Exames', 'description': 'Exames laboratoriais e diagnósticos', 'parent_id': None},
+                        {'name': 'Conta', 'description': 'Abertura e gestão de contas bancárias', 'parent_id': None},
+                        {'name': 'Empréstimo', 'description': 'Solicitação e gestão de empréstimos', 'parent_id': None},
+                        {'name': 'Investimento', 'description': 'Serviços de investimento financeiro', 'parent_id': None}
                     ]
                     category_map = {}
                     for cat in categories:
@@ -432,11 +965,19 @@ def populate_initial_data(app):
                         db.session.add(category)
                         db.session.flush()
                         category_map[cat['name']] = category.id
-                    # Definir parent_id para Consulta Médica
-                    consulta_medica = db.session.query(ServiceCategory).filter(ServiceCategory.name == 'Consulta Médica').first()
-                    if consulta_medica and not consulta_medica.parent_id:
-                        consulta_medica.parent_id = category_map['Saúde']
-                        db.session.flush()
+                    # Definir parent_id para categorias específicas
+                    for cat_name, parent_name in [
+                        ('Consulta Médica', 'Saúde'),
+                        ('Exames', 'Saúde'),
+                        ('Documentos', 'Administrativo'),
+                        ('Conta', 'Bancário'),
+                        ('Empréstimo', 'Bancário'),
+                        ('Investimento', 'Bancário')
+                    ]:
+                        cat = db.session.query(ServiceCategory).filter(ServiceCategory.name == cat_name).first()
+                        if cat and not cat.parent_id:
+                            cat.parent_id = category_map[parent_name]
+                            db.session.flush()
                     app.logger.info("Categorias de serviço criadas com sucesso.")
                     return category_map
 
@@ -447,10 +988,20 @@ def populate_initial_data(app):
                     for branch in inst['branches']:
                         for dept in branch['departments']:
                             for queue in dept['queues']:
-                                if 'Saúde' in queue['tags']:
+                                if 'Saúde' in queue['tags'] and 'Consulta' in queue['tags']:
                                     queue['category_id'] = category_map['Consulta Médica']
+                                elif 'Saúde' in queue['tags'] and 'Exames' in queue['tags']:
+                                    queue['category_id'] = category_map['Exames']
+                                elif 'Administrativo' in queue['tags'] and 'Documentos' in queue['tags']:
+                                    queue['category_id'] = category_map['Documentos']
                                 elif 'Administrativo' in queue['tags']:
                                     queue['category_id'] = category_map['Administrativo']
+                                elif 'Bancário' in queue['tags'] and 'Conta' in queue['tags']:
+                                    queue['category_id'] = category_map['Conta']
+                                elif 'Bancário' in queue['tags'] and 'Empréstimo' in queue['tags']:
+                                    queue['category_id'] = category_map['Empréstimo']
+                                elif 'Bancário' in queue['tags'] and 'Investimento' in queue['tags']:
+                                    queue['category_id'] = category_map['Investimento']
                                 elif 'Bancário' in queue['tags']:
                                     queue['category_id'] = category_map['Bancário']
 
@@ -654,7 +1205,7 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_users():
                     """
-                    Cria ~16 usuários: 1 SYSTEM_ADMIN, 3 INSTITUTION_ADMIN, ~9 DEPARTMENT_ADMIN, 10 USER.
+                    Cria ~24 usuários: 1 SYSTEM_ADMIN, 5 INSTITUTION_ADMIN, 15 DEPARTMENT_ADMIN, 15 USER.
                     Usa User.set_password com bcrypt.
                     Garante emails únicos para DEPARTMENT_ADMIN.
                     """
@@ -708,8 +1259,8 @@ def populate_initial_data(app):
                             users.append(manager)
 
                     user_count = db.session.query(User).filter(User.user_role == UserRole.USER).count()
-                    if user_count < 10:
-                        for i in range(10 - user_count):
+                    if user_count < 15:
+                        for i in range(15 - user_count):
                             email = f'user_{i}@queue.com'
                             if not db.session.query(User).filter(User.email == email).first():
                                 user = User(
@@ -735,28 +1286,35 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_user_preferences():
                     """
-                    Cria 20 preferências (2 por usuário USER).
+                    Cria 45 preferências (3 por usuário USER) para suportar recomendações.
+                    Cada usuário tem preferências variadas em categorias, instituições e bairros.
                     """
-                    user_list = db.session.query(User).filter(User.user_role == UserRole.USER).limit(10).all()
+                    user_list = db.session.query(User).filter(User.user_role == UserRole.USER).limit(15).all()
+                    categories = db.session.query(ServiceCategory).all()
+                    institutions = db.session.query(Institution).all()
                     for i, user in enumerate(user_list):
-                        categories = db.session.query(ServiceCategory).filter(ServiceCategory.name.in_(['Saúde', 'Administrativo', 'Bancário'])).all()
-                        for category in categories[:2]:
+                        # Cada usuário terá 3 preferências
+                        for j in range(3):
+                            category = categories[(i + j) % len(categories)]
+                            institution = institutions[(i + j) % len(institutions)]
+                            neighborhood = neighborhoods[(i + j) % len(neighborhoods)]['name']
                             existing_pref = db.session.query(UserPreference).filter(
                                 UserPreference.user_id == user.id, 
-                                UserPreference.service_category_id == category.id
+                                UserPreference.service_category_id == category.id,
+                                UserPreference.institution_id == institution.id
                             ).first()
                             if not existing_pref:
                                 preference = UserPreference(
                                     id=str(uuid.uuid4()),
                                     user_id=user.id,
                                     service_category_id=category.id,
-                                    institution_type_id=db.session.query(InstitutionType).filter(InstitutionType.name == category.name).first().id if category.name in ['Saúde', 'Administrativo', 'Bancário'] else None,
-                                    institution_id=db.session.query(Institution).offset(i % 3).first().id,
-                                    neighborhood=neighborhoods[i % len(neighborhoods)]['name']
+                                    institution_type_id=db.session.query(InstitutionType).filter(InstitutionType.name.in_(['Saúde', 'Administrativo', 'Bancário'])).offset(j % 3).first().id,
+                                    institution_id=institution.id,
+                                    neighborhood=neighborhood
                                 )
                                 db.session.add(preference)
                     db.session.flush()
-                    app.logger.info("Preferências de usuário criadas com sucesso.")
+                    app.logger.info("Preferências de usuário criadas com sucesso (3 por usuário).")
 
                 create_user_preferences()
 
@@ -765,12 +1323,14 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_tickets():
                     """
-                    Cria 25 tickets por fila, com ticket_number e qr_code únicos.
+                    Cria exatamente 50 tickets por fila, com ticket_number e qr_code únicos.
+                    Mistura status 'Pendente' (50%) e 'Atendido' (50%) para suportar recomendações.
+                    Varia issued_at para simular histórico.
                     """
                     now = datetime.utcnow()
                     for queue in db.session.query(Queue).all():
                         existing_tickets = db.session.query(Ticket).filter(Ticket.queue_id == queue.id).count()
-                        if existing_tickets >= 25:
+                        if existing_tickets >= 50:
                             app.logger.info(f"Fila {queue.service} já tem {existing_tickets} tickets, pulando.")
                             continue
 
@@ -778,7 +1338,7 @@ def populate_initial_data(app):
                         branch_id = department.branch_id
                         branch_code = branch_id[-4:]
 
-                        for i in range(25 - existing_tickets):
+                        for i in range(50 - existing_tickets):
                             max_ticket_number = db.session.query(db.func.max(Ticket.ticket_number)).filter(Ticket.queue_id == queue.id).scalar() or 0
                             ticket_number = max_ticket_number + i + 1
                             qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
@@ -786,40 +1346,48 @@ def populate_initial_data(app):
                                 qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}-{int(now.timestamp())}"
 
                             status = 'Atendido' if i % 2 == 0 else 'Pendente'
+                            issued_at = now - timedelta(days=i % 14, hours=i % 24)  # Histórico de até 14 dias
                             ticket = Ticket(
                                 id=str(uuid.uuid4()),
                                 queue_id=queue.id,
-                                user_id=db.session.query(User).filter(User.user_role == UserRole.USER).offset(i % 10).first().id,
+                                user_id=db.session.query(User).filter(User.user_role == UserRole.USER).offset(i % 15).first().id,
                                 ticket_number=ticket_number,
                                 qr_code=qr_code,
-                                priority=1 if i % 3 == 0 else 0,
+                                priority=1 if i % 5 == 0 else 0,  # 20% dos tickets com prioridade
                                 is_physical=False,
                                 status=status,
-                                issued_at=now - timedelta(days=i % 7),
-                                expires_at=now + timedelta(days=1),
-                                counter=1 if status == 'Atendido' else None,
-                                service_time=300.0 if status == 'Atendido' else 0.0,
+                                issued_at=issued_at,
+                                expires_at=issued_at + timedelta(days=1),
+                                counter=(i % queue.num_counters) + 1 if status == 'Atendido' else None,
+                                service_time=300.0 + (i % 5) * 60 if status == 'Atendido' else 0.0,  # Variação de 5 a 9 minutos
                                 trade_available=False
                             )
                             db.session.add(ticket)
+                        # Atualizar active_tickets na fila
+                        queue.active_tickets = db.session.query(Ticket).filter(
+                            Ticket.queue_id == queue.id, Ticket.status == 'Pendente'
+                        ).count()
                     db.session.flush()
-                    app.logger.info("Tickets criados com sucesso.")
+                    app.logger.info(f"50 tickets criados para a fila {queue.service} (ID: {queue.id}).")
 
                 create_tickets()
+                app.logger.info("Tickets criados com sucesso para todas as filas.")
 
                 # --------------------------------------
                 # Criar Logs de Auditoria
                 # --------------------------------------
                 def create_audit_logs():
                     """
-                    Cria logs de auditoria para criação de usuários.
+                    Cria logs de auditoria para criação de usuários e tickets.
+                    Garante idempotência ao verificar logs existentes.
                     """
                     now = datetime.utcnow()
-                    for user in db.session.query(User).limit(10).all():
+                    # Logs para usuários
+                    for user in db.session.query(User).limit(35).all():  # 1 SYSTEM_ADMIN + 5 INSTITUTION_ADMIN + 15 DEPARTMENT_ADMIN + 15 USER
                         existing_log = db.session.query(AuditLog).filter(
-                            AuditLog.user_id == user.id, 
-                            AuditLog.action == 'CREATE', 
-                            AuditLog.resource_id == user.id
+                            AuditLog.user_id == user.id,
+                            AuditLog.action == 'CREATE',
+                            AuditLog.resource_type == 'USER'
                         ).first()
                         if not existing_log:
                             audit_log = AuditLog(
@@ -832,6 +1400,26 @@ def populate_initial_data(app):
                                 timestamp=now
                             )
                             db.session.add(audit_log)
+
+                    # Logs para tickets
+                    for ticket in db.session.query(Ticket).limit(1500).all():  # 50 tickets × 30 filas
+                        existing_log = db.session.query(AuditLog).filter(
+                            AuditLog.resource_id == ticket.id,
+                            AuditLog.action == 'CREATE',
+                            AuditLog.resource_type == 'TICKET'
+                        ).first()
+                        if not existing_log:
+                            audit_log = AuditLog(
+                                id=str(uuid.uuid4()),
+                                user_id=ticket.user_id,
+                                action='CREATE',
+                                resource_type='TICKET',
+                                resource_id=ticket.id,
+                                details=f'Ticket {ticket.qr_code} criado para fila {ticket.queue_id}.',
+                                timestamp=ticket.issued_at
+                            )
+                            db.session.add(audit_log)
+
                     db.session.flush()
                     app.logger.info("Logs de auditoria criados com sucesso.")
 
