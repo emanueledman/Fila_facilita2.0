@@ -1127,8 +1127,8 @@ def init_queue_routes(app):
         try:
             user_id = request.user_id if hasattr(request, 'user_id') else None
             email = request.args.get('email')
-            institution_id = request.args.get('institution_id')  # Adicionado
-            branch_id = request.args.get('branch_id')  # Adicionado
+            institution_id = request.args.get('institution_id')
+            branch_id = request.args.get('branch_id')
             if email and not user_id:
                 user = User.query.filter_by(email=email).first()
                 user_id = user.id if user else None
@@ -1148,11 +1148,38 @@ def init_queue_routes(app):
 
             logger.info(f"Parâmetros recebidos: institution_id={institution_id}, branch_id={branch_id}, user_id={user_id}, lat={user_lat}, lon={user_lon}, query={query}")
 
-            # Validações (mantidas como no original)
+            # Validações
             if query and not re.match(r'^[A-Za-zÀ-ÿ\s]{1,100}$', query):
                 logger.warning(f"Query inválida: {query}")
                 return jsonify({'error': 'Query inválida'}), 400
-            # ... (outras validações)
+            if user_lat:
+                try:
+                    user_lat = float(user_lat)
+                except (ValueError, TypeError):
+                    logger.warning(f"Latitude inválida: {user_lat}")
+                    return jsonify({'error': 'Latitude deve ser um número'}), 400
+            if user_lon:
+                try:
+                    user_lon = float(user_lon)
+                except (ValueError, TypeError):
+                    logger.warning(f"Longitude inválida: {user_lon}")
+                    return jsonify({'error': 'Longitude deve ser um número'}), 400
+            if max_wait_time:
+                try:
+                    max_wait_time = float(max_wait_time)
+                    if max_wait_time <= 0:
+                        raise ValueError
+                except (ValueError, TypeError):
+                    logger.warning(f"max_wait_time inválido: {max_wait_time}")
+                    return jsonify({'error': 'max_wait_time deve ser um número positivo'}), 400
+            if min_quality_score:
+                try:
+                    min_quality_score = float(min_quality_score)
+                    if not 0 <= min_quality_score <= 1:
+                        raise ValueError
+                except (ValueError, TypeError):
+                    logger.warning(f"min_quality_score inválido: {min_quality_score}")
+                    return jsonify({'error': 'min_quality_score deve estar entre 0 e 1'}), 400
 
             cache_key = f"services:{query}:{neighborhood}:{category_id}:{tags}:{max_wait_time}:{min_quality_score}:{sort_by}:{page}:{per_page}:{institution_type_id}:{institution_id}:{branch_id}"
             cached_data = None
@@ -1165,52 +1192,57 @@ def init_queue_routes(app):
                 except Exception as e:
                     logger.warning(f"Erro ao acessar Redis para {cache_key}: {e}")
 
-            queues_query = Queue.query.join(Department).join(Branch).join(Institution).join(InstitutionType).outerjoin(ServiceTag).outerjoin(QueueSchedule).outerjoin(ServiceCategory)
+            queues_query = Queue.query.join(Department).join(Branch).join(Institution).join(InstitutionType).outerjoin(ServiceTag).outerjoin(ServiceCategory)
 
-            # Adicionar filtros de institution_id e branch_id
             if institution_id:
                 queues_query = queues_query.filter(Institution.id == institution_id)
             if branch_id:
                 queues_query = queues_query.filter(Branch.id == branch_id)
-
             if query:
-                queues_query = queues_query.filter(
-                    or_(
-                        Queue.service.ilike(f'%{query}%'),
-                        ServiceCategory.name.ilike(f'%{query}%'),
-                        Branch.name.ilike(f'%{query}%'),
-                        Institution.name.ilike(f'%{query}%'),
-                        InstitutionType.name.ilike(f'%{query}%')
+                search_terms = re.sub(r'[^\w\sÀ-ÿ]', '', query.lower()).split()
+                if search_terms:
+                    search_term = ' & '.join(search_terms)
+                    queues_query = queues_query.filter(
+                        or_(
+                            func.to_tsvector('portuguese', Queue.service).op('@@')(func.to_tsquery('portuguese', search_term)),
+                            func.to_tsvector('portuguese', ServiceCategory.name).op('@@')(func.to_tsquery('portuguese', search_term)) if ServiceCategory.name else False,
+                            func.to_tsvector('portuguese', Branch.name).op('@@')(func.to_tsquery('portuguese', search_term)),
+                            func.to_tsvector('portuguese', Institution.name).op('@@')(func.to_tsquery('portuguese', search_term)),
+                            func.to_tsvector('portuguese', InstitutionType.name).op('@@')(func.to_tsquery('portuguese', search_term)),
+                            ServiceTag.tag.ilike(f'%{query.lower()}%')
+                        )
                     )
-                )
             if category_id:
-                queues_query = queues_query.filter(ServiceCategory.id == category_id)
+                queues_query = queues_query.filter(Queue.category_id == category_id)
             if tags:
+                tags = tags.split(',')
                 queues_query = queues_query.filter(ServiceTag.tag.in_(tags))
             if neighborhood:
                 queues_query = queues_query.filter(Branch.neighborhood.ilike(f'%{neighborhood}%'))
             if institution_type_id:
                 queues_query = queues_query.filter(Institution.institution_type_id == institution_type_id)
 
-            # Relaxar filtro de horário para depuração
+            # Filtrar por filas abertas (usando QueueSchedule)
             now = datetime.utcnow()
             current_weekday = now.strftime('%A').upper()
             logger.info(f"Dia da semana atual: {current_weekday}")
             try:
                 weekday_enum = getattr(Weekday, current_weekday)
-                # Comentado para depuração
-                # queues_query = queues_query.filter(
-                #     and_(
-                #         QueueSchedule.weekday == weekday_enum,
-                #         QueueSchedule.is_closed == False,
-                #         QueueSchedule.open_time <= now.time(),
-                #         QueueSchedule.end_time >= now.time(),
-                #         Queue.active_tickets < Queue.daily_limit
-                #     )
-                # )
             except AttributeError:
                 logger.error(f"Dia da semana inválido: {current_weekday}")
                 return jsonify({'error': 'Dia da semana inválido'}), 500
+
+            # Aplica filtro de horário comentado nos logs
+            # Descomentar se necessário para filtrar filas abertas diretamente na query
+            # queues_query = queues_query.join(QueueSchedule).filter(
+            #     and_(
+            #         QueueSchedule.weekday == weekday_enum,
+            #         QueueSchedule.is_closed == False,
+            #         QueueSchedule.open_time <= now.time(),
+            #         QueueSchedule.end_time >= now.time(),
+            #         Queue.active_tickets < Queue.daily_limit
+            #     )
+            # )
 
             queues = queues_query.all()
             logger.info(f"Filas encontradas antes de filtros adicionais: {len(queues)}")
@@ -1232,17 +1264,26 @@ def init_queue_routes(app):
                     logger.warning(f"Dados incompletos para queue_id={queue.id}")
                     continue
 
-                wait_time = QueueService.calculate_wait_time(queue.id, queue.active_tickets + 1, 0, user_lat, user_lon)
-                logger.info(f"Fila {queue.id}: wait_time={wait_time}, active_tickets={queue.active_tickets}, daily_limit={queue.daily_limit}")
+                # Verificar se a fila está aberta usando QueueService.is_queue_open
+                is_open = QueueService.is_queue_open(queue)
+                if not is_open:
+                    logger.debug(f"Fila {queue.id} está fechada")
+                    continue
 
-                if max_wait_time and isinstance(wait_time, (int, float)) and wait_time > max_wait_time:
+                # Verificar limite diário
+                if queue.active_tickets >= queue.daily_limit:
+                    logger.debug(f"Fila {queue.id} atingiu limite diário")
+                    continue
+
+                wait_time = QueueService.calculate_wait_time(queue.id, queue.active_tickets + 1, 0, user_lat, user_lon)
+                if max_wait_time and isinstance(wait_time, (int, float)) and float(wait_time) > float(max_wait_time):
                     continue
 
                 quality_score = service_recommendation_predictor.predict(queue, user_id, user_lat, user_lon)
-                if min_quality_score and quality_score < min_quality_score:
+                if min_quality_score and quality_score < float(min_quality_score):
                     continue
 
-                distance = QueueService.calculate_distance(user_lat, user_lon, branch) if user_lat and user_lon else float('inf')
+                distance = QueueService.calculate_distance(user_lat, user_lon, branch) if user_lat and user_lon and branch.latitude and branch.longitude else float('inf')
                 predicted_demand = demand_model.predict(queue.id, hours_ahead=1)
 
                 composite_score = (
@@ -1289,7 +1330,7 @@ def init_queue_routes(app):
                     'composite_score': float(composite_score),
                     'active_tickets': queue.active_tickets,
                     'daily_limit': queue.daily_limit,
-                    'status': queue.status
+                    'status': 'Aberto' if is_open else 'Fechado'
                 })
                 branch_data[branch_key]['max_composite_score'] = max(
                     branch_data[branch_key]['max_composite_score'], composite_score
@@ -1309,6 +1350,13 @@ def init_queue_routes(app):
                 branches.sort(key=lambda x: max((q['quality_score'] for q in x['queues']), default=0), reverse=True)
             else:
                 branches.sort(key=lambda x: x['max_composite_score'], reverse=True)
+
+            try:
+                page = int(page)
+                per_page = int(per_page)
+            except ValueError:
+                logger.warning(f"Parâmetros de paginação inválidos: page={page}, per_page={per_page}")
+                return jsonify({'error': 'Parâmetros de paginação inválidos'}), 400
 
             start = (page - 1) * per_page
             end = start + per_page
@@ -1331,8 +1379,8 @@ def init_queue_routes(app):
         except Exception as e:
             logger.error(f"Erro ao buscar serviços: {str(e)}")
             return jsonify({'error': f'Erro ao buscar serviços: {str(e)}'}), 500
-
-
+        
+    
     # WebSocket handlers
     @socketio.on('connect', namespace='/tickets')
     def handle_connect():
