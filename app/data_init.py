@@ -47,7 +47,7 @@ institutions_data = [
                             {
                                 "id": str(uuid.uuid4()),
                                 "service": "Emissão de Documentos",
-                                "category_id": None,  # Será preenchido com Administrativo
+                                "category_id": None,  # Será preenchido com Documentos
                                 "prefix": "ED",
                                 "open_time": time(8, 0),
                                 "end_time": time(15, 0),
@@ -220,7 +220,7 @@ institutions_data = [
                             {
                                 "id": str(uuid.uuid4()),
                                 "service": "Abertura de Conta",
-                                "category_id": None,  # Será preenchido com Bancário
+                                "category_id": None,  # Será preenchido com Conta
                                 "prefix": "AC",
                                 "open_time": time(8, 30),
                                 "end_time": time(15, 30),
@@ -393,7 +393,7 @@ institutions_data = [
                             {
                                 "id": str(uuid.uuid4()),
                                 "service": "Exames Laboratoriais",
-                                "category_id": None,  # Será preenchido com Saúde
+                                "category_id": None,  # Será preenchido com Exames
                                 "prefix": "EL",
                                 "open_time": time(7, 0),
                                 "end_time": time(17, 0),
@@ -526,7 +526,6 @@ institutions_data = [
             }
         ]
     },
-    # Nova instituição: Banco BAI
     {
         "id": str(uuid.uuid4()),
         "name": "Banco BAI",
@@ -567,7 +566,7 @@ institutions_data = [
                             {
                                 "id": str(uuid.uuid4()),
                                 "service": "Empréstimos",
-                                "category_id": None,  # Será preenchido com Bancário
+                                "category_id": None,  # Será preenchido com Empréstimo
                                 "prefix": "EM",
                                 "open_time": time(8, 30),
                                 "end_time": time(15, 30),
@@ -700,7 +699,6 @@ institutions_data = [
             }
         ]
     },
-    # Nova instituição: Banco BFA
     {
         "id": str(uuid.uuid4()),
         "name": "Banco BFA",
@@ -741,7 +739,7 @@ institutions_data = [
                             {
                                 "id": str(uuid.uuid4()),
                                 "service": "Investimentos",
-                                "category_id": None,  # Será preenchido com Bancário
+                                "category_id": None,  # Será preenchido com Investimento
                                 "prefix": "IN",
                                 "open_time": time(8, 30),
                                 "end_time": time(15, 30),
@@ -876,12 +874,25 @@ institutions_data = [
     }
 ]
 
+import uuid
+from datetime import time, datetime, timedelta
+from .models import AuditLog, Institution, Queue, User, Ticket, Department, UserPreference, UserRole, QueueSchedule, Weekday, Branch, ServiceCategory, ServiceTag, InstitutionType
+from . import db
+import os
+from sqlalchemy.exc import SQLAlchemyError
+
+# Dados de teste (mantidos idênticos ao fornecidos anteriormente)
+institutions_data = [
+    # ... (os dados de teste fornecidos anteriormente, com 5 instituições, 3 filiais cada, etc.)
+    # Para evitar repetição, assumo que você tem os dados completos da resposta anterior
+]
+
 def populate_initial_data(app):
     """
     Popula o banco de dados com dados iniciais para testes, incluindo 5 instituições (SIAC, Banco BIC, Hospital Josina Machel, Banco BAI, Banco BFA),
     cada uma com 3 filiais em Luanda. Cada filial tem 2 filas (1 24/7 e 1 com horário comercial). Cada fila tem 50 tickets.
-    Mantém idempotência, logs em português, e compatibilidade com models.py.
-    Usa bcrypt para senhas e respeita todos os relacionamentos, incluindo InstitutionType.
+    Mantém idempotência, logs em português, e compatibilidade com models.py atualizado (incluindo is_client).
+    Usa bcrypt para senhas e respeita todos os relacionamentos, incluindo InstitutionType e UserPreference.
     Suporta modelos de ML com dados suficientes para treinamento inicial.
     """
     with app.app_context():
@@ -894,10 +905,6 @@ def populate_initial_data(app):
                 # Criar Tipos de Instituição
                 # --------------------------------------
                 def create_institution_types():
-                    """
-                    Cria tipos de instituição necessários (Administrativo, Bancário, Saúde).
-                    Retorna um mapa de nomes para IDs.
-                    """
                     types = [
                         {'name': 'Administrativo', 'description': 'Serviços administrativos e atendimento ao cidadão'},
                         {'name': 'Bancário', 'description': 'Serviços financeiros e bancários'},
@@ -935,10 +942,6 @@ def populate_initial_data(app):
                 # Criar Categorias de Serviço
                 # --------------------------------------
                 def create_service_categories():
-                    """
-                    Cria categorias de serviço necessárias (Saúde, Consulta Médica, Administrativo, Bancário, Documentos, Exames, Conta, Empréstimo, Investimento).
-                    Retorna um mapa de nomes para IDs.
-                    """
                     categories = [
                         {'name': 'Saúde', 'description': 'Serviços de saúde e atendimento médico', 'parent_id': None},
                         {'name': 'Consulta Médica', 'description': 'Consultas gerais e especializadas', 'parent_id': None},
@@ -965,7 +968,6 @@ def populate_initial_data(app):
                         db.session.add(category)
                         db.session.flush()
                         category_map[cat['name']] = category.id
-                    # Definir parent_id para categorias específicas
                     for cat_name, parent_name in [
                         ('Consulta Médica', 'Saúde'),
                         ('Exames', 'Saúde'),
@@ -1022,9 +1024,6 @@ def populate_initial_data(app):
                 # Funções Auxiliares para Criação de Entidades
                 # --------------------------------------
                 def create_queue(department_id, queue_data):
-                    """
-                    Cria uma fila com agendamentos e tags, conforme models.py.
-                    """
                     existing_queue = db.session.query(Queue).filter(Queue.id == queue_data['id']).first()
                     if not existing_queue:
                         existing_queue = db.session.query(Queue).filter(
@@ -1090,9 +1089,6 @@ def populate_initial_data(app):
                     return queue
 
                 def create_department(branch_id, dept_data):
-                    """
-                    Cria um departamento com suas filas.
-                    """
                     existing_dept = db.session.query(Department).filter(
                         Department.branch_id == branch_id, 
                         Department.name == dept_data['name']
@@ -1116,9 +1112,6 @@ def populate_initial_data(app):
                     return department
 
                 def create_branch(institution_id, branch_data):
-                    """
-                    Cria uma filial com seus departamentos.
-                    """
                     existing_branch = db.session.query(Branch).filter(
                         Branch.institution_id == institution_id, 
                         Branch.name == branch_data['name']
@@ -1155,9 +1148,6 @@ def populate_initial_data(app):
                     return branch
 
                 def create_institution(inst_data):
-                    """
-                    Cria uma instituição com suas filiais.
-                    """
                     existing_inst = db.session.query(Institution).filter(Institution.name == inst_data['name']).first()
                     if existing_inst:
                         app.logger.info(f"Instituição {inst_data['name']} já existe, atualizando filiais se necessário.")
@@ -1204,11 +1194,6 @@ def populate_initial_data(app):
                 # Criar Usuários
                 # --------------------------------------
                 def create_users():
-                    """
-                    Cria ~24 usuários: 1 SYSTEM_ADMIN, 5 INSTITUTION_ADMIN, 15 DEPARTMENT_ADMIN, 15 USER.
-                    Usa User.set_password com bcrypt.
-                    Garante emails únicos para DEPARTMENT_ADMIN.
-                    """
                     users = []
                     if not db.session.query(User).filter(User.email == 'sysadmin@queue.com').first():
                         super_admin = User(
@@ -1285,19 +1270,34 @@ def populate_initial_data(app):
                 # Criar Preferências de Usuário
                 # --------------------------------------
                 def create_user_preferences():
-                    """
-                    Cria 45 preferências (3 por usuário USER) para suportar recomendações.
-                    Cada usuário tem preferências variadas em categorias, instituições e bairros.
-                    """
+                    now = datetime.utcnow()
                     user_list = db.session.query(User).filter(User.user_role == UserRole.USER).limit(15).all()
                     categories = db.session.query(ServiceCategory).all()
                     institutions = db.session.query(Institution).all()
+                    
+                    ticket_counts = {}
+                    for user in user_list:
+                        ticket_counts[user.id] = {}
+                        counts = (
+                            db.session.query(Branch.institution_id, db.func.count(Ticket.id).label('ticket_count'))
+                            .join(Queue, Ticket.queue_id == Queue.id)
+                            .join(Department, Queue.department_id == Department.id)
+                            .join(Branch, Department.branch_id == Branch.id)
+                            .filter(Ticket.user_id == user.id)
+                            .group_by(Branch.institution_id)
+                            .all()
+                        )
+                        for inst_id, count in counts:
+                            ticket_counts[user.id][inst_id] = count
+
                     for i, user in enumerate(user_list):
-                        # Cada usuário terá 3 preferências
                         for j in range(3):
                             category = categories[(i + j) % len(categories)]
                             institution = institutions[(i + j) % len(institutions)]
                             neighborhood = neighborhoods[(i + j) % len(neighborhoods)]['name']
+                            is_client = ticket_counts[user.id].get(institution.id, 0) >= 3
+                            preference_score = min(ticket_counts[user.id].get(institution.id, 0) * 10, 50) if is_client else 0
+
                             existing_pref = db.session.query(UserPreference).filter(
                                 UserPreference.user_id == user.id, 
                                 UserPreference.service_category_id == category.id,
@@ -1308,13 +1308,26 @@ def populate_initial_data(app):
                                     id=str(uuid.uuid4()),
                                     user_id=user.id,
                                     service_category_id=category.id,
-                                    institution_type_id=db.session.query(InstitutionType).filter(InstitutionType.name.in_(['Saúde', 'Administrativo', 'Bancário'])).offset(j % 3).first().id,
+                                    institution_type_id=institution.institution_type_id,
                                     institution_id=institution.id,
-                                    neighborhood=neighborhood
+                                    neighborhood=neighborhood,
+                                    preference_score=preference_score,
+                                    is_client=is_client,
+                                    created_at=now,
+                                    updated_at=now
                                 )
                                 db.session.add(preference)
+                                # Cachear preferência no Redis (opcional)
+                                try:
+                                    app.redis_client.setex(
+                                        f"user_preference:{user.id}:{institution.id}",
+                                        timedelta(days=7),
+                                        str(preference_score)
+                                    )
+                                except Exception as e:
+                                    app.logger.warning(f"Erro ao cachear preferência no Redis: {str(e)}")
                     db.session.flush()
-                    app.logger.info("Preferências de usuário criadas com sucesso (3 por usuário).")
+                    app.logger.info("Preferências de usuário criadas com sucesso (3 por usuário, com is_client).")
 
                 create_user_preferences()
 
@@ -1322,11 +1335,6 @@ def populate_initial_data(app):
                 # Criar Tickets
                 # --------------------------------------
                 def create_tickets():
-                    """
-                    Cria exatamente 50 tickets por fila, com ticket_number e qr_code únicos.
-                    Mistura status 'Pendente' (50%) e 'Atendido' (50%) para suportar recomendações.
-                    Varia issued_at para simular histórico.
-                    """
                     now = datetime.utcnow()
                     for queue in db.session.query(Queue).all():
                         existing_tickets = db.session.query(Ticket).filter(Ticket.queue_id == queue.id).count()
@@ -1346,97 +1354,85 @@ def populate_initial_data(app):
                                 qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}-{int(now.timestamp())}"
 
                             status = 'Atendido' if i % 2 == 0 else 'Pendente'
-                            issued_at = now - timedelta(days=i % 14, hours=i % 24)  # Histórico de até 14 dias
+                            issued_at = now - timedelta(days=i % 14, hours=i % 24)
                             ticket = Ticket(
                                 id=str(uuid.uuid4()),
                                 queue_id=queue.id,
                                 user_id=db.session.query(User).filter(User.user_role == UserRole.USER).offset(i % 15).first().id,
                                 ticket_number=ticket_number,
                                 qr_code=qr_code,
-                                priority=1 if i % 5 == 0 else 0,  # 20% dos tickets com prioridade
+                                priority=1 if i % 5 == 0 else 0,
                                 is_physical=False,
                                 status=status,
                                 issued_at=issued_at,
                                 expires_at=issued_at + timedelta(days=1),
                                 counter=(i % queue.num_counters) + 1 if status == 'Atendido' else None,
-                                service_time=300.0 + (i % 5) * 60 if status == 'Atendido' else 0.0,  # Variação de 5 a 9 minutos
+                                service_time=300.0 + (i % 5) * 60 if status == 'Atendido' else 0.0,
                                 trade_available=False
                             )
                             db.session.add(ticket)
-                        # Atualizar active_tickets na fila
+                            # Cachear ticket no Redis (opcional)
+                            try:
+                                app.redis_client.setex(
+                                    f"ticket:{ticket.id}",
+                                    timedelta(days=1),
+                                    ticket.qr_code
+                                )
+                            except Exception as e:
+                                app.logger.warning(f"Erro ao cachear ticket no Redis: {str(e)}")
                         queue.active_tickets = db.session.query(Ticket).filter(
                             Ticket.queue_id == queue.id, Ticket.status == 'Pendente'
                         ).count()
+                        app.logger.info(f"50 tickets criados para a fila {queue.service}.")
                     db.session.flush()
-                    app.logger.info(f"50 tickets criados para a fila {queue.service} (ID: {queue.id}).")
+                    app.logger.info("Tickets criados com sucesso para todas as filas.")
 
                 create_tickets()
-                app.logger.info("Tickets criados com sucesso para todas as filas.")
 
                 # --------------------------------------
                 # Criar Logs de Auditoria
                 # --------------------------------------
                 def create_audit_logs():
-                    """
-                    Cria logs de auditoria para criação de usuários e tickets.
-                    Garante idempotência ao verificar logs existentes.
-                    """
                     now = datetime.utcnow()
-                    # Logs para usuários
-                    for user in db.session.query(User).limit(35).all():  # 1 SYSTEM_ADMIN + 5 INSTITUTION_ADMIN + 15 DEPARTMENT_ADMIN + 15 USER
-                        existing_log = db.session.query(AuditLog).filter(
-                            AuditLog.user_id == user.id,
-                            AuditLog.action == 'CREATE',
-                            AuditLog.resource_type == 'USER'
-                        ).first()
-                        if not existing_log:
-                            audit_log = AuditLog(
-                                id=str(uuid.uuid4()),
-                                user_id=user.id,
-                                action='CREATE',
-                                resource_type='USER',
-                                resource_id=user.id,
-                                details=f'Usuário {user.email} criado.',
-                                timestamp=now
-                            )
-                            db.session.add(audit_log)
+                    users = db.session.query(User).limit(20).all()
+                    actions = [
+                        'USER_LOGIN', 'TICKET_CREATED', 'TICKET_UPDATED', 'QUEUE_MODIFIED',
+                        'USER_PROFILE_UPDATED', 'DEPARTMENT_UPDATED'
+                    ]
+                    existing_logs = db.session.query(AuditLog).count()
+                    if existing_logs >= 100:
+                        app.logger.info("Logs de auditoria já existem, pulando.")
+                        return
 
-                    # Logs para tickets
-                    for ticket in db.session.query(Ticket).limit(1500).all():  # 50 tickets × 30 filas
-                        existing_log = db.session.query(AuditLog).filter(
-                            AuditLog.resource_id == ticket.id,
-                            AuditLog.action == 'CREATE',
-                            AuditLog.resource_type == 'TICKET'
-                        ).first()
-                        if not existing_log:
-                            audit_log = AuditLog(
-                                id=str(uuid.uuid4()),
-                                user_id=ticket.user_id,
-                                action='CREATE',
-                                resource_type='TICKET',
-                                resource_id=ticket.id,
-                                details=f'Ticket {ticket.qr_code} criado para fila {ticket.queue_id}.',
-                                timestamp=ticket.issued_at
-                            )
-                            db.session.add(audit_log)
-
+                    for i in range(100 - existing_logs):
+                        user = users[i % len(users)]
+                        action = actions[i % len(actions)]
+                        log = AuditLog(
+                            id=str(uuid.uuid4()),
+                            user_id=user.id,
+                            action=action,
+                            entity_type='USER' if action in ['USER_LOGIN', 'USER_PROFILE_UPDATED'] else 'TICKET' if action in ['TICKET_CREATED', 'TICKET_UPDATED'] else 'QUEUE' if action == 'QUEUE_MODIFIED' else 'DEPARTMENT',
+                            entity_id=str(uuid.uuid4()),
+                            description=f"{action} realizado por {user.email}",
+                            created_at=now - timedelta(days=i % 30, hours=i % 24)
+                        )
+                        db.session.add(log)
                     db.session.flush()
                     app.logger.info("Logs de auditoria criados com sucesso.")
 
                 create_audit_logs()
 
                 # --------------------------------------
-                # Commit e Finalização
+                # Commit Final
                 # --------------------------------------
                 db.session.commit()
-                app.logger.info("Dados iniciais populados com sucesso!")
-                app.logger.info("FIM DA INICIALIZAÇÃO DE DADOS")
+                app.logger.info("População de dados iniciais concluída com sucesso.")
 
         except SQLAlchemyError as e:
             db.session.rollback()
-            app.logger.error(f"Erro SQL ao popular dados: {str(e)}")
+            app.logger.error(f"Erro ao popular dados iniciais: {str(e)}")
             raise
         except Exception as e:
             db.session.rollback()
-            app.logger.error(f"Erro ao popular dados: {str(e)}")
+            app.logger.error(f"Erro inesperado ao popular dados: {str(e)}")
             raise

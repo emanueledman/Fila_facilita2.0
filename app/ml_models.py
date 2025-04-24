@@ -687,7 +687,8 @@ class ServiceClusteringModel:
             logger.error(f"Erro ao carregar modelo de clustering: {e}")
             self.is_trained = False
 
-    def get_alternatives(self, queue_id, n=3):
+    def get_alternatives(self, queue_id, n=3, institution_id=None):
+        """Obtém filas alternativas, opcionalmente restritas à mesma instituição."""
         try:
             if not self.is_trained or queue_id not in self.queue_mapping:
                 self.load_model()
@@ -700,6 +701,27 @@ class ServiceClusteringModel:
                 qid for qid, idx in self.queue_mapping.items()
                 if self.kmeans.labels_[idx] == cluster and qid != queue_id
             ]
+
+            # Filtrar por instituição, se especificado
+            if institution_id:
+                queue = Queue.query.get(queue_id)
+                if queue and queue.department and queue.department.branch:
+                    valid_queues = Queue.query.filter(
+                        Queue.id.in_(similar_queues),
+                        Branch.institution_id == institution_id
+                    ).join(Department).join(Branch).all()
+                    similar_queues = [q.id for q in valid_queues]
+
+            # Fallback: sugerir filas na mesma filial, se não houver alternativas suficientes
+            if len(similar_queues) < n:
+                queue = Queue.query.get(queue_id)
+                if queue and queue.department and queue.department.branch:
+                    same_branch_queues = Queue.query.filter(
+                        Queue.department_id == queue.department_id,
+                        Queue.id != queue_id
+                    ).all()
+                    similar_queues.extend([q.id for q in same_branch_queues if q.id not in similar_queues])
+
             return similar_queues[:n]
         except Exception as e:
             logger.error(f"Erro ao obter alternativas para queue_id={queue_id}: {e}")

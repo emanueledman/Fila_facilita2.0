@@ -85,24 +85,24 @@ def create_app():
     }})
     
     # Configurar Flask-Limiter com Redis
-    #limiter.storage_uri = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+    limiter.storage_uri = os.getenv('REDIS_URL', 'rediss://red-d053vpre5dus738stejg:yUiGYAY9yrGzyXvw2LyUPzoRqkdwY3Og@oregon-keyvalue.render.com:6379/0')
     
     with app.app_context():
         from .models import Institution, Queue, User, Ticket, Department, UserPreference, UserRole, Branch, ServiceCategory, ServiceTag, QueueSchedule, AuditLog
         
         # Criar tabelas, limpando a base a cada inicialização
         #db.drop_all()
-        #db.create_all()
-        #app.logger.info("Tabelas criadas ou verificadas no banco de dados")
+        db.create_all()
+        app.logger.info("Tabelas criadas ou verificadas no banco de dados")
         
         # Inserir dados iniciais de forma idempotente
-        #from .data_init import populate_initial_data
-        #try:
-        #    populate_initial_data(app)
-        #    app.logger.info("Dados iniciais inseridos automaticamente")
-        #except Exception as e:
-         #   app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
-         #   raise  # Re-lançar para depuração no Render
+        from .data_init import populate_initial_data
+        try:
+            populate_initial_data(app)
+            app.logger.info("Dados iniciais inseridos automaticamente")
+        except Exception as e:
+            app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
+            raise  # Re-lançar para depuração no Render
         
         # Inicializar modelos de ML
         app.logger.debug("Tentando importar preditores de ML")

@@ -21,7 +21,7 @@ class Weekday(enum.Enum):
     SATURDAY = "Saturday"
     SUNDAY = "Sunday"
 
-# Nova tabela para tipos de instituições
+# Tabela para tipos de instituições
 class InstitutionType(db.Model):
     __tablename__ = 'institution_type'
     id = Column(String(36), primary_key=True, index=True)
@@ -33,7 +33,7 @@ class InstitutionType(db.Model):
     def __repr__(self):
         return f'<InstitutionType {self.name}>'
 
-# Nova tabela para categorias de serviços
+# Tabela para categorias de serviços
 class ServiceCategory(db.Model):
     __tablename__ = 'service_category'
     id = Column(String(36), primary_key=True, index=True)
@@ -46,7 +46,7 @@ class ServiceCategory(db.Model):
     def __repr__(self):
         return f'<ServiceCategory {self.name}>'
 
-# Nova tabela para tags de serviços
+# Tabela para tags de serviços
 class ServiceTag(db.Model):
     __tablename__ = 'service_tag'
     id = Column(String(36), primary_key=True, index=True)
@@ -58,7 +58,7 @@ class ServiceTag(db.Model):
     def __repr__(self):
         return f'<ServiceTag {self.tag} for Queue {self.queue_id}>'
 
-# Nova tabela para filiais
+# Tabela para filiais
 class Branch(db.Model):
     __tablename__ = 'branch'
     id = Column(String(36), primary_key=True, index=True)
@@ -74,20 +74,18 @@ class Branch(db.Model):
     def __repr__(self):
         return f'<Branch {self.name} of {self.institution.name}>'
 
-# Tabela Institution atualizada
+# Tabela Institution
 class Institution(db.Model):
     __tablename__ = 'institution'
     id = Column(String(36), primary_key=True, index=True)
     name = Column(String(100), nullable=False)  # Ex.: Banco BIC
-    institution_type_id = Column(String(36), ForeignKey('institution_type.id'), nullable=False, index=True)  # Novo campo
+    institution_type_id = Column(String(36), ForeignKey('institution_type.id'), nullable=False, index=True)
     description = Column(Text, nullable=True)
-    
-    # Removida a definição duplicada do relacionamento com InstitutionType
-    # type = relationship('InstitutionType', backref=db.backref('institutions', lazy='dynamic'))
     
     def __repr__(self):
         return f'<Institution {self.name} ({self.type.name})>'
 
+# Tabela Department
 class Department(db.Model):
     __tablename__ = 'department'
     id = Column(String(36), primary_key=True, index=True)
@@ -100,6 +98,7 @@ class Department(db.Model):
     def __repr__(self):
         return f'<Department {self.name} at {self.branch.name}>'
 
+# Tabela Queue
 class Queue(db.Model):
     __tablename__ = 'queue'
     id = Column(String(36), primary_key=True, index=True)
@@ -124,6 +123,7 @@ class Queue(db.Model):
     def __repr__(self):
         return f'<Queue {self.service} at {self.department.name}>'
 
+# Tabela Ticket
 class Ticket(db.Model):
     __tablename__ = 'ticket'
     id = Column(String(36), primary_key=True, index=True)
@@ -149,6 +149,7 @@ class Ticket(db.Model):
     def __repr__(self):
         return f'<Ticket {self.ticket_number} for Queue {self.queue_id}>'
 
+# Tabela User
 class User(db.Model):
     __tablename__ = 'user'
     id = Column(String(36), primary_key=True, index=True)
@@ -180,6 +181,7 @@ class User(db.Model):
     def __repr__(self):
         return f'<User {self.email} ({self.user_role.value})>'
 
+# Tabela QueueSchedule
 class QueueSchedule(db.Model):
     __tablename__ = 'queue_schedules'
     id = Column(String(36), primary_key=True)
@@ -190,6 +192,7 @@ class QueueSchedule(db.Model):
     is_closed = Column(Boolean, default=False)
     queue = relationship('Queue', back_populates='schedules')
 
+# Tabela AuditLog
 class AuditLog(db.Model):
     __tablename__ = 'audit_logs'
     id = Column(String(36), primary_key=True)
@@ -205,10 +208,14 @@ class UserPreference(db.Model):
     __tablename__ = 'user_preference'
     id = Column(String(36), primary_key=True, index=True)
     user_id = Column(String(36), ForeignKey('user.id'), nullable=False, index=True)
-    institution_type_id = Column(String(36), ForeignKey('institution_type.id'), nullable=True, index=True)  # Novo campo
+    institution_type_id = Column(String(36), ForeignKey('institution_type.id'), nullable=True, index=True)
     institution_id = Column(String(36), ForeignKey('institution.id'), nullable=True, index=True)
     service_category_id = Column(String(36), ForeignKey('service_category.id'), nullable=True, index=True)
     neighborhood = Column(String(100), nullable=True)
+    preference_score = Column(Integer, default=0)  # Adicionado para suportar pontuação
+    is_client = Column(Boolean, default=False, nullable=False)  # Adicionado para rastrear relação com instituição
+    created_at = Column(DateTime, default=datetime.utcnow)  # Adicionado para auditoria
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)  # Adicionado para auditoria
     
     user = relationship('User', backref=db.backref('preferences', lazy='dynamic'))
     institution_type = relationship('InstitutionType', backref=db.backref('preferred_by', lazy='dynamic'))
@@ -216,14 +223,17 @@ class UserPreference(db.Model):
     service_category = relationship('ServiceCategory', backref=db.backref('preferred_by', lazy='dynamic'))
     
     def __repr__(self):
-        return f'<UserPreference for User {self.user_id}>'
+        return f'<UserPreference for User {self.user_id} (Institution {self.institution_id}, is_client={self.is_client})>'
 
-# Índices
+# Índices otimizados
 Index('idx_institution_type_id', Institution.institution_type_id)
-Index('idx_queue_institution_id_service', Queue.department_id, Queue.service)
+Index('idx_queue_department_id_service', Queue.department_id, Queue.service)  # Ajustado nome para maior clareza
 Index('idx_queue_schedule_queue_id', QueueSchedule.queue_id)
 Index('idx_audit_log_timestamp', AuditLog.timestamp)
 Index('idx_service_tag_queue_id', ServiceTag.queue_id)
 Index('idx_branch_institution_id', Branch.institution_id)
 Index('idx_user_preference_user_id', UserPreference.user_id)
 Index('idx_user_preference_institution_type_id', UserPreference.institution_type_id)
+Index('idx_user_preference_institution_id', UserPreference.institution_id)  # Novo índice para consultas frequentes por institution_id
+Index('idx_user_preference_is_client', UserPreference.is_client)  # Novo índice para filtrar is_client=True
+Index('idx_ticket_queue_id_issued_at', Ticket.queue_id, Ticket.issued_at)  # Novo índice para consultas de histórico

@@ -807,105 +807,113 @@ class QueueService:
         max_results=5,
         max_distance_km=10.0,
         page=1,
-        per_page=20
+        per_page=10
     ):
-        """Busca serviços disponíveis com filtros avançados."""
+        """Busca serviços com recomendações personalizadas, restritas à instituição-alvo."""
         try:
             now = datetime.utcnow()
             results = []
+
+            # Validar entradas
+            if not query or not isinstance(query, str) or not query.strip():
+                query = ""
+            if not isinstance(user_id, str):
+                user_id = None
+            if not all(isinstance(x, (int, float)) for x in [user_lat, user_lon] if x is not None):
+                user_lat, user_lon = None, None
+            if not isinstance(institution_id, str):
+                institution_id = None
+            if not isinstance(institution_type_id, str):
+                institution_type_id = None
+            if not isinstance(category_id, str):
+                category_id = None
+            if tags and (not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags)):
+                tags = []
+
+            # Inferir instituição-alvo a partir do histórico, se não fornecida
+            if not institution_id and user_id:
+                recent_ticket = Ticket.query.filter_by(user_id=user_id).join(Queue).join(Department).join(Branch).order_by(Ticket.issued_at.desc()).first()
+                if recent_ticket:
+                    institution_id = recent_ticket.queue.department.branch.institution_id
+                    logger.debug(f"Inferiu institution_id={institution_id} do histórico do usuário {user_id}")
 
             # Construir consulta base
             query_base = Queue.query.join(Department).join(Branch).join(Institution).join(InstitutionType)
 
             # Aplicar filtros
             if institution_id:
-                if not isinstance(institution_id, str):
-                    raise ValueError("institution_id inválido")
                 query_base = query_base.filter(Institution.id == institution_id)
             if institution_name:
-                if not isinstance(institution_name, str):
-                    raise ValueError("Nome da instituição inválido")
                 query_base = query_base.filter(Institution.name.ilike(f'%{institution_name}%'))
             if institution_type_id:
-                if not isinstance(institution_type_id, str):
-                    raise ValueError("institution_type_id inválido")
                 query_base = query_base.filter(Institution.institution_type_id == institution_type_id)
             if neighborhood:
-                if not isinstance(neighborhood, str):
-                    raise ValueError("Bairro inválido")
                 query_base = query_base.filter(Branch.neighborhood.ilike(f'%{neighborhood}%'))
             if branch_id:
-                if not isinstance(branch_id, str):
-                    raise ValueError("branch_id inválido")
                 query_base = query_base.filter(Branch.id == branch_id)
             if category_id:
-                if not isinstance(category_id, str):
-                    raise ValueError("category_id inválido")
                 query_base = query_base.filter(Queue.category_id == category_id)
             if tags:
-                if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
-                    raise ValueError("Tags inválidas")
-                query_base = query_base.join(ServiceTag).filter(
-                    ServiceTag.tag.in_([tag.strip() for tag in tags])
-                )
-            if query:
-                if not isinstance(query, str) or not query.strip():
-                    raise ValueError("Termo de busca inválido")
-                search_terms = re.sub(r'[^\w\sÀ-ÿ]', '', query.lower()).split()
-                if not search_terms:
-                    raise ValueError("Nenhum termo de busca válido")
-                search_term = ' & '.join(search_terms)
-                query_base = query_base.filter(
-                    func.to_tsvector('portuguese', func.concat(Queue.service, ' ', Department.sector, ' ', Institution.name, ' ', InstitutionType.name))
-                    .op('@@')(func.to_tsquery('portuguese', search_term))
-                )
-                query_base = query_base.outerjoin(ServiceTag).filter(
-                    or_(
-                        Queue.id.in_(
-                            db.session.query(ServiceTag.queue_id).filter(
-                                ServiceTag.tag.ilike(f'%{query.lower()}%')
-                            )
-                        ),
-                        func.to_tsvector('portuguese', Queue.service)
-                        .op('@@')(func.to_tsquery('portuguese', search_term))
-                    )
-                )
+                query_base = query_base.join(ServiceTag).filter(ServiceTag.tag.in_([tag.strip() for tag in tags]))
 
-            # Filtrar por horários abertos
+            # Busca textual com TSVector
+            if query:
+                search_terms = re.sub(r'[^\w\sÀ-ÿ]', '', query.lower()).split()
+                if search_terms:
+                    search_query = ' & '.join(search_terms)
+                    query_base = query_base.filter(
+                        or_(
+                            func.to_tsvector('portuguese', func.concat(
+                                Queue.service, ' ', Department.sector, ' ', Institution.name, ' ', InstitutionType.name
+                            )).op('@@')(func.to_tsquery('portuguese', search_query)),
+                            Queue.id.in_(
+                                db.session.query(ServiceTag.queue_id).filter(
+                                    ServiceTag.tag.ilike(f'%{query.lower()}%')
+                                )
+                            )
+                        )
+                    )
+
+            # Filtrar por filas abertas e dentro do limite
             query_base = query_base.join(QueueSchedule).filter(
                 and_(
                     QueueSchedule.weekday == getattr(Weekday, now.strftime('%A').upper(), None),
                     QueueSchedule.is_closed == False,
                     QueueSchedule.open_time <= now.time(),
-                    QueueSchedule.end_time >= now.time()
+                    QueueSchedule.end_time >= now.time(),
+                    Queue.active_tickets < Queue.daily_limit
                 )
             )
-            query_base = query_base.filter(Queue.active_tickets < Queue.daily_limit)
 
             # Obter preferências do usuário
-            user_prefs = None
-            if user_id and isinstance(user_id, str):
-                user_prefs = UserPreference.query.filter_by(user_id=user_id).all()
+            user_prefs = UserPreference.query.filter_by(user_id=user_id).all() if user_id else []
+            preferred_institutions = {pref.institution_id for pref in user_prefs if pref.institution_id}
+            preferred_categories = {pref.service_category_id for pref in user_prefs if pref.service_category_id}
+            preferred_neighborhoods = {pref.neighborhood for pref in user_prefs if pref.neighborhood}
+            preferred_institution_types = {pref.institution_type_id for pref in user_prefs if pref.institution_type_id}
 
             # Contar total de resultados
             total = query_base.count()
 
-            # Aplicar ordenação inicial por relevância textual (se houver query)
+            # Aplicar ordenação inicial
             if query and search_terms:
+                search_query = ' & '.join(search_terms)
                 query_base = query_base.order_by(
                     func.ts_rank(
-                        func.to_tsvector('portuguese', func.concat(Queue.service, ' ', Department.sector, ' ', Institution.name, ' ', InstitutionType.name)),
-                        func.to_tsquery('portuguese', search_term)
+                        func.to_tsvector('portuguese', func.concat(
+                            Queue.service, ' ', Department.sector, ' ', Institution.name, ' ', InstitutionType.name
+                        )),
+                        func.to_tsquery('portuguese', search_query)
                     ).desc()
                 )
             else:
                 query_base = query_base.order_by(Queue.active_tickets.asc())
 
-            # Aplicar paginação
+            # Paginação
             queues = query_base.offset((page - 1) * per_page).limit(per_page).all()
 
-            # Obter pontuações colaborativas
-            collaborative_scores = collaborative_model.predict(user_id, [queue.id for queue in queues]) if user_id else {q.id: 0.5 for q in queues}
+            # Obter scores colaborativos
+            collaborative_scores = collaborative_model.predict(user_id, [q.id for q in queues]) if user_id else {q.id: 0.5 for q in queues}
 
             for queue in queues:
                 branch = queue.department.branch
@@ -940,55 +948,76 @@ class QueueService:
                 speed_label = "Desconhecida"
                 tickets = Ticket.query.filter_by(queue_id=queue.id, status='Atendido').all()
                 service_times = [t.service_time for t in tickets if t.service_time is not None and t.service_time > 0]
-                if service_times:
-                    avg_service_time = np.mean(service_times)
-                    if avg_service_time <= 5:
-                        speed_label = "Rápida"
-                    elif avg_service_time <= 15:
-                        speed_label = "Moderada"
-                    else:
-                        speed_label = "Lenta"
+                avg_service_time = np.mean(service_times) if service_times else 30
+                if avg_service_time <= 5:
+                    speed_label = "Rápida"
+                elif avg_service_time <= 15:
+                    speed_label = "Moderada"
+                else:
+                    speed_label = "Lenta"
 
-                # Sugestões de filas alternativas
-                alternatives = clustering_model.get_alternatives(queue.id, n=3)
+                # Explicação da recomendação
+                explanation = []
+                if institution.id in preferred_institutions:
+                    explanation.append(f"Você prefere {institution.name}")
+                if distance is not None:
+                    explanation.append(f"Filial a {distance:.2f} km")
+                if isinstance(wait_time, (int, float)):
+                    explanation.append(f"Espera de {int(wait_time)} min")
+                if quality_score > 0.8:
+                    explanation.append("Alta qualidade")
+                if speed_label == "Rápida":
+                    explanation.append("Atendimento rápido")
+
+                # Sugestões de alternativas (restritas à mesma instituição)
+                alternatives = clustering_model.get_alternatives(queue.id, n=3, institution_id=institution.id)
                 alternative_queues = Queue.query.filter(Queue.id.in_(alternatives)).all()
-                alternatives_data = [
-                    {
+                alternatives_data = []
+                for alt_queue in alternative_queues:
+                    alt_wait_time = QueueService.calculate_wait_time(alt_queue.id, alt_queue.active_tickets + 1, 0, user_lat, user_lon)
+                    alt_distance = QueueService.calculate_distance(user_lat, user_lon, alt_queue.department.branch) if user_lat and user_lon else None
+                    alternatives_data.append({
                         'queue_id': alt_queue.id,
                         'service': alt_queue.service or "Desconhecido",
-                        'wait_time': QueueService.calculate_wait_time(alt_queue.id, alt_queue.active_tickets + 1, 0, user_lat, user_lon),
+                        'branch': alt_queue.department.branch.name or "Desconhecida",
+                        'wait_time': f"{int(alt_wait_time)} minutos" if isinstance(alt_wait_time, (int, float)) else 'Aguardando início',
+                        'distance': float(alt_distance) if alt_distance is not None else 'Desconhecida',
                         'quality_score': service_recommendation_predictor.predict(alt_queue, user_id, user_lat, user_lon)
-                    } for alt_queue in alternative_queues
-                ]
+                    })
 
                 # Horário de funcionamento
                 schedule = QueueSchedule.query.filter_by(queue_id=queue.id, weekday=getattr(Weekday, now.strftime('%A').upper(), None)).first()
                 open_time = schedule.open_time.strftime('%H:%M') if schedule and schedule.open_time else None
                 end_time = schedule.end_time.strftime('%H:%M') if schedule and schedule.end_time else None
 
-                # Pontuação composta
-                collaborative_score = collaborative_scores.get(queue.id, 0.5)
+                # Pontuação composta otimizada
                 composite_score = 0.0
                 if query and search_terms:
                     rank = db.session.query(
                         func.ts_rank(
-                            func.to_tsvector('portuguese', func.concat(Queue.service, ' ', Department.sector, ' ', Institution.name, ' ', InstitutionType.name)),
-                            func.to_tsquery('portuguese', search_term)
+                            func.to_tsvector('portuguese', func.concat(
+                                Queue.service, ' ', Department.sector, ' ', Institution.name, ' ', InstitutionType.name
+                            )),
+                            func.to_tsquery('portuguese', search_query)
                         )
                     ).filter(Queue.id == queue.id).scalar() or 0.0
-                    composite_score += rank * 0.3
+                    composite_score += rank * 0.2
                 if distance is not None:
-                    composite_score += (1 / (1 + distance)) * 0.2
-                composite_score += quality_score * 0.25
-                composite_score += collaborative_score * 0.15
+                    composite_score += (1 / (1 + distance)) * 0.25
+                composite_score += quality_score * 0.2
+                composite_score += collaborative_scores.get(queue.id, 0.5) * 0.15
                 composite_score += (1 / (1 + predicted_demand / 10)) * 0.1
+                if isinstance(wait_time, (int, float)):
+                    composite_score += (1 / (1 + wait_time / 10)) * 0.05
                 if user_prefs:
-                    if any(pref.institution_id == institution.id for pref in user_prefs if pref.institution_id):
+                    if institution.id in preferred_institutions:
+                        composite_score += 0.2  # Maior peso para instituição preferida
+                    if queue.category_id in preferred_categories:
                         composite_score += 0.1
-                    if any(pref.service_category_id == queue.category_id for pref in user_prefs if pref.service_category_id):
-                        composite_score += 0.1
-                    if any(pref.institution_type_id == institution.institution_type_id for pref in user_prefs if pref.institution_type_id):
-                        composite_score += 0.1
+                    if branch.neighborhood in preferred_neighborhoods:
+                        composite_score += 0.05
+                    if institution.institution_type_id in preferred_institution_types:
+                        composite_score += 0.05
 
                 results.append({
                     'institution': {
@@ -1018,10 +1047,11 @@ class QueueService:
                         'open_time': open_time,
                         'end_time': end_time,
                         'quality_score': float(quality_score),
-                        'collaborative_score': float(collaborative_score),
+                        'collaborative_score': float(collaborative_scores.get(queue.id, 0.5)),
                         'predicted_demand': float(predicted_demand),
                         'speed_label': speed_label,
-                        'alternatives': alternatives_data
+                        'alternatives': alternatives_data,
+                        'explanation': ", ".join(explanation) or f"Filial de {institution.name} recomendada"
                     },
                     'score': float(composite_score)
                 })
@@ -1033,28 +1063,36 @@ class QueueService:
                 results.sort(key=lambda x: x['queue']['distance'] if x['queue']['distance'] != 'Desconhecida' else float('inf'))
             elif sort_by == 'quality_score':
                 results.sort(key=lambda x: x['queue']['quality_score'], reverse=True)
-            else:  # score (padrão)
+            else:
                 results.sort(key=lambda x: x['score'], reverse=True)
 
-            # Limitar número de resultados
-            results = results[:max_results] if max_results else results
+            # Limitar resultados
+            results = results[:max_results]
 
-            # Gerar sugestões baseadas na categoria do melhor resultado
+            # Sugestões baseadas na instituição-alvo ou tipo
             suggestions = []
-            if results and results[0]['queue']['category_id']:
+            if results and (institution_id or results[0]['institution']['type']['id']):
+                target_institution_id = institution_id or results[0]['institution']['id']
                 related_queues = Queue.query.filter(
-                    Queue.category_id == results[0]['queue']['category_id'],
-                    Queue.id != results[0]['queue']['id']
-                ).join(Department).join(Branch).join(Institution).limit(3).all()
+                    Queue.id != results[0]['queue']['id'],
+                    Branch.institution_id == target_institution_id
+                ).join(Department).join(Branch).limit(3).all()
+                if not related_queues and results[0]['institution']['type']['id']:
+                    related_queues = Queue.query.filter(
+                        Institution.institution_type_id == results[0]['institution']['type']['id'],
+                        Queue.id != results[0]['queue']['id']
+                    ).join(Department).join(Branch).join(Institution).limit(3).all()
                 for q in related_queues:
                     if q.department and q.department.branch and q.department.branch.institution:
                         wait_time = QueueService.calculate_wait_time(q.id, q.active_tickets + 1, 0)
+                        distance = QueueService.calculate_distance(user_lat, user_lon, q.department.branch) if user_lat and user_lon else None
                         suggestions.append({
                             'queue_id': q.id,
                             'institution': q.department.branch.institution.name or "Desconhecida",
                             'branch': q.department.branch.name or "Desconhecida",
                             'service': q.service or "Desconhecido",
-                            'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else 'Aguardando início'
+                            'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else 'Aguardando início',
+                            'distance': float(distance) if distance is not None else 'Desconhecida'
                         })
 
             result = {
@@ -1063,17 +1101,16 @@ class QueueService:
                 'page': int(page),
                 'per_page': int(per_page),
                 'total_pages': (total + per_page - 1) // per_page,
-                'suggestions': suggestions
+                'suggestions': suggestions,
+                'message': (f"Nenhuma fila encontrada em {institution_name or 'sua instituição preferida'}" if not results and institution_id
+                           else "Recomendações personalizadas para você!")
             }
 
-            # Cache dos resultados
-            try:
-                cache_key = f'services:{query}:{institution_name}:{neighborhood}:{branch_id}:{institution_id}:{institution_type_id}:{category_id}:{tags}:{max_wait_time}:{min_quality_score}:{sort_by}'
-                redis_client.setex(cache_key, 30, json.dumps(result, default=str))
-            except Exception as e:
-                logger.warning(f"Erro ao salvar cache para {cache_key}: {e}")
+            # Cachear resultados
+            cache_key = f'services:{query}:{institution_name}:{neighborhood}:{branch_id}:{institution_id}:{institution_type_id}:{category_id}:{tags}:{max_wait_time}:{min_quality_score}:{sort_by}'
+            redis_client.setex(cache_key, 60, json.dumps(result, default=str))
 
-            logger.info(f"Serviços buscados: {total} resultados")
+            logger.info(f"Busca de serviços: {total} resultados, {len(results)} retornados")
             return result
         except Exception as e:
             logger.error(f"Erro ao buscar serviços: {str(e)}")
