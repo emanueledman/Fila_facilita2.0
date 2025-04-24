@@ -70,7 +70,10 @@ def init_queue_routes(app):
         category_id = request.args.get('category_id')
         tags = request.args.get('tags')
         institution_type_id = request.args.get('institution_type_id')
+        institution_id = request.args.get('institution_id')  # Novo parâmetro opcional
+        restrict_to_preferred = request.args.get('restrict_to_preferred', 'false').lower() == 'true'  # Novo parâmetro
 
+        # Validações existentes
         if user_lat is not None:
             try:
                 user_lat = float(user_lat)
@@ -113,9 +116,27 @@ def init_queue_routes(app):
         if institution_type_id and not isinstance(institution_type_id, str):
             logger.warning(f"institution_type_id inválido: {institution_type_id}")
             return jsonify({'error': 'institution_type_id deve ser uma string'}), 400
+        if institution_id and not isinstance(institution_id, str):
+            logger.warning(f"institution_id inválido: {institution_id}")
+            return jsonify({'error': 'institution_id deve ser uma string'}), 400
 
         try:
             user_id = request.user_id
+
+            # Inferir institution_id se não fornecido e restrict_to_preferred for True
+            if not institution_id and restrict_to_preferred and user_id:
+                # 1. Verificar preferências explícitas (is_client=True)
+                pref = UserPreference.query.filter_by(user_id=user_id, is_client=True).first()
+                if pref and pref.institution_id:
+                    institution_id = pref.institution_id
+                    logger.debug(f"Inferiu institution_id={institution_id} de UserPreference (is_client=True)")
+                else:
+                    # 2. Inferir do histórico de tickets
+                    recent_ticket = Ticket.query.filter_by(user_id=user_id).join(Queue).join(Department).join(Branch).order_by(Ticket.issued_at.desc()).first()
+                    if recent_ticket:
+                        institution_id = recent_ticket.queue.department.branch.institution_id
+                        logger.debug(f"Inferiu institution_id={institution_id} do histórico de tickets")
+
             suggestions = QueueService.search_services(
                 query=service,
                 user_id=user_id,
@@ -129,8 +150,17 @@ def init_queue_routes(app):
                 max_wait_time=max_wait_time,
                 min_quality_score=min_quality_score,
                 institution_type_id=institution_type_id,
+                institution_id=institution_id,  # Passar institution_id inferido ou fornecido
                 sort_by='score'
             )
+
+            # Adicionar explicações às sugestões
+            for service in suggestions['services']:
+                explanation = service['queue'].get('explanation', '')
+                if institution_id and service['institution']['id'] == institution_id:
+                    explanation = f"Você prefere {service['institution']['name']}. {explanation}"
+                service['queue']['explanation'] = explanation.strip()
+
             logger.info(f"Sugestões geradas para user_id={user_id}: {len(suggestions['services'])} resultados")
             return jsonify(suggestions), 200
         except Exception as e:
@@ -323,6 +353,7 @@ def init_queue_routes(app):
                 logger.warning(f"Erro ao invalidar cache Redis: {e}")
         return jsonify({'message': 'Fila excluída'}), 200
 
+
     @app.route('/api/queue/<service>/ticket', methods=['POST'])
     @require_auth
     def get_ticket(service):
@@ -335,6 +366,7 @@ def init_queue_routes(app):
         user_lat = data.get('user_lat')
         user_lon = data.get('user_lon')
 
+        # Validações existentes
         if not isinstance(service, str) or not service.strip():
             logger.warning(f"Serviço inválido: {service}")
             return jsonify({'error': 'Serviço deve ser uma string válida'}), 400
@@ -379,16 +411,33 @@ def init_queue_routes(app):
             quality_score = service_recommendation_predictor.predict(ticket.queue, user_id, user_lat, user_lon)
             predicted_demand = demand_model.predict(ticket.queue.id, hours_ahead=1)
 
-            alternatives = clustering_model.get_alternatives(ticket.queue.id, n=3)
+            # Obter institution_id da fila escolhida
+            institution_id = ticket.queue.department.branch.institution_id if ticket.queue.department and ticket.queue.department.branch else None
+
+            # Sugestões de alternativas restritas à mesma instituição
+            alternatives = clustering_model.get_alternatives(ticket.queue.id, n=3, institution_id=institution_id)
             alternative_queues = Queue.query.filter(Queue.id.in_(alternatives)).all()
-            alternatives_data = [
-                {
+            alternatives_data = []
+            for alt_queue in alternative_queues:
+                alt_wait_time = QueueService.calculate_wait_time(alt_queue.id, alt_queue.active_tickets + 1, 0, user_lat, user_lon)
+                alt_distance = QueueService.calculate_distance(user_lat, user_lon, alt_queue.department.branch) if user_lat and user_lon else None
+                alt_quality_score = service_recommendation_predictor.predict(alt_queue, user_id, user_lat, user_lon)
+                explanation = []
+                if alt_distance is not None:
+                    explanation.append(f"Filial a {alt_distance:.2f} km")
+                if isinstance(alt_wait_time, (int, float)):
+                    explanation.append(f"Espera de {int(alt_wait_time)} min")
+                if alt_quality_score > 0.8:
+                    explanation.append("Alta qualidade")
+                alternatives_data.append({
                     'queue_id': alt_queue.id,
                     'service': alt_queue.service or "Desconhecido",
-                    'wait_time': QueueService.calculate_wait_time(alt_queue.id, alt_queue.active_tickets + 1, 0, user_lat, user_lon),
-                    'quality_score': service_recommendation_predictor.predict(alt_queue, user_id, user_lat, user_lon)
-                } for alt_queue in alternative_queues
-            ]
+                    'branch': alt_queue.department.branch.name or "Desconhecida",
+                    'wait_time': f"{int(alt_wait_time)} minutos" if isinstance(alt_wait_time, (int, float)) else 'Aguardando início',
+                    'distance': float(alt_distance) if alt_distance is not None else 'Desconhecida',
+                    'quality_score': float(alt_quality_score),
+                    'explanation': ", ".join(explanation) or "Alternativa recomendada"
+                })
 
             response = {
                 'message': 'Senha emitida',
@@ -1129,10 +1178,6 @@ def init_queue_routes(app):
             email = request.args.get('email')
             institution_id = request.args.get('institution_id')
             branch_id = request.args.get('branch_id')
-            if email and not user_id:
-                user = User.query.filter_by(email=email).first()
-                user_id = user.id if user else None
-
             query = request.args.get('query', '').strip()
             user_lat = request.args.get('latitude')
             user_lon = request.args.get('longitude')
@@ -1145,10 +1190,11 @@ def init_queue_routes(app):
             page = request.args.get('page', '1')
             per_page = request.args.get('per_page', '20')
             institution_type_id = request.args.get('institution_type_id')
+            restrict_to_preferred = request.args.get('restrict_to_preferred', 'false').lower() == 'true'  # Novo parâmetro
 
             logger.info(f"Parâmetros recebidos: institution_id={institution_id}, branch_id={branch_id}, user_id={user_id}, lat={user_lat}, lon={user_lon}, query={query}")
 
-            # Validações
+            # Validações existentes
             if query and not re.match(r'^[A-Za-zÀ-ÿ\s]{1,100}$', query):
                 logger.warning(f"Query inválida: {query}")
                 return jsonify({'error': 'Query inválida'}), 400
@@ -1181,6 +1227,18 @@ def init_queue_routes(app):
                     logger.warning(f"min_quality_score inválido: {min_quality_score}")
                     return jsonify({'error': 'min_quality_score deve estar entre 0 e 1'}), 400
 
+            # Inferir institution_id se restrict_to_preferred for True e não fornecido
+            if not institution_id and restrict_to_preferred and user_id:
+                pref = UserPreference.query.filter_by(user_id=user_id, is_client=True).first()
+                if pref and pref.institution_id:
+                    institution_id = pref.institution_id
+                    logger.debug(f"Inferiu institution_id={institution_id} de UserPreference (is_client=True)")
+                else:
+                    recent_ticket = Ticket.query.filter_by(user_id=user_id).join(Queue).join(Department).join(Branch).order_by(Ticket.issued_at.desc()).first()
+                    if recent_ticket:
+                        institution_id = recent_ticket.queue.department.branch.institution_id
+                        logger.debug(f"Inferiu institution_id={institution_id} do histórico de tickets")
+
             cache_key = f"services:{query}:{neighborhood}:{category_id}:{tags}:{max_wait_time}:{min_quality_score}:{sort_by}:{page}:{per_page}:{institution_type_id}:{institution_id}:{branch_id}"
             cached_data = None
             if redis_client:
@@ -1192,195 +1250,98 @@ def init_queue_routes(app):
                 except Exception as e:
                     logger.warning(f"Erro ao acessar Redis para {cache_key}: {e}")
 
-            queues_query = Queue.query.join(Department).join(Branch).join(Institution).join(InstitutionType).outerjoin(ServiceTag).outerjoin(ServiceCategory)
+            # Usar QueueService.search_services em vez de consulta direta
+            search_result = QueueService.search_services(
+                query=query,
+                user_id=user_id,
+                user_lat=user_lat,
+                user_lon=user_lon,
+                institution_id=institution_id,
+                branch_id=branch_id,
+                neighborhood=neighborhood,
+                category_id=category_id,
+                tags=tags,
+                max_wait_time=max_wait_time,
+                min_quality_score=min_quality_score,
+                institution_type_id=institution_type_id,
+                sort_by=sort_by,
+                max_results=100,  # Ajustado para suportar paginação
+                page=int(page),
+                per_page=int(per_page)
+            )
 
-            if institution_id:
-                queues_query = queues_query.filter(Institution.id == institution_id)
-            if branch_id:
-                queues_query = queues_query.filter(Branch.id == branch_id)
-            if query:
-                search_terms = re.sub(r'[^\w\sÀ-ÿ]', '', query.lower()).split()
-                if search_terms:
-                    search_term = ' & '.join(search_terms)
-                    queues_query = queues_query.filter(
-                        or_(
-                            func.to_tsvector('portuguese', Queue.service).op('@@')(func.to_tsquery('portuguese', search_term)),
-                            func.to_tsvector('portuguese', ServiceCategory.name).op('@@')(func.to_tsquery('portuguese', search_term)) if ServiceCategory.name else False,
-                            func.to_tsvector('portuguese', Branch.name).op('@@')(func.to_tsquery('portuguese', search_term)),
-                            func.to_tsvector('portuguese', Institution.name).op('@@')(func.to_tsquery('portuguese', search_term)),
-                            func.to_tsvector('portuguese', InstitutionType.name).op('@@')(func.to_tsquery('portuguese', search_term)),
-                            ServiceTag.tag.ilike(f'%{query.lower()}%')
-                        )
-                    )
-            if category_id:
-                queues_query = queues_query.filter(Queue.category_id == category_id)
-            if tags:
-                tags = tags.split(',')
-                queues_query = queues_query.filter(ServiceTag.tag.in_(tags))
-            if neighborhood:
-                queues_query = queues_query.filter(Branch.neighborhood.ilike(f'%{neighborhood}%'))
-            if institution_type_id:
-                queues_query = queues_query.filter(Institution.institution_type_id == institution_type_id)
-
-            # Filtrar por filas abertas (usando QueueSchedule)
-            now = datetime.utcnow()
-            current_weekday = now.strftime('%A').upper()
-            logger.info(f"Dia da semana atual: {current_weekday}")
-            try:
-                weekday_enum = getattr(Weekday, current_weekday)
-            except AttributeError:
-                logger.error(f"Dia da semana inválido: {current_weekday}")
-                return jsonify({'error': 'Dia da semana inválido'}), 500
-
-            # Aplica filtro de horário comentado nos logs
-            # Descomentar se necessário para filtrar filas abertas diretamente na query
-            # queues_query = queues_query.join(QueueSchedule).filter(
-            #     and_(
-            #         QueueSchedule.weekday == weekday_enum,
-            #         QueueSchedule.is_closed == False,
-            #         QueueSchedule.open_time <= now.time(),
-            #         QueueSchedule.end_time >= now.time(),
-            #         Queue.active_tickets < Queue.daily_limit
-            #     )
-            # )
-
-            queues = queues_query.all()
-            logger.info(f"Filas encontradas antes de filtros adicionais: {len(queues)}")
-
-            result = {'branches': [], 'total': len(queues)}
-            branch_data = {}
-
-            user_prefs = UserPreference.query.filter_by(user_id=user_id).all() if user_id else []
-            preferred_categories = {p.service_category_id for p in user_prefs if p.service_category_id}
-            preferred_neighborhoods = {p.neighborhood for p in user_prefs if p.neighborhood}
-            preferred_institution_types = {p.institution_type_id for p in user_prefs if p.institution_type_id}
-
-            for queue in queues:
-                branch = queue.department.branch
-                institution = branch.institution if branch else None
-                institution_type = institution.type if institution else None
-
-                if not (queue.department and branch and institution and institution_type):
-                    logger.warning(f"Dados incompletos para queue_id={queue.id}")
-                    continue
-
-                # Verificar se a fila está aberta usando QueueService.is_queue_open
-                is_open = QueueService.is_queue_open(queue)
-                if not is_open:
-                    logger.debug(f"Fila {queue.id} está fechada")
-                    continue
-
-                # Verificar limite diário
-                if queue.active_tickets >= queue.daily_limit:
-                    logger.debug(f"Fila {queue.id} atingiu limite diário")
-                    continue
-
-                wait_time = QueueService.calculate_wait_time(queue.id, queue.active_tickets + 1, 0, user_lat, user_lon)
-                if max_wait_time and isinstance(wait_time, (int, float)) and float(wait_time) > float(max_wait_time):
-                    continue
-
-                quality_score = service_recommendation_predictor.predict(queue, user_id, user_lat, user_lon)
-                if min_quality_score and quality_score < float(min_quality_score):
-                    continue
-
-                distance = QueueService.calculate_distance(user_lat, user_lon, branch) if user_lat and user_lon and branch.latitude and branch.longitude else float('inf')
-                predicted_demand = demand_model.predict(queue.id, hours_ahead=1)
-
-                composite_score = (
-                    (1 / (1 + distance)) * 0.4 +
-                    quality_score * 0.3 +
-                    (1 / (1 + wait_time / 10)) * 0.2 +
-                    (1 / (1 + predicted_demand / 10)) * 0.1
-                )
-                if queue.category_id in preferred_categories:
-                    composite_score += 0.15
-                if branch.neighborhood in preferred_neighborhoods:
-                    composite_score += 0.1
-                if institution.institution_type_id in preferred_institution_types:
-                    composite_score += 0.1
-
-                branch_key = branch.id
-                if branch_key not in branch_data:
-                    branch_data[branch_key] = {
-                        'id': branch.id,
+            # Reformatar resposta para manter compatibilidade com formato de branches
+            branches = {}
+            for service in search_result['services']:
+                branch_id = service['branch']['id']
+                if branch_id not in branches:
+                    branches[branch_id] = {
+                        'id': branch_id,
                         'institution': {
-                            'name': institution.name or "Desconhecida",
-                            'type': {
-                                'id': institution_type.id if institution_type else None,
-                                'name': institution_type.name if institution_type else "Desconhecido"
-                            }
+                            'name': service['institution']['name'],
+                            'type': service['institution']['type']
                         },
-                        'name': branch.name or "Desconhecida",
-                        'location': branch.location or "Desconhecida",
-                        'neighborhood': branch.neighborhood or "Desconhecido",
-                        'latitude': float(branch.latitude) if branch.latitude else None,
-                        'longitude': float(branch.longitude) if branch.longitude else None,
-                        'distance': float(distance) if distance != float('inf') else None,
+                        'name': service['branch']['name'],
+                        'location': service['branch']['location'],
+                        'neighborhood': service['branch']['neighborhood'],
+                        'latitude': service['branch']['latitude'],
+                        'longitude': service['branch']['longitude'],
+                        'distance': service['queue']['distance'] if service['queue']['distance'] != 'Desconhecida' else None,
                         'queues': [],
                         'max_composite_score': 0
                     }
-
-                branch_data[branch_key]['queues'].append({
-                    'id': queue.id,
-                    'service': queue.service or "Desconhecido",
-                    'category_id': queue.category_id,
-                    'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else "N/A",
-                    'quality_score': float(quality_score),
-                    'predicted_demand': float(predicted_demand),
-                    'composite_score': float(composite_score),
-                    'active_tickets': queue.active_tickets,
-                    'daily_limit': queue.daily_limit,
-                    'status': 'Aberto' if is_open else 'Fechado'
+                branches[branch_id]['queues'].append({
+                    'id': service['queue']['id'],
+                    'service': service['queue']['service'],
+                    'category_id': service['queue']['category_id'],
+                    'wait_time': service['queue']['wait_time'],
+                    'quality_score': service['queue']['quality_score'],
+                    'predicted_demand': service['queue']['predicted_demand'],
+                    'composite_score': service['score'],
+                    'active_tickets': service['queue']['active_tickets'],
+                    'daily_limit': service['queue']['daily_limit'],
+                    'status': 'Aberto',
+                    'explanation': service['queue']['explanation']  # Adicionar explicação
                 })
-                branch_data[branch_key]['max_composite_score'] = max(
-                    branch_data[branch_key]['max_composite_score'], composite_score
+                branches[branch_id]['max_composite_score'] = max(
+                    branches[branch_id]['max_composite_score'], service['score']
                 )
 
-            branches = list(branch_data.values())
-            logger.info(f"Filiais após filtros: {len(branches)}")
-
+            branches_list = list(branches.values())
             if sort_by == 'distance':
-                branches.sort(key=lambda x: x['distance'] if x['distance'] is not None else float('inf'))
+                branches_list.sort(key=lambda x: x['distance'] if x['distance'] is not None else float('inf'))
             elif sort_by == 'wait_time':
-                branches.sort(key=lambda x: min(
+                branches_list.sort(key=lambda x: min(
                     (float(q['wait_time'].split()[0]) if q['wait_time'] != "N/A" else float('inf') for q in x['queues']),
                     default=float('inf')
                 ))
             elif sort_by == 'quality_score':
-                branches.sort(key=lambda x: max((q['quality_score'] for q in x['queues']), default=0), reverse=True)
+                branches_list.sort(key=lambda x: max((q['quality_score'] for q in x['queues']), default=0), reverse=True)
             else:
-                branches.sort(key=lambda x: x['max_composite_score'], reverse=True)
+                branches_list.sort(key=lambda x: x['max_composite_score'], reverse=True)
 
-            try:
-                page = int(page)
-                per_page = int(per_page)
-            except ValueError:
-                logger.warning(f"Parâmetros de paginação inválidos: page={page}, per_page={per_page}")
-                return jsonify({'error': 'Parâmetros de paginação inválidos'}), 400
-
-            start = (page - 1) * per_page
-            end = start + per_page
-            paginated_branches = branches[start:end]
-
-            result['branches'] = paginated_branches
-            result['page'] = page
-            result['per_page'] = per_page
-            result['total_pages'] = (len(branches) + per_page - 1) // per_page
+            result = {
+                'branches': branches_list,
+                'total': search_result['total'],
+                'page': search_result['page'],
+                'per_page': search_result['per_page'],
+                'total_pages': search_result['total_pages']
+            }
 
             if redis_client:
                 try:
-                    redis_client.setex(cache_key, 30, json.dumps(result, default=str))
+                    redis_client.setex(cache_key, 300, json.dumps(result, default=str))  # Aumentar cache para 5 minutos
                     logger.info(f"Resultado armazenado no cache para {cache_key}")
                 except Exception as e:
                     logger.warning(f"Erro ao salvar cache para {cache_key}: {e}")
 
-            logger.info(f"Serviços buscados: {len(branches)} filiais encontradas, {len(queues)} filas totais")
+            logger.info(f"Serviços buscados: {len(branches_list)} filiais retornadas, {search_result['total']} filas totais")
             return jsonify(result), 200
         except Exception as e:
             logger.error(f"Erro ao buscar serviços: {str(e)}")
             return jsonify({'error': f'Erro ao buscar serviços: {str(e)}'}), 500
-        
-    
+
+ 
     # WebSocket handlers
     @socketio.on('connect', namespace='/tickets')
     def handle_connect():
@@ -1477,9 +1438,10 @@ def init_queue_routes(app):
             logger.error(f"Erro inesperado ao listar tipos de instituições: {e}")
             return jsonify({'error': 'Erro interno do servidor'}), 500
 
+
     @app.route('/api/user/preferences', methods=['GET'])
     def get_user_preferences():
-        """Retorna preferências do usuário, incluindo inferências do CollaborativeFilteringModel."""
+        """Retorna preferências do usuário, incluindo inferências e status de cliente."""
         try:
             user_id = request.args.get('user_id')
             if not user_id:
@@ -1487,32 +1449,65 @@ def init_queue_routes(app):
 
             # Preferências explícitas do banco
             preferences = UserPreference.query.filter_by(user_id=user_id).all()
-            preference_scores = {
-                pref.institution_type_id: pref.preference_score
-                for pref in preferences
-                if pref.institution_type_id
-            }
+            preference_data = []
+            for pref in preferences:
+                pref_dict = {
+                    'institution_id': pref.institution_id,
+                    'institution_type_id': pref.institution_type_id,
+                    'service_category_id': pref.service_category_id,
+                    'neighborhood': pref.neighborhood,
+                    'preference_score': pref.preference_score,
+                    'is_client': pref.is_client  # Novo campo
+                }
+                if pref.institution_id:
+                    institution = Institution.query.get(pref.institution_id)
+                    pref_dict['institution_name'] = institution.name if institution else "Desconhecida"
+                preference_data.append(pref_dict)
 
-            # Se poucas preferências, usar CollaborativeFilteringModel para inferir
-            if len(preference_scores) < 3:
+            # Inferências baseadas em histórico de tickets
+            inferred_institutions = {}
+            if len([p for p in preferences if p.is_client]) < 1:  # Inferir se não houver is_client=True
+                recent_tickets = Ticket.query.filter_by(user_id=user_id).join(Queue).join(Department).join(Branch).order_by(Ticket.issued_at.desc()).limit(10).all()
+                ticket_counts = {}
+                for ticket in recent_tickets:
+                    inst_id = ticket.queue.department.branch.institution_id
+                    ticket_counts[inst_id] = ticket_counts.get(inst_id, 0) + 1
+                for inst_id, count in ticket_counts.items():
+                    institution = Institution.query.get(inst_id)
+                    if institution:
+                        # Score proporcional à frequência (máximo 50)
+                        inferred_institutions[inst_id] = {
+                            'institution_id': inst_id,
+                            'institution_name': institution.name,
+                            'preference_score': min(count * 10, 50),
+                            'is_client': count >= 3  # Considerar cliente se >= 3 interações
+                        }
+
+            # Inferências colaborativas
+            if len(preference_data) < 3:
                 try:
-                    # Obter todas as filas para inferência
                     queue_ids = [q.id for q in Queue.query.all()]
                     collab_scores = collaborative_model.predict(user_id, queue_ids)
-                    # Mapear filas para tipos de instituição
                     for queue_id, score in collab_scores.items():
                         queue = Queue.query.get(queue_id)
                         if queue and queue.department and queue.department.branch:
                             inst = Institution.query.get(queue.department.branch.institution_id)
                             if inst and inst.institution_type_id:
-                                # Ponderar score colaborativo (0 a 1) para escala 0-100
-                                preference_scores[inst.institution_type_id] = preference_scores.get(
-                                    inst.institution_type_id, 0
-                                ) + int(score * 50)  # Ajuste de peso
+                                if inst.id not in [p['institution_id'] for p in preference_data] and inst.id not in inferred_institutions:
+                                    inferred_institutions[inst.id] = inferred_institutions.get(inst.id, {
+                                        'institution_id': inst.id,
+                                        'institution_name': inst.name,
+                                        'preference_score': 0,
+                                        'is_client': False
+                                    })
+                                    inferred_institutions[inst.id]['preference_score'] += int(score * 30)  # Ajuste de peso
                 except Exception as e:
-                    logger.warning(f"Erro ao inferir preferências para user_id={user_id}: {e}")
+                    logger.warning(f"Erro ao inferir preferências colaborativas para user_id={user_id}: {e}")
 
-            return jsonify({'preferences': preference_scores}), 200
+            return jsonify({
+                'explicit_preferences': preference_data,
+                'inferred_preferences': list(inferred_institutions.values())
+            }), 200
         except SQLAlchemyError as e:
             logger.error(f"Erro no banco ao carregar preferências para user_id={user_id}: {e}")
             return jsonify({'error': 'Erro interno do servidor'}), 500
