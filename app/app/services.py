@@ -4,9 +4,9 @@ import numpy as np
 from sqlalchemy import and_, func
 from datetime import datetime, time, timedelta
 from app.models import Queue, QueueSchedule, Ticket, AuditLog, Department, Institution, User, UserPreference, Weekday, Branch
-from app.ml_models import wait_time_predictor, service_recommendation_predictor, clustering_model, demand_model
+from app.ml_models import wtait_time_predictor, service_recommendation_predictor, clustering_model, demand_model
 from app import db, redis_client, socketio
-from .utils.pdf_generator import generate_ticket_pdf
+from utils.pdf_generator import generate_ticket_pdf
 from firebase_admin import messaging
 from sqlalchemy.exc import SQLAlchemyError
 from flask_socketio import emit
