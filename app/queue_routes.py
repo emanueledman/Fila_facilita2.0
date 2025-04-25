@@ -1366,14 +1366,16 @@ def init_queue_routes(app):
             logger.error(f"Erro ao buscar serviços: {str(e)}")
             return jsonify({'error': 'Erro ao buscar serviços'}), 500
 
+
+        
     @app.route('/api/institutions', methods=['GET'])
     def list_institutions():
         """Lista instituições com filtros e ordenação."""
         try:
-            institution_type_id = request.args.get('institution_type_id')
+            institution_type_id = request.args.get('institution_type_id') or request.args.get('type_id')  # Suporte a type_id
             user_lat = request.args.get('latitude')
             user_lon = request.args.get('longitude')
-            sort_by = request.args.get('sort_by', 'quality_score')  # quality_score, distance, name
+            sort_by = request.args.get('sort_by', 'quality_score')
             page = request.args.get('page', '1')
             per_page = request.args.get('per_page', '20')
 
@@ -1433,7 +1435,6 @@ def init_queue_routes(app):
                         for b in branches if b.latitude and b.longitude
                     )
 
-                # Média de quality_score das filas
                 department_ids = [d.id for d in Department.query.filter(Department.branch_id.in_([b.id for b in branches])).all()]
                 queues = Queue.query.filter(Queue.department_id.in_(department_ids)).all()
                 quality_scores = [
@@ -1454,15 +1455,13 @@ def init_queue_routes(app):
                     'quality_score': float(avg_quality_score)
                 })
 
-            # Ordenação
             if sort_by == 'distance' and user_lat and user_lon:
                 result = sorted(result, key=lambda x: float(x['distance_km']) if x['distance_km'] != 'Desconhecida' else float('inf'))
             elif sort_by == 'name':
                 result = sorted(result, key=lambda x: x['name'].lower())
-            else:  # quality_score
+            else:
                 result = sorted(result, key=lambda x: x['quality_score'], reverse=True)
 
-            # Paginação
             total_results = len(result)
             start = (page - 1) * per_page
             end = start + per_page
@@ -1478,7 +1477,6 @@ def init_queue_routes(app):
                 }
             }
 
-            # Armazenar no cache
             if redis_client:
                 try:
                     redis_client.setex(cache_key, 300, json.dumps(response, default=str))
@@ -1496,7 +1494,6 @@ def init_queue_routes(app):
     def list_institution_types():
         """Lista tipos de instituições com cache."""
         try:
-            # Chave de cache
             cache_key = "cache:institution_types"
             if redis_client:
                 try:
@@ -1514,20 +1511,21 @@ def init_queue_routes(app):
                 'icon': t.icon_url if hasattr(t, 'icon_url') else 'https://www.bancobai.ao/media/1635/icones-104.png'
             } for t in types]
 
-            # Armazenar no cache
+            response = {'types': result}  # Alterado para retornar um mapa
+
             if redis_client:
                 try:
-                    redis_client.setex(cache_key, 3600, json.dumps(result, default=str))
+                    redis_client.setex(cache_key, 3600, json.dumps(response, default=str))
                     logger.info(f"Cache armazenado para {cache_key}")
                 except Exception as e:
                     logger.warning(f"Erro ao salvar cache Redis: {e}")
 
             logger.info(f"Lista de tipos de instituições retornada: {len(result)} tipos")
-            return jsonify(result), 200
+            return jsonify(response), 200
         except Exception as e:
             logger.error(f"Erro ao listar tipos de instituições: {str(e)}")
             return jsonify({'error': 'Erro ao listar tipos de instituições'}), 500
-
+        
     @app.route('/api/branches', methods=['GET'])
     def list_branches():
         """Lista filiais com filtros e ordenação."""
