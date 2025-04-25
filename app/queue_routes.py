@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timedelta
 import io
 import json
+from .recommendation_service import RecommendationService
 import re
 import logging
 from sqlalchemy import and_, or_
@@ -136,7 +137,7 @@ def init_queue_routes(app):
                         institution_id = recent_ticket.queue.department.branch.institution_id
                         logger.debug(f"Inferiu institution_id={institution_id} do histórico de tickets")
 
-            suggestions = QueueService.search_services(
+            suggestions = RecommendationService.search_services(
                 query=service,
                 user_id=user_id,
                 user_lat=user_lat,
@@ -1306,7 +1307,7 @@ def init_queue_routes(app):
                     logger.warning(f"Erro ao acessar cache Redis: {e}")
 
             # Busca de serviços
-            suggestions = QueueService.search_services(
+            suggestions = RecommendationService.search_services(
                 query=query,
                 user_id=user_id,
                 user_lat=user_lat,
@@ -1751,7 +1752,7 @@ def init_queue_routes(app):
                     logger.warning(f"Erro ao acessar cache Redis: {e}")
 
             # Busca de serviços
-            suggestions = QueueService.search_services(
+            suggestions = RecommendationService.search_services(
                 query=query,
                 user_id=user_id,
                 user_lat=user_lat,
@@ -1894,7 +1895,7 @@ def init_queue_routes(app):
                     })
 
                 # Serviços
-                services = QueueService.search_services(
+                services = RecommendationService.search_services(
                     query=query,
                     user_id=user_id,
                     user_lat=user_lat,
@@ -1975,7 +1976,7 @@ def init_queue_routes(app):
                     logger.warning(f"Erro ao acessar cache Redis: {e}")
 
             # Busca recomendações personalizadas
-            suggestions = QueueService.search_services(
+            suggestions = RecommendationService.search_services(
                 query='',
                 user_id=user_id,
                 user_lat=user_lat,
@@ -2094,7 +2095,7 @@ def init_queue_routes(app):
                     logger.warning(f"Erro ao acessar cache Redis: {e}")
 
             # Busca de serviços
-            suggestions = QueueService.search_services(
+            suggestions = RecommendationService.search_services(
                 query=query,
                 user_id=user_id,
                 user_lat=user_lat,
@@ -2213,7 +2214,7 @@ def init_queue_routes(app):
 
             # Buscar serviços similares
             similar_queue_ids = clustering_model.get_alternatives(queue_id, n=limit, institution_id=institution_id)
-            suggestions = QueueService.search_services(
+            suggestions = RecommendationService.search_services(
                 query='',
                 user_id=user_id,
                 user_lat=user_lat,

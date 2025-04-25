@@ -5,9 +5,9 @@ import uuid
 import numpy as np
 from sqlalchemy import and_, func, or_
 from datetime import datetime
-from models import Queue, QueueSchedule, Ticket, Department, Institution, User, Weekday, Branch, ServiceCategory, ServiceTag, UserPreference, InstitutionType
-from app.ml_models import wait_time_predictor, service_recommendation_predictor, collaborative_model, demand_model, clustering_model
-from app import db, redis_client
+from .models import Queue, QueueSchedule, Ticket, Department, Institution, User, Weekday, Branch, ServiceCategory, ServiceTag, UserPreference, InstitutionType
+from .ml_models import wait_time_predictor, service_recommendation_predictor, collaborative_model, demand_model, clustering_model
+from . import db, redis_client
 from geopy.distance import geodesic
 
 logger = logging.getLogger(__name__)
