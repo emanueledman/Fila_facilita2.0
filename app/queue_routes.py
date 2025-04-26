@@ -22,30 +22,29 @@ logger = logging.getLogger(__name__)
 
 def init_queue_routes(app):
     def emit_ticket_update(ticket):
-        try:
-            wait_time = QueueService.calculate_wait_time(
-                ticket.queue.id, ticket.ticket_number, ticket.priority
-            )
-            socketio.emit('ticket_update', {
+        """Emite atualização de ticket via WebSocket."""
+        if socketio:
+            ticket_data = {
                 'ticket_id': ticket.id,
-                'user_id': ticket.user_id,
+                'queue_id': ticket.queue_id,
+                'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
                 'status': ticket.status,
-                'counter': f"{ticket.counter:02d}" if ticket.counter else None,
-                'position': max(0, ticket.ticket_number - ticket.queue.current_ticket),
-                'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else "N/A",
-                'number': f"{ticket.queue.prefix}{ticket.ticket_number}"
-            }, room=ticket.user_id, namespace='/tickets')
+                'priority': ticket.priority,
+                'is_physical': ticket.is_physical,
+                'issued_at': ticket.issued_at.isoformat(),
+                'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None,
+                'counter': ticket.counter
+            }
+            socketio.emit('ticket_update', ticket_data, namespace='/', room=str(ticket.user_id))
             logger.info(f"Atualização de ticket emitida via WebSocket: ticket_id={ticket.id}, user_id={ticket.user_id}")
             QueueService.send_notification(
-                fcm_token=None,
-                message=f"Ticket {ticket.queue.prefix}{ticket.ticket_number} atualizado: {ticket.status}",
-                ticket_id=ticket.id,
+                None,
+                f"Ticket {ticket_data['ticket_number']} atualizado: {ticket.status}",
+                ticket.id,
                 via_websocket=True,
                 user_id=ticket.user_id
             )
-        except Exception as e:
-            logger.error(f"Erro ao emitir atualização via WebSocket: {e}")
-
+        
     def emit_dashboard_update(institution_id, queue_id, event_type, data):
         try:
             socketio.emit('dashboard_update', {
@@ -365,7 +364,7 @@ def init_queue_routes(app):
         return jsonify({'message': 'Fila excluída'}), 200
 
     @app.route('/api/queue/<service>/ticket', methods=['POST'])
-    @require_auth  # Adiciona autenticação para obter request.user_id
+    @require_auth
     def get_ticket(service):
         """Emite um ticket para uma fila."""
         data = request.get_json() or {}
@@ -376,7 +375,7 @@ def init_queue_routes(app):
         user_lat = data.get('user_lat')
         user_lon = data.get('user_lon')
 
-        # Validações existentes
+        # Validações
         if not isinstance(service, str) or not service.strip():
             logger.warning(f"Serviço inválido: {service}")
             return jsonify({'error': 'Serviço deve ser uma string válida'}), 400
@@ -403,20 +402,16 @@ def init_queue_routes(app):
                 return jsonify({'error': 'Longitude deve ser um número'}), 400
 
         try:
-            # Obter user_id do token Firebase (via @require_auth)
+            # Obter user_id do token Firebase
             user_id = request.user_id
             if not user_id:
                 logger.warning("user_id não disponível no token de autenticação")
                 return jsonify({'error': 'Autenticação inválida: user_id não fornecido'}), 401
 
-            # Verificar se o usuário existe na tabela User
-            user = User.query.get(user_id)
-            ticket_user_id = user.id if user else None  # Usa NULL se o usuário não existe
-
-            # Criar o ticket usando QueueService
+            # Criar ticket
             ticket, pdf_buffer = QueueService.add_to_queue(
                 service=service,
-                user_id=ticket_user_id,  # Passa NULL se o usuário não existe
+                user_id=user_id,
                 priority=priority,
                 is_physical=is_physical,
                 fcm_token=fcm_token,
@@ -429,8 +424,8 @@ def init_queue_routes(app):
             quality_score = service_recommendation_predictor.predict(ticket.queue, user_id, user_lat, user_lon)
             predicted_demand = demand_model.predict(ticket.queue.id, hours_ahead=1)
 
-            institution_id = ticket.queue.department.branch.institution_id if ticket.queue.department and ticket.queue.department.branch else None
-            alternatives = clustering_model.get_alternatives(ticket.queue.id, n=3, institution_id=institution_id)
+            # Obter alternativas sem o parâmetro institution_id
+            alternatives = clustering_model.get_alternatives(ticket.queue.id, n=3)
             alternative_queues = Queue.query.filter(Queue.id.in_(alternatives)).all()
             alternatives_data = []
             for alt_queue in alternative_queues:
