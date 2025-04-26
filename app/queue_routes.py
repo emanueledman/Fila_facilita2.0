@@ -10,6 +10,7 @@ import io
 import json
 from .recommendation_service import RecommendationService
 import re
+from .auth import require_auth
 import logging
 from sqlalchemy import and_, or_
 from geopy.distance import geodesic
@@ -364,10 +365,10 @@ def init_queue_routes(app):
         return jsonify({'message': 'Fila excluída'}), 200
 
     @app.route('/api/queue/<service>/ticket', methods=['POST'])
+    @require_auth  # Adiciona autenticação para obter request.user_id
     def get_ticket(service):
-        """Emite um ticket para uma fila (mantida sem alterações)."""
+        """Emite um ticket para uma fila."""
         data = request.get_json() or {}
-        user_id = data.get('user_id')
         fcm_token = data.get('fcm_token')
         priority = data.get('priority', 0)
         is_physical = data.get('is_physical', False)
@@ -375,9 +376,7 @@ def init_queue_routes(app):
         user_lat = data.get('user_lat')
         user_lon = data.get('user_lon')
 
-        if not user_id:
-            logger.warning("user_id não fornecido")
-            return jsonify({'error': 'user_id é obrigatório'}), 400
+        # Validações existentes
         if not isinstance(service, str) or not service.strip():
             logger.warning(f"Serviço inválido: {service}")
             return jsonify({'error': 'Serviço deve ser uma string válida'}), 400
@@ -404,9 +403,20 @@ def init_queue_routes(app):
                 return jsonify({'error': 'Longitude deve ser um número'}), 400
 
         try:
+            # Obter user_id do token Firebase (via @require_auth)
+            user_id = request.user_id
+            if not user_id:
+                logger.warning("user_id não disponível no token de autenticação")
+                return jsonify({'error': 'Autenticação inválida: user_id não fornecido'}), 401
+
+            # Verificar se o usuário existe na tabela User
+            user = User.query.get(user_id)
+            ticket_user_id = user.id if user else None  # Usa NULL se o usuário não existe
+
+            # Criar o ticket usando QueueService
             ticket, pdf_buffer = QueueService.add_to_queue(
                 service=service,
-                user_id=user_id,
+                user_id=ticket_user_id,  # Passa NULL se o usuário não existe
                 priority=priority,
                 is_physical=is_physical,
                 fcm_token=fcm_token,
@@ -479,7 +489,6 @@ def init_queue_routes(app):
         except Exception as e:
             logger.error(f"Erro inesperado ao emitir senha para serviço {service}: {str(e)}")
             return jsonify({'error': 'Erro interno ao emitir senha'}), 500
-
 
     @app.route('/api/ticket/<ticket_id>/pdf', methods=['GET'])
     def download_ticket_pdf(ticket_id):

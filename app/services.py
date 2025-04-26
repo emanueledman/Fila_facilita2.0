@@ -1,6 +1,8 @@
 import logging
 import uuid
 import numpy as np
+import json
+import re
 from sqlalchemy import and_, func
 from datetime import datetime, time, timedelta
 from app.models import Queue, QueueSchedule, Ticket, AuditLog, Department, Institution, User, UserPreference, Weekday, Branch
@@ -189,8 +191,12 @@ class QueueService:
         try:
             if not isinstance(service, str) or not service.strip():
                 raise ValueError("Serviço inválido")
-            if not isinstance(user_id, str) or not user_id:
-                raise ValueError("user_id inválido")
+
+            # Verificar se o user_id existe na tabela User, se fornecido
+            ticket_user_id = None
+            if user_id:
+                user = User.query.get(user_id)
+                ticket_user_id = user.id if user else None  # Usa NULL se o usuário não existe
 
             query = Queue.query.filter_by(service=service)
             if branch_id:
@@ -214,8 +220,9 @@ class QueueService:
                 logger.warning(f"Fila {queue.id} cheia: {queue.active_tickets}/{queue.daily_limit}")
                 raise ValueError(f"Limite diário atingido. {alt_message}")
             
-            if Ticket.query.filter_by(user_id=user_id, queue_id=queue.id, status='Pendente').first():
-                logger.warning(f"Usuário {user_id} já possui senha ativa na fila {queue.id}")
+            # Verificar se o usuário já tem um ticket pendente na mesma fila
+            if ticket_user_id and Ticket.query.filter_by(user_id=ticket_user_id, queue_id=queue.id, status='Pendente').first():
+                logger.warning(f"Usuário {ticket_user_id} já possui senha ativa na fila {queue.id}")
                 raise ValueError("Você já possui uma senha ativa")
             
             ticket_number = queue.active_tickets + 1
@@ -223,7 +230,7 @@ class QueueService:
             ticket = Ticket(
                 id=str(uuid.uuid4()),
                 queue_id=queue.id,
-                user_id=user_id,
+                user_id=ticket_user_id,  # Pode ser NULL
                 ticket_number=ticket_number,
                 qr_code=qr_code,
                 priority=priority,
@@ -303,7 +310,7 @@ class QueueService:
             ticket = Ticket(
                 id=str(uuid.uuid4()),
                 queue_id=queue.id,
-                user_id='PRESENCIAL',
+                user_id='PRESENCIAL',  # Mantido como está para tickets de totem
                 ticket_number=ticket_number,
                 qr_code=qr_code,
                 priority=0,
