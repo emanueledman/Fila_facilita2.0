@@ -22,8 +22,20 @@ logger = logging.getLogger(__name__)
 
 def init_queue_routes(app):
     def emit_ticket_update(ticket):
-        """Emite atualização de ticket via WebSocket."""
-        if socketio:
+        """Emite atualização de ticket via WebSocket com notificações profissionais e direcionadas."""
+        try:
+            # Validar ticket e usuário
+            if not ticket or not ticket.user_id or ticket.user_id == 'PRESENCIAL' or ticket.is_physical:
+                logger.warning(f"Não é possível emitir atualização para ticket_id={ticket.id}: usuário inválido ou ticket presencial")
+                return
+
+            # Consultar usuário para obter fcm_token
+            user = User.query.get(ticket.user_id)
+            if not user:
+                logger.warning(f"Usuário não encontrado para ticket_id={ticket.id}, user_id={ticket.user_id}")
+                return
+
+            # Montar dados do ticket
             ticket_data = {
                 'ticket_id': ticket.id,
                 'queue_id': ticket.queue_id,
@@ -35,15 +47,95 @@ def init_queue_routes(app):
                 'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None,
                 'counter': ticket.counter
             }
-            socketio.emit('ticket_update', ticket_data, namespace='/', room=str(ticket.user_id))
-            logger.info(f"Atualização de ticket emitida via WebSocket: ticket_id={ticket.id}, user_id={ticket.user_id}")
-            QueueService.send_notification(
-                None,
-                f"Ticket {ticket_data['ticket_number']} atualizado: {ticket.status}",
-                ticket.id,
-                via_websocket=True,
-                user_id=ticket.user_id
-            )
+
+            # Definir mensagens profissionais por status
+            mensagens_status = {
+                'Pendente': f"Sua senha {ticket_data['ticket_number']} está aguardando atendimento.",
+                'Chamado': f"Sua senha {ticket_data['ticket_number']} foi chamada no guichê {ticket_data['counter']}. Dirija-se ao atendimento.",
+                'Atendido': f"Sua senha {ticket_data['ticket_number']} foi atendida com sucesso.",
+                'Cancelado': f"Sua senha {ticket_data['ticket_number']} foi cancelada."
+            }
+            mensagem = mensagens_status.get(ticket.status, f"Sua senha {ticket_data['ticket_number']} foi atualizada: {ticket.status}")
+
+            # Throttling: verificar se notificação recente foi enviada
+            cache_key = f"notificacao:throttle:{ticket.user_id}:{ticket.id}"
+            if redis_client.get(cache_key):
+                logger.debug(f"Notificação suprimida para ticket_id={ticket.id} devido a throttling")
+                return
+            redis_client.setex(cache_key, 60, "1")  # Bloquear por 60 segundos
+
+            # Enviar notificação via WebSocket
+            user_room = str(ticket.user_id)
+            if socketio:
+                try:
+                    socketio.emit('ticket_update', ticket_data, namespace='/', room=user_room)
+                    logger.info(f"Atualização de ticket emitida via WebSocket: ticket_id={ticket.id}, user_id={ticket.user_id}")
+
+                    QueueService.send_notification(
+                        fcm_token=None,
+                        message=mensagem,
+                        ticket_id=ticket.id,
+                        via_websocket=True,
+                        user_id=ticket.user_id
+                    )
+
+                    # Registrar sucesso no AuditLog
+                    audit_log = AuditLog(
+                        user_id=ticket.user_id,
+                        action='enviar_notificacao',
+                        resource_type='ticket',
+                        resource_id=ticket.id,
+                        details=f"Notificação WebSocket enviada: {mensagem}",
+                        timestamp=datetime.utcnow()
+                    )
+                    db.session.add(audit_log)
+                    db.session.commit()
+
+                except Exception as e:
+                    logger.error(f"Erro ao emitir atualização WebSocket para ticket_id={ticket.id}: {str(e)}")
+                    
+                    # Fallback: tentar FCM se disponível
+                    if user.fcm_token:
+                        try:
+                            QueueService.send_notification(
+                                fcm_token=user.fcm_token,
+                                message=mensagem,
+                                ticket_id=ticket.id,
+                                via_websocket=False,
+                                user_id=ticket.user_id
+                            )
+                            logger.info(f"Notificação FCM enviada para ticket_id={ticket.id}, user_id={ticket.user_id}")
+                            
+                            # Registrar FCM no AuditLog
+                            audit_log = AuditLog(
+                                user_id=ticket.user_id,
+                                action='enviar_notificacao',
+                                resource_type='ticket',
+                                resource_id=ticket.id,
+                                details=f"Notificação FCM enviada: {mensagem}",
+                                timestamp=datetime.utcnow()
+                            )
+                            db.session.add(audit_log)
+                            db.session.commit()
+                        except Exception as fcm_error:
+                            logger.error(f"Erro ao enviar notificação FCM para ticket_id={ticket.id}: {str(fcm_error)}")
+                            
+                            # Registrar falha no AuditLog
+                            audit_log = AuditLog(
+                                user_id=ticket.user_id,
+                                action='enviar_notificacao',
+                                resource_type='ticket',
+                                resource_id=ticket.id,
+                                details=f"Falha ao enviar notificação (WebSocket e FCM): {mensagem}",
+                                timestamp=datetime.utcnow()
+                            )
+                            db.session.add(audit_log)
+                            db.session.commit()
+
+        except Exception as e:
+            logger.error(f"Erro geral ao processar atualização de ticket_id={ticket.id}: {str(e)}")
+            db.session.rollback()
+    
         
     def emit_dashboard_update(institution_id, queue_id, event_type, data):
         try:

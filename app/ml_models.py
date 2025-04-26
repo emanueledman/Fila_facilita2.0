@@ -90,7 +90,7 @@ class WaitTimePredictor:
                     position = max(0, ticket.ticket_number - queue.current_ticket)
                     hour_of_day = ticket.issued_at.hour
                     sector_encoded = self.get_sector_id(queue.department.sector if queue.department else None)
-                    category_encoded = self.get_category_id(queue.category_id)  # Corrigido: category_encoded
+                    category_encoded = self.get_category_id(queue.category_id)
                     data.append({
                         'position': position,
                         'active_tickets': queue.active_tickets,
@@ -196,9 +196,6 @@ class WaitTimePredictor:
                 logger.error(f"Fila não encontrada: queue_id={queue_id}")
                 return self.FALLBACK_TIME
 
-            branch = Branch.query.join(Department).filter(Department.id == queue.department_id).first()
-            distance = self.calculate_distance(user_lat, user_lon, branch) if user_lat and user_lon and branch else 0
-
             features = np.array([[
                 position,
                 active_tickets,
@@ -207,9 +204,9 @@ class WaitTimePredictor:
                 queue.num_counters or 1,
                 queue.daily_limit or 100,
                 self.get_sector_id(queue.department.sector if queue.department else None),
-                self.get_category_id(queue.category_id),
-                distance
+                self.get_category_id(queue.category_id)
             ]])
+            logger.debug(f"Features para queue_id={queue_id}: {features.tolist()}")
             features_scaled = self.scalers[queue_id].transform(features)
             wait_time = self.models[queue_id].predict(features_scaled)[0]
             return max(0, round(wait_time, 1))
@@ -295,7 +292,7 @@ class ServiceRecommendationPredictor:
                 availability = max(0, queue.daily_limit - queue.active_tickets)
                 is_open = (
                     1 if any(
-                        s.weekday == datetime.utcnow().strftime('%A').lower()  # Corrigido: Usar string de dia da semana
+                        s.weekday == datetime.utcnow().strftime('%A').lower()
                         and s.open_time <= datetime.utcnow().time() <= s.end_time
                         and not s.is_closed
                         for s in queue.schedules
@@ -388,7 +385,7 @@ class ServiceRecommendationPredictor:
             availability = max(0, queue.daily_limit - queue.active_tickets)
             is_open = (
                 1 if any(
-                    s.weekday == datetime.utcnow().strftime('%A').lower()  # Corrigido
+                    s.weekday == datetime.utcnow().strftime('%A').lower()
                     and s.open_time <= datetime.utcnow().time() <= s.end_time
                     and not s.is_closed
                     for s in queue.schedules
@@ -474,7 +471,7 @@ class CollaborativeFilteringModel:
                 cols.append(self.queue_mapping[queue_id])
 
             n_features = len(queues)
-            n_components = min(50, n_features - 1) if n_features > 1 else 1  # Corrigido: Ajustar n_components
+            n_components = min(50, n_features - 1) if n_features > 1 else 1
             self.svd = TruncatedSVD(n_components=n_components, random_state=42)
             interaction_matrix = csr_matrix((data, (rows, cols)), shape=(len(users), n_features))
             return interaction_matrix
@@ -588,18 +585,46 @@ class DemandForecastingModel:
             self.is_trained[queue_id] = False
 
     def predict(self, queue_id, hours_ahead=1):
-        if not self.use_prophet or queue_id not in self.is_trained or not self.is_trained[queue_id]:
-            logger.warning(f"Modelo de demanda não disponível para queue_id={queue_id}, retornando 0")
-            return 0
+        if not self.use_prophet:
+            logger.warning(f"Prophet não disponível, usando fallback para queue_id={queue_id}")
+            return self._fallback_demand(queue_id)
+        
+        if queue_id not in self.is_trained or not self.is_trained[queue_id]:
+            self.load_model(queue_id)
+            if not self.is_trained.get(queue_id, False):
+                logger.warning(f"Modelo de demanda não disponível para queue_id={queue_id}, usando fallback")
+                return self._fallback_demand(queue_id)
+        
         try:
             model = self.models[queue_id]
             future = model.make_future_dataframe(periods=hours_ahead, freq='h')
             forecast = model.predict(future)
             predicted_demand = forecast.tail(1)['yhat'].iloc[0]
+            logger.debug(f"Demanda prevista para queue_id={queue_id}: {predicted_demand}")
             return max(0, round(predicted_demand, 1))
         except Exception as e:
             logger.error(f"Erro ao prever demanda para queue_id={queue_id}: {e}")
-            return 0
+            return self._fallback_demand(queue_id)
+
+    def _fallback_demand(self, queue_id):
+        """Retorna a média de demanda de filas semelhantes como fallback."""
+        try:
+            queue = Queue.query.get(queue_id)
+            if not queue or not queue.department or not queue.department.branch:
+                logger.debug(f"Fila {queue_id} sem dados suficientes, retornando demanda padrão")
+                return 10  # Valor padrão global
+            
+            institution_id = queue.department.branch.institution_id
+            avg_demand = db.session.query(func.avg(Queue.active_tickets)).join(Department).join(Branch).filter(
+                Branch.institution_id == institution_id,
+                Queue.id != queue_id,
+                Queue.active_tickets.isnot(None)
+            ).scalar() or 10
+            logger.debug(f"Fallback para queue_id={queue_id}: demanda média={avg_demand}")
+            return round(avg_demand, 1)
+        except Exception as e:
+            logger.error(f"Erro no fallback de demanda para queue_id={queue_id}: {e}")
+            return 10
 
 class ServiceClusteringModel:
     """Modelo para agrupar filas semelhantes e sugerir alternativas."""
@@ -644,7 +669,7 @@ class ServiceClusteringModel:
                 institution = Institution.query.get(branch.institution_id) if branch else None
                 data.append({
                     'queue_id': queue.id,
-                    'category_encoded': float(self.get_category_id(queue.category_id)),  # Corrigido: Converter para float
+                    'category_encoded': float(self.get_category_id(queue.category_id)),
                     'sector_encoded': float(self.get_sector_id(queue.department.sector if queue.department else None)),
                     'institution_type_encoded': float(self.get_institution_type_id(institution.institution_type_id if institution else None)),
                     'tag_vector': tag_vector
@@ -653,7 +678,7 @@ class ServiceClusteringModel:
             X = np.array([
                 [d['category_encoded'], d['sector_encoded'], d['institution_type_encoded']] + d['tag_vector']
                 for d in data
-            ], dtype=float)  # Corrigido: Garantir tipo float
+            ], dtype=float)
             self.queue_mapping = {d['queue_id']: i for i, d in enumerate(data)}
             return X
         except Exception as e:
@@ -667,7 +692,7 @@ class ServiceClusteringModel:
                 self.is_trained = False
                 return
 
-            n_clusters = min(10, len(X))  # Ajustar número de clusters dinamicamente
+            n_clusters = min(10, len(X))
             self.kmeans = KMeans(n_clusters=n_clusters, random_state=42)
             self.kmeans.fit(X)
             self.is_trained = True

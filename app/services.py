@@ -157,34 +157,99 @@ class QueueService:
 
     @staticmethod
     def send_notification(fcm_token, message, ticket_id=None, via_websocket=False, user_id=None):
-        """Envia notificações via FCM e/ou WebSocket."""
+        """Envia notificações via FCM e/ou WebSocket com auditoria e throttling."""
         try:
-            logger.info(f"Enviando notificação para user_id {user_id}: {message}")
-            
-            if not fcm_token and user_id:
-                user = User.query.get(user_id)
-                if user and user.fcm_token:
-                    fcm_token = user.fcm_token
-                    logger.debug(f"FCM token recuperado para user_id {user_id}")
+            # Validar parâmetros
+            if not user_id or not message:
+                logger.warning(f"Parâmetros inválidos para notificação: user_id={user_id}, message={message}")
+                return
 
-            if fcm_token:
-                fcm_message = messaging.Message(
-                    notification=messaging.Notification(
-                        title="Facilita 2.0",
-                        body=message
-                    ),
-                    data={"ticket_id": str(ticket_id) if ticket_id else ""},
-                    token=fcm_token
-                )
-                response = messaging.send(fcm_message)
-                logger.info(f"Notificação FCM enviada: {response}")
+            # Consultar usuário para validação e fcm_token
+            user = User.query.get(user_id)
+            if not user:
+                logger.warning(f"Usuário não encontrado para user_id={user_id}")
+                return
 
-            if via_websocket and socketio and user_id:
-                emit('notification', {'user_id': user_id, 'message': message}, namespace='/', room=str(user_id))
-                logger.debug(f"Notificação WebSocket enviada para user_id={user_id}")
+            # Recuperar fcm_token do usuário, se não fornecido
+            if not fcm_token and user.fcm_token:
+                fcm_token = user.fcm_token
+                logger.debug(f"FCM token recuperado para user_id={user_id}")
+
+            # Throttling: verificar se notificação recente foi enviada
+            cache_key = f"notificacao:throttle:{user_id}:{ticket_id or 'generic'}"
+            if redis_client.get(cache_key):
+                logger.debug(f"Notificação suprimida para user_id={user_id}, ticket_id={ticket_id} devido a throttling")
+                return
+            redis_client.setex(cache_key, 60, "1")  # Bloquear por 60 segundos
+
+            logger.info(f"Enviando notificação para user_id={user_id}: {message}")
+
+            # Tentar WebSocket, se solicitado
+            websocket_success = False
+            if via_websocket and socketio:
+                try:
+                    socketio.emit('notification', {'user_id': user_id, 'message': message}, namespace='/', room=str(user_id))
+                    logger.debug(f"Notificação WebSocket enviada para user_id={user_id}")
+                    websocket_success = True
+
+                    # Registrar sucesso no AuditLog
+                    audit_log = AuditLog(
+                        user_id=user_id,
+                        action='enviar_notificacao',
+                        resource_type='ticket' if ticket_id else 'geral',
+                        resource_id=ticket_id or 'N/A',
+                        details=f"Notificação WebSocket enviada: {message}",
+                        timestamp=datetime.utcnow()
+                    )
+                    db.session.add(audit_log)
+                    db.session.commit()
+                except Exception as e:
+                    logger.error(f"Erro ao enviar notificação WebSocket para user_id={user_id}: {str(e)}")
+
+            # Tentar FCM, se WebSocket falhar ou não for solicitado
+            if (not via_websocket or not websocket_success) and fcm_token:
+                try:
+                    fcm_message = messaging.Message(
+                        notification=messaging.Notification(
+                            title="Facilita 2.0",
+                            body=message
+                        ),
+                        data={"ticket_id": str(ticket_id) if ticket_id else ""},
+                        token=fcm_token
+                    )
+                    response = messaging.send(fcm_message)
+                    logger.info(f"Notificação FCM enviada para user_id={user_id}: {response}")
+
+                    # Registrar sucesso no AuditLog
+                    audit_log = AuditLog(
+                        user_id=user_id,
+                        action='enviar_notificacao',
+                        resource_type='ticket' if ticket_id else 'geral',
+                        resource_id=ticket_id or 'N/A',
+                        details=f"Notificação FCM enviada: {message}",
+                        timestamp=datetime.utcnow()
+                    )
+                    db.session.add(audit_log)
+                    db.session.commit()
+                except Exception as e:
+                    logger.error(f"Erro ao enviar notificação FCM para user_id={user_id}: {str(e)}")
+
+                    # Registrar falha no AuditLog
+                    audit_log = AuditLog(
+                        user_id=user_id,
+                        action='enviar_notificacao',
+                        resource_type='ticket' if ticket_id else 'geral',
+                        resource_id=ticket_id or 'N/A',
+                        details=f"Falha ao enviar notificação FCM: {message}",
+                        timestamp=datetime.utcnow()
+                    )
+                    db.session.add(audit_log)
+                    db.session.commit()
+
         except Exception as e:
-            logger.error(f"Erro ao enviar notificação: {e}")
-
+            logger.error(f"Erro geral ao enviar notificação para user_id={user_id}: {str(e)}")
+            db.session.rollback()
+        
     @staticmethod
     def add_to_queue(service, user_id, priority=0, is_physical=False, fcm_token=None, branch_id=None, user_lat=None, user_lon=None):
         """Adiciona um ticket à fila."""

@@ -1,3 +1,4 @@
+
 import logging
 import json
 import re
@@ -101,7 +102,7 @@ class RecommendationService:
                 neighborhood = None
             if user_id and not isinstance(user_id, str):
                 user_id = None
-            if user_lat and user_lon and not RecommendationService.is_location_valid(user_id, user_lat, user_lon):
+            if user_lat and user_lon and user_id and not RecommendationService.is_location_valid(user_id, user_lat, user_lon):
                 logger.warning(f"Localização antiga ou inválida para user_id={user_id}")
                 user_lat, user_lon = None, None
 
@@ -199,15 +200,15 @@ class RecommendationService:
                     position=queue.active_tickets + 1,
                     active_tickets=queue.active_tickets,
                     priority=0,
-                    hour_of_day=now.hour,
-                    user_lat=user_lat,
-                    user_lon=user_lon
+                    hour_of_day=now.hour
                 )
+                logger.debug(f"Previsão de wait_time para queue_id={queue.id}: {wait_time} minutos")
                 if isinstance(wait_time, (int, float)) and wait_time > max_wait_time:
                     continue
 
                 # Previsão de demanda
                 predicted_demand = demand_model.predict(queue.id, hours_ahead=1)
+                logger.debug(f"Previsão de demanda para queue_id={queue.id}: {predicted_demand}")
 
                 # Pontuação de qualidade
                 quality_score = service_recommendation_predictor.predict(queue, user_id, user_lat, user_lon)
@@ -250,9 +251,7 @@ class RecommendationService:
                         position=alt_queue.active_tickets + 1,
                         active_tickets=alt_queue.active_tickets,
                         priority=0,
-                        hour_of_day=now.hour,
-                        user_lat=user_lat,
-                        user_lon=user_lon
+                        hour_of_day=now.hour
                     )
                     alt_distance = RecommendationService.calculate_distance(user_lat, user_lon, alt_queue.department.branch) if user_lat and user_lon else None
                     alternatives_data.append({
@@ -537,14 +536,14 @@ class RecommendationService:
                     position=queue.active_tickets + 1,
                     active_tickets=queue.active_tickets,
                     priority=0,
-                    hour_of_day=now.hour,
-                    user_lat=user_lat,
-                    user_lon=user_lon
+                    hour_of_day=now.hour
                 )
+                logger.debug(f"Previsão de wait_time para queue_id={queue.id}: {wait_time} minutos")
                 if max_wait_time and isinstance(wait_time, (int, float)) and wait_time > max_wait_time:
                     continue
 
                 predicted_demand = demand_model.predict(queue.id, hours_ahead=1)
+                logger.debug(f"Previsão de demanda para queue_id={queue.id}: {predicted_demand}")
 
                 quality_score = service_recommendation_predictor.predict(queue, user_id, user_lat, user_lon)
                 if min_quality_score and quality_score < min_quality_score:
@@ -585,9 +584,7 @@ class RecommendationService:
                         position=alt_queue.active_tickets + 1,
                         active_tickets=alt_queue.active_tickets,
                         priority=0,
-                        hour_of_day=now.hour,
-                        user_lat=user_lat,
-                        user_lon=user_lon
+                        hour_of_day=now.hour
                     )
                     alt_distance = RecommendationService.calculate_distance(user_lat, user_lon, alt_queue.department.branch) if user_lat and user_lon else None
                     alternatives_data.append({
