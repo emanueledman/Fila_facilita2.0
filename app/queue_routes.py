@@ -480,6 +480,7 @@ def init_queue_routes(app):
             logger.error(f"Erro inesperado ao emitir senha para serviço {service}: {str(e)}")
             return jsonify({'error': 'Erro interno ao emitir senha'}), 500
 
+
     @app.route('/api/ticket/<ticket_id>/pdf', methods=['GET'])
     def download_ticket_pdf(ticket_id):
         """Baixa o PDF de um ticket (mantida sem alterações)."""

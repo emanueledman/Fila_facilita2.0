@@ -9,179 +9,6 @@ from sqlalchemy.exc import SQLAlchemyError
 institutions_data = [
     {
         "id": str(uuid.uuid4()),
-        "name": "Banco BIC",
-        "description": "Serviços bancários em Luanda",
-        "institution_type_id": None,  # Será preenchido com Bancário
-        "branches": [
-            {
-                "name": "Agência Ingombota",
-                "location": "Avenida Lenine, Ingombota, Luanda",
-                "neighborhood": "Ingombota",
-                "latitude": -8.8160,
-                "longitude": 13.2340,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Atendimento Bancário 24/7",
-                                "category_id": None,  # Será preenchido com Bancário
-                                "prefix": "AB",
-                                "open_time": time(0, 0),
-                                "end_time": time(23, 59),
-                                "daily_limit": 100,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
-                                ],
-                                "tags": ["Bancário", "Atendimento", "24/7"]
-                            },
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Abertura de Conta",
-                                "category_id": None,  # Será preenchido com Conta
-                                "prefix": "AC",
-                                "open_time": time(8, 30),
-                                "end_time": time(15, 30),
-                                "daily_limit": 100,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Bancário", "Conta"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Kilamba",
-                "location": "Cidade do Kilamba, Luanda",
-                "neighborhood": "Kilamba",
-                "latitude": -8.9333,
-                "longitude": 13.2667,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Atendimento Bancário 24/7",
-                                "category_id": None,
-                                "prefix": "AB",
-                                "open_time": time(0, 0),
-                                "end_time": time(23, 59),
-                                "daily_limit": 100,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
-                                ],
-                                "tags": ["Bancário", "Atendimento", "24/7"]
-                            },
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Abertura de Conta",
-                                "category_id": None,
-                                "prefix": "AC",
-                                "open_time": time(8, 30),
-                                "end_time": time(15, 30),
-                                "daily_limit": 100,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Bancário", "Conta"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Cazenga",
-                "location": "Rua do Mercado, Cazenga, Luanda",
-                "neighborhood": "Cazenga",
-                "latitude": -8.8500,
-                "longitude": 13.2833,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Atendimento Bancário 24/7",
-                                "category_id": None,
-                                "prefix": "AB",
-                                "open_time": time(0, 0),
-                                "end_time": time(23, 59),
-                                "daily_limit": 100,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
-                                ],
-                                "tags": ["Bancário", "Atendimento", "24/7"]
-                            },
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Abertura de Conta",
-                                "category_id": None,
-                                "prefix": "AC",
-                                "open_time": time(8, 30),
-                                "end_time": time(15, 30),
-                                "daily_limit": 100,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Bancário", "Conta"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    {
-        "id": str(uuid.uuid4()),
         "name": "Banco BAI",
         "description": "Serviços bancários em Luanda",
         "institution_type_id": None,  # Será preenchido com Bancário
@@ -199,7 +26,7 @@ institutions_data = [
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
-                                "service": "Atendimento Bancário 24/7",
+                                "service": "Atendimento Bancário",
                                 "category_id": None,  # Será preenchido com Bancário
                                 "prefix": "AB",
                                 "open_time": time(0, 0),
@@ -254,7 +81,7 @@ institutions_data = [
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
-                                "service": "Atendimento Bancário 24/7",
+                                "service": "Abertura de Conta",
                                 "category_id": None,
                                 "prefix": "AB",
                                 "open_time": time(0, 0),
@@ -309,7 +136,7 @@ institutions_data = [
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
-                                "service": "Atendimento Bancário 24/7",
+                                "service": "Atendimento Bancário",
                                 "category_id": None,
                                 "prefix": "AB",
                                 "open_time": time(0, 0),
@@ -372,7 +199,7 @@ institutions_data = [
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
-                                "service": "Atendimento Bancário 24/7",
+                                "service": "Atendimento Bancário",
                                 "category_id": None,  # Será preenchido com Bancário
                                 "prefix": "AB",
                                 "open_time": time(0, 0),
@@ -422,12 +249,12 @@ institutions_data = [
                 "longitude": 13.2670,
                 "departments": [
                     {
-                        "name": "Atendimento ao Cliente",
+                        "name": "Deposito",
                         "sector": "Bancário",
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
-                                "service": "Atendimento Bancário 24/7",
+                                "service": "Atendimento Bancário",
                                 "category_id": None,
                                 "prefix": "AB",
                                 "open_time": time(0, 0),
@@ -477,12 +304,12 @@ institutions_data = [
                 "longitude": 13.2840,
                 "departments": [
                     {
-                        "name": "Atendimento ao Cliente",
+                        "name": "Manutençao de Conta",
                         "sector": "Bancário",
                         "queues": [
                             {
                                 "id": str(uuid.uuid4()),
-                                "service": "Atendimento Bancário 24/7",
+                                "service": "Atendimento Bancário",
                                 "category_id": None,
                                 "prefix": "AB",
                                 "open_time": time(0, 0),
