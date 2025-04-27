@@ -7,6 +7,8 @@ from firebase_admin import auth, credentials
 import json
 import logging
 from datetime import datetime, timedelta
+from app import db
+from app.models import User, UserRole
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -47,9 +49,37 @@ def initialize_firebase_if_needed():
         # O Firebase já está inicializado
         return True
 
+# Sincronizar usuário Firebase com o banco
+def sync_firebase_user(firebase_uid, email, name):
+    """Sincroniza usuário Firebase com o banco de dados."""
+    try:
+        user = User.query.get(firebase_uid)
+        if not user:
+            user = User(
+                id=firebase_uid,
+                email=email,
+                name=name or "Usuário Anônimo",
+                user_role=UserRole.USER,
+                created_at=datetime.utcnow(),
+                active=True
+            )
+            db.session.add(user)
+            db.session.commit()
+            logger.info(f"Usuário criado para UID={firebase_uid}, email={email}")
+        else:
+            user.email = email
+            user.name = name or user.name
+            user.active = True
+            db.session.commit()
+            logger.info(f"Usuário atualizado para UID={firebase_uid}, email={email}")
+        return user
+    except Exception as e:
+        logger.error(f"Erro ao sincronizar usuário Firebase UID={firebase_uid}: {str(e)}")
+        db.session.rollback()
+        return None
+
 # Inicializar Firebase se ainda não estiver inicializado
 initialize_firebase_if_needed()
-
 
 def require_auth(f):
     @wraps(f)
@@ -72,8 +102,18 @@ def require_auth(f):
             if firebase_initialized:
                 try:
                     decoded_token = auth.verify_id_token(token)
+                    uid = decoded_token.get('uid')
+                    email = decoded_token.get('email')
+                    name = decoded_token.get('name')
+                    
+                    # Sincronizar usuário com o banco
+                    user = sync_firebase_user(uid, email, name)
+                    if not user:
+                        logger.error(f"Falha ao sincronizar usuário Firebase UID={uid}")
+                        return jsonify({'error': 'Falha ao sincronizar usuário'}), 500
+                    
                     # Definir user_id e user_tipo
-                    request.user_id = decoded_token.get('uid')
+                    request.user_id = uid
                     request.user_tipo = decoded_token.get('user_tipo', 'user')  # valor padrão
                         
                     logger.info(f"Autenticado via Firebase - UID: {request.user_id}")
@@ -82,7 +122,7 @@ def require_auth(f):
                     logger.warning(f"Falha Firebase: {str(firebase_error)}")
                     # Continuar para tentar JWT local
             
-            # 2. Tentativa com JWT local - MODIFICADO PARA ESPECIFICAR APENAS HS256
+            # 2. Tentativa com JWT local
             try:
                 # Restringir explicitamente aos algoritmos permitidos
                 payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
@@ -104,4 +144,4 @@ def require_auth(f):
             logger.error(f"Erro de autenticação: {str(e)}")
             return jsonify({'error': 'Falha na autenticação'}), 401
             
-    return decorated 
+    return decorated

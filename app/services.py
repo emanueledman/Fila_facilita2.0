@@ -161,13 +161,13 @@ class QueueService:
         try:
             # Validar parâmetros
             if not user_id or not message:
-                logger.warning(f"Parâmetros inválidos para notificação: user_id={user_id}, message={message}")
+                logger.warning(f"Parâmetros inválidos para notificação: user_id={user_id}, message={message}, ticket_id={ticket_id}")
                 return
 
             # Consultar usuário para validação e fcm_token
             user = User.query.get(user_id)
             if not user:
-                logger.warning(f"Usuário não encontrado para user_id={user_id}")
+                logger.warning(f"Usuário não encontrado para user_id={user_id}, ticket_id={ticket_id}")
                 return
 
             # Recuperar fcm_token do usuário, se não fornecido
@@ -205,6 +205,18 @@ class QueueService:
                     db.session.commit()
                 except Exception as e:
                     logger.error(f"Erro ao enviar notificação WebSocket para user_id={user_id}: {str(e)}")
+
+                    # Registrar falha no AuditLog
+                    audit_log = AuditLog(
+                        user_id=user_id,
+                        action='enviar_notificacao',
+                        resource_type='ticket' if ticket_id else 'geral',
+                        resource_id=ticket_id or 'N/A',
+                        details=f"Falha ao enviar notificação WebSocket: {message}",
+                        timestamp=datetime.utcnow()
+                    )
+                    db.session.add(audit_log)
+                    db.session.commit()
 
             # Tentar FCM, se WebSocket falhar ou não for solicitado
             if (not via_websocket or not websocket_success) and fcm_token:
@@ -249,6 +261,7 @@ class QueueService:
         except Exception as e:
             logger.error(f"Erro geral ao enviar notificação para user_id={user_id}: {str(e)}")
             db.session.rollback()
+        
         
     @staticmethod
     def add_to_queue(service, user_id, priority=0, is_physical=False, fcm_token=None, branch_id=None, user_lat=None, user_lon=None):

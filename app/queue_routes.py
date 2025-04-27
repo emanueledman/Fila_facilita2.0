@@ -21,6 +21,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def init_queue_routes(app):
+
     def emit_ticket_update(ticket):
         """Emite atualização de ticket via WebSocket com notificações profissionais e direcionadas."""
         try:
@@ -29,7 +30,7 @@ def init_queue_routes(app):
                 logger.warning(f"Não é possível emitir atualização para ticket_id={ticket.id}: usuário inválido ou ticket presencial")
                 return
 
-            # Consultar usuário para obter fcm_token
+            # Verificar se o usuário existe
             user = User.query.get(ticket.user_id)
             if not user:
                 logger.warning(f"Usuário não encontrado para ticket_id={ticket.id}, user_id={ticket.user_id}")
@@ -65,78 +66,25 @@ def init_queue_routes(app):
             redis_client.setex(cache_key, 60, "1")  # Bloquear por 60 segundos
 
             # Enviar notificação via WebSocket
-            user_room = str(ticket.user_id)
+            QueueService.send_notification(
+                fcm_token=None,
+                message=mensagem,
+                ticket_id=ticket.id,
+                via_websocket=True,
+                user_id=ticket.user_id
+            )
+
+            # Enviar dados do ticket via WebSocket
             if socketio:
                 try:
-                    socketio.emit('ticket_update', ticket_data, namespace='/', room=user_room)
+                    socketio.emit('ticket_update', ticket_data, namespace='/', room=str(ticket.user_id))
                     logger.info(f"Atualização de ticket emitida via WebSocket: ticket_id={ticket.id}, user_id={ticket.user_id}")
-
-                    QueueService.send_notification(
-                        fcm_token=None,
-                        message=mensagem,
-                        ticket_id=ticket.id,
-                        via_websocket=True,
-                        user_id=ticket.user_id
-                    )
-
-                    # Registrar sucesso no AuditLog
-                    audit_log = AuditLog(
-                        user_id=ticket.user_id,
-                        action='enviar_notificacao',
-                        resource_type='ticket',
-                        resource_id=ticket.id,
-                        details=f"Notificação WebSocket enviada: {mensagem}",
-                        timestamp=datetime.utcnow()
-                    )
-                    db.session.add(audit_log)
-                    db.session.commit()
-
                 except Exception as e:
                     logger.error(f"Erro ao emitir atualização WebSocket para ticket_id={ticket.id}: {str(e)}")
-                    
-                    # Fallback: tentar FCM se disponível
-                    if user.fcm_token:
-                        try:
-                            QueueService.send_notification(
-                                fcm_token=user.fcm_token,
-                                message=mensagem,
-                                ticket_id=ticket.id,
-                                via_websocket=False,
-                                user_id=ticket.user_id
-                            )
-                            logger.info(f"Notificação FCM enviada para ticket_id={ticket.id}, user_id={ticket.user_id}")
-                            
-                            # Registrar FCM no AuditLog
-                            audit_log = AuditLog(
-                                user_id=ticket.user_id,
-                                action='enviar_notificacao',
-                                resource_type='ticket',
-                                resource_id=ticket.id,
-                                details=f"Notificação FCM enviada: {mensagem}",
-                                timestamp=datetime.utcnow()
-                            )
-                            db.session.add(audit_log)
-                            db.session.commit()
-                        except Exception as fcm_error:
-                            logger.error(f"Erro ao enviar notificação FCM para ticket_id={ticket.id}: {str(fcm_error)}")
-                            
-                            # Registrar falha no AuditLog
-                            audit_log = AuditLog(
-                                user_id=ticket.user_id,
-                                action='enviar_notificacao',
-                                resource_type='ticket',
-                                resource_id=ticket.id,
-                                details=f"Falha ao enviar notificação (WebSocket e FCM): {mensagem}",
-                                timestamp=datetime.utcnow()
-                            )
-                            db.session.add(audit_log)
-                            db.session.commit()
 
         except Exception as e:
             logger.error(f"Erro geral ao processar atualização de ticket_id={ticket.id}: {str(e)}")
-            db.session.rollback()
-    
-        
+            
     def emit_dashboard_update(institution_id, queue_id, event_type, data):
         try:
             socketio.emit('dashboard_update', {
