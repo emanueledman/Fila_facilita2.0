@@ -91,18 +91,18 @@ def create_app():
         from .models import Institution, Queue, User, Ticket, Department, UserPreference, UserRole, Branch, ServiceCategory, ServiceTag, QueueSchedule, AuditLog
         
         # Criar tabelas, limpando a base a cada inicialização
-        #db.drop_all()
-        #db.create_all()
-        #app.logger.info("Tabelas criadas ou verificadas no banco de dados")
+        db.drop_all()
+        db.create_all()
+        app.logger.info("Tabelas criadas ou verificadas no banco de dados")
         
         # Inserir dados iniciais de forma idempotente
-        #from .data_init import populate_initial_data
-        #try:
-        #    populate_initial_data(app)
-         #   app.logger.info("Dados iniciais inseridos automaticamente")
-        #except Exception as e:
-        #    app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
-        #    raise  # Re-lançar para depuração no Render
+        from .data_init import populate_initial_data
+        try:
+            populate_initial_data(app)
+            app.logger.info("Dados iniciais inseridos automaticamente")
+        except Exception as e:
+            app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
+            raise  # Re-lançar para depuração no Render
         
         # Inicializar modelos de ML
         app.logger.debug("Tentando importar preditores de ML")
@@ -112,7 +112,7 @@ def create_app():
         except ImportError as e:
             app.logger.error(f"Erro ao importar preditores de ML: {e}")
             app.logger.warning("Continuando inicialização sem modelos de ML")
-            wait_time_predictor = service_recommendation_predictor = collaborative_model = demand_model = clustering_model = None
+        wait_time_predictor = service_recommendation_predictor = collaborative_model = demand_model = clustering_model = None
         
         if wait_time_predictor:  # Verificar se os modelos foram importados
             app.logger.debug("Iniciando treinamento dos modelos de ML")
