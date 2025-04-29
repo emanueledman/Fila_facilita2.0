@@ -2294,4 +2294,223 @@ def init_queue_routes(app):
             logger.error(f"Erro ao buscar serviços similares: {str(e)}")
             return jsonify({'error': 'Erro ao buscar serviços similares'}), 500
 
-# Fechar a função init_queue_routes
+    @app.route('/api/user/preferences', methods=['POST'])
+    @require_auth
+    def set_user_preference():
+        """Cria ou atualiza a instituição favorita do usuário."""
+        try:
+            data = request.get_json() or {}
+            user_id = data.get('user_id')
+            institution_id = data.get('institution_id')
+
+            # Validações
+            if not user_id or not institution_id:
+                logger.warning(f"Parâmetros obrigatórios faltando: user_id={user_id}, institution_id={institution_id}")
+                return jsonify({'error': 'user_id e institution_id são obrigatórios'}), 400
+
+            # Verificar se user_id corresponde ao usuário autenticado
+            if user_id != request.current_user_id:
+                logger.warning(f"Tentativa de modificar preferências de outro usuário: user_id={user_id}, auth_user_id={request.current_user_id}")
+                return jsonify({'error': 'Acesso não autorizado'}), 403
+
+            # Validar formatos
+            if not re.match(r'^[A-Za-z0-9\-]{1,50}$', user_id):
+                logger.warning(f"user_id inválido: {user_id}")
+                return jsonify({'error': 'user_id inválido'}), 400
+            if not re.match(r'^[A-Za-z0-9\-]{1,50}$', institution_id):
+                logger.warning(f"institution_id inválido: {institution_id}")
+                return jsonify({'error': 'institution_id inválido'}), 400
+
+            # Verificar existência
+            user = User.query.get(user_id)
+            if not user:
+                logger.warning(f"Usuário não encontrado: user_id={user_id}")
+                return jsonify({'error': 'Usuário não encontrado'}), 404
+
+            institution = Institution.query.get(institution_id)
+            if not institution:
+                logger.warning(f"Instituição não encontrada: institution_id={institution_id}")
+                return jsonify({'error': 'Instituição não encontrada'}), 404
+
+            # Verificar se já existe uma preferência
+            pref = UserPreference.query.filter_by(user_id=user_id, is_client=True).first()
+            if pref:
+                # Atualizar preferência existente
+                pref.institution_id = institution_id
+                pref.updated_at = datetime.utcnow()
+                logger.debug(f"Atualizando preferência para user_id={user_id}, institution_id={institution_id}")
+            else:
+                # Criar nova preferência
+                pref = UserPreference(
+                    user_id=user_id,
+                    institution_id=institution_id,
+                    is_client=True,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
+                db.session.add(pref)
+                logger.debug(f"Criando nova preferência para user_id={user_id}, institution_id={institution_id}")
+
+            try:
+                db.session.commit()
+            except SQLAlchemyError as e:
+                db.session.rollback()
+                logger.error(f"Erro ao salvar preferência: {str(e)}")
+                return jsonify({'error': 'Erro ao salvar preferência'}), 400
+
+            # Invalidar cache
+            cache_key = f"cache:user_preference:{user_id}"
+            if redis_client:
+                try:
+                    redis_client.delete(cache_key)
+                    logger.debug(f"Cache invalidado para {cache_key}")
+                except Exception as e:
+                    logger.warning(f"Erro ao invalidar cache: {str(e)}")
+
+            # Registrar auditoria
+            AuditLog.create(
+                user_id=user_id,
+                action='set_user_preference',
+                details=f"Instituição favorita definida: institution_id={institution_id}"
+            )
+
+            logger.info(f"Preferência atualizada com sucesso para user_id={user_id}, institution_id={institution_id}")
+            return jsonify({
+                'message': 'Instituição favorita atualizada com sucesso',
+                'preference': {
+                    'user_id': user_id,
+                    'institution_id': institution_id,
+                    'institution_name': institution.name
+                }
+            }), 200
+
+        except Exception as e:
+            logger.error(f"Erro ao processar preferência: {str(e)}")
+            return jsonify({'error': 'Erro ao processar preferência'}), 500
+
+    @app.route('/api/user/preferences', methods=['GET'])
+    @require_auth
+    def get_user_preference():
+        """Consulta a instituição favorita do usuário."""
+        try:
+            user_id = request.args.get('user_id')
+
+            # Validações
+            if not user_id:
+                logger.warning("user_id não fornecido")
+                return jsonify({'error': 'user_id é obrigatório'}), 400
+
+            # Verificar se user_id corresponde ao usuário autenticado
+            if user_id != request.current_user_id:
+                logger.warning(f"Tentativa de consultar preferências de outro usuário: user_id={user_id}, auth_user_id={request.current_user_id}")
+                return jsonify({'error': 'Acesso não autorizado'}), 403
+
+            if not re.match(r'^[A-Za-z0-9\-]{1,50}$', user_id):
+                logger.warning(f"user_id inválido: {user_id}")
+                return jsonify({'error': 'user_id inválido'}), 400
+
+            # Verificar cache
+            cache_key = f"cache:user_preference:{user_id}"
+            if redis_client:
+                try:
+                    cached = redis_client.get(cache_key)
+                    if cached:
+                        logger.info(f"Cache hit para {cache_key}")
+                        return jsonify(json.loads(cached)), 200
+                except Exception as e:
+                    logger.warning(f"Erro ao acessar cache Redis: {str(e)}")
+
+            # Consultar preferência
+            pref = UserPreference.query.filter_by(user_id=user_id, is_client=True).first()
+            if not pref:
+                logger.debug(f"Nenhuma preferência encontrada para user_id={user_id}")
+                return jsonify({'message': 'Nenhuma instituição favorita definida'}), 200
+
+            institution = Institution.query.get(pref.institution_id)
+            if not institution:
+                logger.warning(f"Instituição não encontrada para preferência: institution_id={pref.institution_id}")
+                return jsonify({'error': 'Instituição associada não encontrada'}), 404
+
+            response = {
+                'preference': {
+                    'user_id': user_id,
+                    'institution_id': pref.institution_id,
+                    'institution_name': institution.name,
+                    'created_at': pref.created_at.isoformat(),
+                    'updated_at': pref.updated_at.isoformat()
+                }
+            }
+
+            # Armazenar no cache
+            if redis_client:
+                try:
+                    redis_client.setex(cache_key, 3600, json.dumps(response))
+                    logger.info(f"Cache armazenado para {cache_key}")
+                except Exception as e:
+                    logger.warning(f"Erro ao salvar cache Redis: {str(e)}")
+
+            logger.info(f"Preferência retornada para user_id={user_id}, institution_id={pref.institution_id}")
+            return jsonify(response), 200
+
+        except Exception as e:
+            logger.error(f"Erro ao consultar preferência: {str(e)}")
+            return jsonify({'error': 'Erro ao consultar preferência'}), 500
+
+    @app.route('/api/user/preferences', methods=['DELETE'])
+    @require_auth
+    def delete_user_preference():
+        """Remove a instituição favorita do usuário."""
+        try:
+            user_id = request.args.get('user_id')
+
+            # Validações
+            if not user_id:
+                logger.warning("user_id não fornecido")
+                return jsonify({'error': 'user_id é obrigatório'}), 400
+
+            # Verificar se user_id corresponde ao usuário autenticado
+            if user_id != request.current_user_id:
+                logger.warning(f"Tentativa de deletar preferências de outro usuário: user_id={user_id}, auth_user_id={request.current_user_id}")
+                return jsonify({'error': 'Acesso não autorizado'}), 403
+
+            if not re.match(r'^[A-Za-z0-9\-]{1,50}$', user_id):
+                logger.warning(f"user_id inválido: {user_id}")
+                return jsonify({'error': 'user_id inválido'}), 400
+
+            # Consultar preferência
+            pref = UserPreference.query.filter_by(user_id=user_id, is_client=True).first()
+            if not pref:
+                logger.debug(f"Nenhuma preferência encontrada para user_id={user_id}")
+                return jsonify({'message': 'Nenhuma instituição favorita definida'}), 200
+
+            # Deletar preferência
+            db.session.delete(pref)
+            try:
+                db.session.commit()
+            except SQLAlchemyError as e:
+                db.session.rollback()
+                logger.error(f"Erro ao deletar preferência: {str(e)}")
+                return jsonify({'error': 'Erro ao deletar preferência'}), 400
+
+            # Invalidar cache
+            cache_key = f"cache:user_preference:{user_id}"
+            if redis_client:
+                try:
+                    redis_client.delete(cache_key)
+                    logger.debug(f"Cache invalidado para {cache_key}")
+                except Exception as e:
+                    logger.warning(f"Erro ao invalidar cache: {str(e)}")
+
+            # Registrar auditoria
+            AuditLog.create(
+                user_id=user_id,
+                action='delete_user_preference',
+                details="Instituição favorita removida"
+            )
+
+            logger.info(f"Instituição favorita removida com sucesso para user_id={user_id}")
+            return jsonify({'message': 'Instituição favorita removida com sucesso'}), 200
+
+        except Exception as e:
+            logger.error(f"Erro ao deletar preferência: {str(e)}")
+            return jsonify({'error': 'Erro ao deletar preferência'}), 500
