@@ -2355,3 +2355,126 @@ def init_queue_routes(app):
         except Exception as e:
             logger.error(f"Erro ao remover preferência: {str(e)}")
             return jsonify({'error': 'Erro ao remover preferência'}), 500
+        
+    
+    @app.route('/api/institutions', methods=['GET'])
+    def list_institutions():
+        """Lista instituições com filtros e ordenação."""
+        try:
+            institution_type_id = request.args.get('institution_type_id') or request.args.get('type_id')  # Suporte a type_id
+            user_lat = request.args.get('latitude')
+            user_lon = request.args.get('longitude')
+            sort_by = request.args.get('sort_by', 'quality_score')
+            page = request.args.get('page', '1')
+            per_page = request.args.get('per_page', '20')
+
+            # Validações
+            if user_lat:
+                try:
+                    user_lat = float(user_lat)
+                except (ValueError, TypeError):
+                    logger.warning(f"Latitude inválida: {user_lat}")
+                    return jsonify({'error': 'Latitude deve ser um número'}), 400
+            if user_lon:
+                try:
+                    user_lon = float(user_lon)
+                except (ValueError, TypeError):
+                    logger.warning(f"Longitude inválida: {user_lon}")
+                    return jsonify({'error': 'Longitude deve ser um número'}), 400
+            if institution_type_id and not InstitutionType.query.get(institution_type_id):
+                logger.warning(f"institution_type_id não encontrado: {institution_type_id}")
+                return jsonify({'error': 'Tipo de instituição não encontrado'}), 404
+            if sort_by not in ['quality_score', 'distance', 'name']:
+                logger.warning(f"sort_by inválido: {sort_by}")
+                return jsonify({'error': 'sort_by deve ser quality_score, distance ou name'}), 400
+            try:
+                page = int(page)
+                per_page = int(per_page)
+                if page < 1 or per_page < 1:
+                    raise ValueError
+            except (ValueError, TypeError):
+                logger.warning(f"page ou per_page inválidos: page={page}, per_page={per_page}")
+                return jsonify({'error': 'page e per_page devem ser números positivos'}), 400
+
+            # Chave de cache
+            cache_key = f"cache:institutions:{institution_type_id}:{user_lat}:{user_lon}:{sort_by}:{page}:{per_page}"
+            if redis_client:
+                try:
+                    cached = redis_client.get(cache_key)
+                    if cached:
+                        logger.info(f"Cache hit para {cache_key}")
+                        return jsonify(json.loads(cached)), 200
+                except Exception as e:
+                    logger.warning(f"Erro ao acessar cache Redis: {e}")
+
+            # Consulta
+            query = Institution.query
+            if institution_type_id:
+                query = query.filter_by(institution_type_id=institution_type_id)
+
+            institutions = query.all()
+            result = []
+
+            for inst in institutions:
+                branches = Branch.query.filter_by(institution_id=inst.id).all()
+                min_distance = None
+                if user_lat and user_lon and branches:
+                    min_distance = min(
+                        geodesic((user_lat, user_lon), (b.latitude, b.longitude)).km
+                        for b in branches if b.latitude and b.longitude
+                    )
+
+                department_ids = [d.id for d in Department.query.filter(Department.branch_id.in_([b.id for b in branches])).all()]
+                queues = Queue.query.filter(Queue.department_id.in_(department_ids)).all()
+                quality_scores = [
+                    service_recommendation_predictor.predict(q) for q in queues
+                ]
+                avg_quality_score = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
+
+                result.append({
+                    'id': inst.id,
+                    'name': inst.name or "Desconhecida",
+                    'description': inst.description or "Sem descrição",
+                    'type': {
+                        'id': inst.type.id if inst.type else None,
+                        'name': inst.type.name if inst.type else "Desconhecido"
+                    },
+                    'branches_count': len(branches),
+                    'distance_km': float(min_distance) if min_distance is not None else 'Desconhecida',
+                    'quality_score': float(avg_quality_score)
+                })
+
+            if sort_by == 'distance' and user_lat and user_lon:
+                result = sorted(result, key=lambda x: float(x['distance_km']) if x['distance_km'] != 'Desconhecida' else float('inf'))
+            elif sort_by == 'name':
+                result = sorted(result, key=lambda x: x['name'].lower())
+            else:
+                result = sorted(result, key=lambda x: x['quality_score'], reverse=True)
+
+            total_results = len(result)
+            start = (page - 1) * per_page
+            end = start + per_page
+            paginated_result = result[start:end]
+
+            response = {
+                'institutions': paginated_result,
+                'pagination': {
+                    'page': page,
+                    'per_page': per_page,
+                    'total_results': total_results,
+                    'total_pages': (total_results + per_page - 1) // per_page
+                }
+            }
+
+            if redis_client:
+                try:
+                    redis_client.setex(cache_key, 300, json.dumps(response, default=str))
+                    logger.info(f"Cache armazenado para {cache_key}")
+                except Exception as e:
+                    logger.warning(f"Erro ao salvar cache Redis: {e}")
+
+            logger.info(f"Lista de instituições retornada: {len(paginated_result)} resultados")
+            return jsonify(response), 200
+        except Exception as e:
+            logger.error(f"Erro ao listar instituições: {str(e)}")
+            return jsonify({'error': 'Erro ao listar instituições'}), 500
