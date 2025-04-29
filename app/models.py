@@ -203,6 +203,22 @@ class AuditLog(db.Model):
     details = Column(Text, nullable=True)
     timestamp = Column(DateTime, nullable=False)
 
+    @staticmethod
+    def create(user_id, action, resource_type="user_preference", resource_id=None, details=None):
+        """Cria e salva um novo registro de auditoria."""
+        audit_log = AuditLog(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            action=action,
+            resource_type=resource_type,
+            resource_id=resource_id or str(uuid.uuid4()),  # Gerar um resource_id se não fornecido
+            details=details,
+            timestamp=datetime.utcnow()
+        )
+        db.session.add(audit_log)
+        db.session.commit()
+        return audit_log
+
 # Tabela UserPreference atualizada
 class UserPreference(db.Model):
     __tablename__ = 'user_preference'
