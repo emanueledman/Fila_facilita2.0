@@ -17,6 +17,8 @@ from geopy.distance import geodesic
 from firebase_admin import auth
 from sqlalchemy.exc import SQLAlchemyError
 
+
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -1412,571 +1414,7 @@ def init_queue_routes(app):
             return jsonify({'error': 'Erro ao buscar serviços'}), 500
 
 
-        
-    @app.route('/api/institutions', methods=['GET'])
-    def list_institutions():
-        """Lista instituições com filtros e ordenação."""
-        try:
-            institution_type_id = request.args.get('institution_type_id') or request.args.get('type_id')  # Suporte a type_id
-            user_lat = request.args.get('latitude')
-            user_lon = request.args.get('longitude')
-            sort_by = request.args.get('sort_by', 'quality_score')
-            page = request.args.get('page', '1')
-            per_page = request.args.get('per_page', '20')
-
-            # Validações
-            if user_lat:
-                try:
-                    user_lat = float(user_lat)
-                except (ValueError, TypeError):
-                    logger.warning(f"Latitude inválida: {user_lat}")
-                    return jsonify({'error': 'Latitude deve ser um número'}), 400
-            if user_lon:
-                try:
-                    user_lon = float(user_lon)
-                except (ValueError, TypeError):
-                    logger.warning(f"Longitude inválida: {user_lon}")
-                    return jsonify({'error': 'Longitude deve ser um número'}), 400
-            if institution_type_id and not InstitutionType.query.get(institution_type_id):
-                logger.warning(f"institution_type_id não encontrado: {institution_type_id}")
-                return jsonify({'error': 'Tipo de instituição não encontrado'}), 404
-            if sort_by not in ['quality_score', 'distance', 'name']:
-                logger.warning(f"sort_by inválido: {sort_by}")
-                return jsonify({'error': 'sort_by deve ser quality_score, distance ou name'}), 400
-            try:
-                page = int(page)
-                per_page = int(per_page)
-                if page < 1 or per_page < 1:
-                    raise ValueError
-            except (ValueError, TypeError):
-                logger.warning(f"page ou per_page inválidos: page={page}, per_page={per_page}")
-                return jsonify({'error': 'page e per_page devem ser números positivos'}), 400
-
-            # Chave de cache
-            cache_key = f"cache:institutions:{institution_type_id}:{user_lat}:{user_lon}:{sort_by}:{page}:{per_page}"
-            if redis_client:
-                try:
-                    cached = redis_client.get(cache_key)
-                    if cached:
-                        logger.info(f"Cache hit para {cache_key}")
-                        return jsonify(json.loads(cached)), 200
-                except Exception as e:
-                    logger.warning(f"Erro ao acessar cache Redis: {e}")
-
-            # Consulta
-            query = Institution.query
-            if institution_type_id:
-                query = query.filter_by(institution_type_id=institution_type_id)
-
-            institutions = query.all()
-            result = []
-
-            for inst in institutions:
-                branches = Branch.query.filter_by(institution_id=inst.id).all()
-                min_distance = None
-                if user_lat and user_lon and branches:
-                    min_distance = min(
-                        geodesic((user_lat, user_lon), (b.latitude, b.longitude)).km
-                        for b in branches if b.latitude and b.longitude
-                    )
-
-                department_ids = [d.id for d in Department.query.filter(Department.branch_id.in_([b.id for b in branches])).all()]
-                queues = Queue.query.filter(Queue.department_id.in_(department_ids)).all()
-                quality_scores = [
-                    service_recommendation_predictor.predict(q) for q in queues
-                ]
-                avg_quality_score = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
-
-                result.append({
-                    'id': inst.id,
-                    'name': inst.name or "Desconhecida",
-                    'description': inst.description or "Sem descrição",
-                    'type': {
-                        'id': inst.type.id if inst.type else None,
-                        'name': inst.type.name if inst.type else "Desconhecido"
-                    },
-                    'branches_count': len(branches),
-                    'distance_km': float(min_distance) if min_distance is not None else 'Desconhecida',
-                    'quality_score': float(avg_quality_score)
-                })
-
-            if sort_by == 'distance' and user_lat and user_lon:
-                result = sorted(result, key=lambda x: float(x['distance_km']) if x['distance_km'] != 'Desconhecida' else float('inf'))
-            elif sort_by == 'name':
-                result = sorted(result, key=lambda x: x['name'].lower())
-            else:
-                result = sorted(result, key=lambda x: x['quality_score'], reverse=True)
-
-            total_results = len(result)
-            start = (page - 1) * per_page
-            end = start + per_page
-            paginated_result = result[start:end]
-
-            response = {
-                'institutions': paginated_result,
-                'pagination': {
-                    'page': page,
-                    'per_page': per_page,
-                    'total_results': total_results,
-                    'total_pages': (total_results + per_page - 1) // per_page
-                }
-            }
-
-            if redis_client:
-                try:
-                    redis_client.setex(cache_key, 300, json.dumps(response, default=str))
-                    logger.info(f"Cache armazenado para {cache_key}")
-                except Exception as e:
-                    logger.warning(f"Erro ao salvar cache Redis: {e}")
-
-            logger.info(f"Lista de instituições retornada: {len(paginated_result)} resultados")
-            return jsonify(response), 200
-        except Exception as e:
-            logger.error(f"Erro ao listar instituições: {str(e)}")
-            return jsonify({'error': 'Erro ao listar instituições'}), 500
-
-    @app.route('/api/institution_types', methods=['GET'])
-    def list_institution_types():
-        """Lista tipos de instituições com cache."""
-        try:
-            cache_key = "cache:institution_types"
-            if redis_client:
-                try:
-                    cached = redis_client.get(cache_key)
-                    if cached:
-                        logger.info(f"Cache hit para {cache_key}")
-                        return jsonify(json.loads(cached)), 200
-                except Exception as e:
-                    logger.warning(f"Erro ao acessar cache Redis: {e}")
-
-            types = InstitutionType.query.all()
-            result = [{
-                'id': t.id,
-                'name': t.name or "Desconhecido",
-                'icon': t.icon_url if hasattr(t, 'icon_url') else 'https://www.bancobai.ao/media/1635/icones-104.png'
-            } for t in types]
-
-            response = {'types': result}  # Alterado para retornar um mapa
-
-            if redis_client:
-                try:
-                    redis_client.setex(cache_key, 3600, json.dumps(response, default=str))
-                    logger.info(f"Cache armazenado para {cache_key}")
-                except Exception as e:
-                    logger.warning(f"Erro ao salvar cache Redis: {e}")
-
-            logger.info(f"Lista de tipos de instituições retornada: {len(result)} tipos")
-            return jsonify(response), 200
-        except Exception as e:
-            logger.error(f"Erro ao listar tipos de instituições: {str(e)}")
-            return jsonify({'error': 'Erro ao listar tipos de instituições'}), 500
-        
-    @app.route('/api/branches', methods=['GET'])
-    def list_branches():
-        """Lista filiais com filtros e ordenação."""
-        try:
-            institution_id = request.args.get('institution_id')
-            user_lat = request.args.get('latitude')
-            user_lon = request.args.get('longitude')
-            neighborhood = request.args.get('neighborhood')
-            sort_by = request.args.get('sort_by', 'distance')  # distance, quality_score, name
-            page = request.args.get('page', '1')
-            per_page = request.args.get('per_page', '20')
-
-            # Validações
-            if institution_id and not Institution.query.get(institution_id):
-                logger.warning(f"institution_id não encontrado: {institution_id}")
-                return jsonify({'error': 'Instituição não encontrada'}), 404
-            if user_lat:
-                try:
-                    user_lat = float(user_lat)
-                except (ValueError, TypeError):
-                    logger.warning(f"Latitude inválida: {user_lat}")
-                    return jsonify({'error': 'Latitude deve ser um número'}), 400
-            if user_lon:
-                try:
-                    user_lon = float(user_lon)
-                except (ValueError, TypeError):
-                    logger.warning(f"Longitude inválida: {user_lon}")
-                    return jsonify({'error': 'Longitude deve ser um número'}), 400
-            if neighborhood and not re.match(r'^[A-Za-zÀ-ÿ\s,]{1,100}$', neighborhood):
-                logger.warning(f"Bairro inválido: {neighborhood}")
-                return jsonify({'error': 'Bairro inválido'}), 400
-            if sort_by not in ['distance', 'quality_score', 'name']:
-                logger.warning(f"sort_by inválido: {sort_by}")
-                return jsonify({'error': 'sort_by deve ser distance, quality_score ou name'}), 400
-            try:
-                page = int(page)
-                per_page = int(per_page)
-                if page < 1 or per_page < 1:
-                    raise ValueError
-            except (ValueError, TypeError):
-                logger.warning(f"page ou per_page inválidos: page={page}, per_page={per_page}")
-                return jsonify({'error': 'page e per_page devem ser números positivos'}), 400
-
-            # Chave de cache
-            cache_key = f"cache:branches:{institution_id}:{user_lat}:{user_lon}:{neighborhood}:{sort_by}:{page}:{per_page}"
-            if redis_client:
-                try:
-                    cached = redis_client.get(cache_key)
-                    if cached:
-                        logger.info(f"Cache hit para {cache_key}")
-                        return jsonify(json.loads(cached)), 200
-                except Exception as e:
-                    logger.warning(f"Erro ao acessar cache Redis: {e}")
-
-            # Consulta
-            query = Branch.query
-            if institution_id:
-                query = query.filter_by(institution_id=institution_id)
-            if neighborhood:
-                query = query.filter(Branch.neighborhood.ilike(f'%{neighborhood}%'))
-
-            branches = query.all()
-            result = []
-
-            for branch in branches:
-                distance = None
-                if user_lat and user_lon and branch.latitude and branch.longitude:
-                    distance = geodesic((user_lat, user_lon), (branch.latitude, branch.longitude)).km
-
-                # Média de wait_time e quality_score
-                department_ids = [d.id for d in Department.query.filter_by(branch_id=branch.id).all()]
-                queues = Queue.query.filter(Queue.department_id.in_(department_ids)).all()
-                wait_times = [
-                    QueueService.calculate_wait_time(q.id, q.current_ticket + 1, 0)
-                    for q in queues
-                ]
-                wait_times = [wt for wt in wait_times if isinstance(wt, (int, float))]
-                avg_wait_time = sum(wait_times) / len(wait_times) if wait_times else None
-                quality_scores = [
-                    service_recommendation_predictor.predict(q) for q in queues
-                ]
-                avg_quality_score = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
-
-                result.append({
-                    'id': branch.id,
-                    'name': branch.name or "Desconhecida",
-                    'location': branch.location or "Desconhecida",
-                    'neighborhood': branch.neighborhood or "Desconhecido",
-                    'latitude': float(branch.latitude) if branch.latitude else None,
-                    'longitude': float(branch.longitude) if branch.longitude else None,
-                    'institution_id': branch.institution_id,
-                    'distance_km': float(distance) if distance is not None else 'Desconhecida',
-                    'avg_wait_time': f"{int(avg_wait_time)} minutos" if avg_wait_time else "N/A",
-                    'quality_score': float(avg_quality_score)
-                })
-
-            # Ordenação
-            if sort_by == 'distance' and user_lat and user_lon:
-                result = sorted(result, key=lambda x: float(x['distance_km']) if x['distance_km'] != 'Desconhecida' else float('inf'))
-            elif sort_by == 'name':
-                result = sorted(result, key=lambda x: x['name'].lower())
-            else:  # quality_score
-                result = sorted(result, key=lambda x: x['quality_score'], reverse=True)
-
-            # Paginação
-            total_results = len(result)
-            start = (page - 1) * per_page
-            end = start + per_page
-            paginated_result = result[start:end]
-
-            response = {
-                'branches': paginated_result,
-                'pagination': {
-                    'page': page,
-                    'per_page': per_page,
-                    'total_results': total_results,
-                    'total_pages': (total_results + per_page - 1) // per_page
-                }
-            }
-
-            # Armazenar no cache
-            if redis_client:
-                try:
-                    redis_client.setex(cache_key, 300, json.dumps(response, default=str))
-                    logger.info(f"Cache armazenado para {cache_key}")
-                except Exception as e:
-                    logger.warning(f"Erro ao salvar cache Redis: {e}")
-
-            logger.info(f"Lista de filiais retornada: {len(paginated_result)} resultados")
-            return jsonify(response), 200
-        except Exception as e:
-            logger.error(f"Erro ao listar filiais: {str(e)}")
-            return jsonify({'error': 'Erro ao listar filiais'}), 500
-
-    @app.route('/api/recommendation/search_structured', methods=['GET'])
-    def search_structured():
-        """Busca estruturada para a página principal, com resultados para o mapa."""
-        try:
-            query = request.args.get('query', '').strip()
-            user_id = request.args.get('user_id')
-            user_lat = request.args.get('latitude')
-            user_lon = request.args.get('longitude')
-            neighborhood = request.args.get('neighborhood')
-            institution_type_id = request.args.get('institution_type_id')
-            institution_id = request.args.get('institution_id')
-            branch_id = request.args.get('branch_id')
-            service_category_id = request.args.get('service_category_id')
-            max_wait_time = request.args.get('max_wait_time')
-            min_quality_score = request.args.get('min_quality_score')
-            sort_by = request.args.get('sort_by', 'score')  # score, distance, wait_time, quality_score
-            page = request.args.get('page', '1')
-            per_page = request.args.get('per_page', '20')
-
-            # Validações
-            if query and not re.match(r'^[A-Za-zÀ-ÿ\s]{1,100}$', query):
-                logger.warning(f"Query inválida: {query}")
-                return jsonify({'error': 'Query inválida'}), 400
-            if user_lat:
-                try:
-                    user_lat = float(user_lat)
-                except (ValueError, TypeError):
-                    logger.warning(f"Latitude inválida: {user_lat}")
-                    return jsonify({'error': 'Latitude deve ser um número'}), 400
-            if user_lon:
-                try:
-                    user_lon = float(user_lon)
-                except (ValueError, TypeError):
-                    logger.warning(f"Longitude inválida: {user_lon}")
-                    return jsonify({'error': 'Longitude deve ser um número'}), 400
-            if neighborhood and not re.match(r'^[A-Za-zÀ-ÿ\s,]{1,100}$', neighborhood):
-                logger.warning(f"Bairro inválido: {neighborhood}")
-                return jsonify({'error': 'Bairro inválido'}), 400
-            if institution_type_id and not InstitutionType.query.get(institution_type_id):
-                logger.warning(f"institution_type_id não encontrado: {institution_type_id}")
-                return jsonify({'error': 'Tipo de instituição não encontrado'}), 404
-            if institution_id and not Institution.query.get(institution_id):
-                logger.warning(f"institution_id não encontrado: {institution_id}")
-                return jsonify({'error': 'Instituição não encontrada'}), 404
-            if branch_id and not Branch.query.get(branch_id):
-                logger.warning(f"branch_id não encontrado: {branch_id}")
-                return jsonify({'error': 'Filial não encontrada'}), 404
-            if service_category_id and not ServiceCategory.query.get(service_category_id):
-                logger.warning(f"service_category_id não encontrado: {service_category_id}")
-                return jsonify({'error': 'Categoria de serviço não encontrada'}), 404
-            if max_wait_time:
-                try:
-                    max_wait_time = float(max_wait_time)
-                    if max_wait_time <= 0:
-                        raise ValueError
-                except (ValueError, TypeError):
-                    logger.warning(f"max_wait_time inválido: {max_wait_time}")
-                    return jsonify({'error': 'max_wait_time deve ser um número positivo'}), 400
-            if min_quality_score:
-                try:
-                    min_quality_score = float(min_quality_score)
-                    if not 0 <= min_quality_score <= 1:
-                        raise ValueError
-                except (ValueError, TypeError):
-                    logger.warning(f"min_quality_score inválido: {min_quality_score}")
-                    return jsonify({'error': 'min_quality_score deve estar entre 0 e 1'}), 400
-            if sort_by not in ['score', 'distance', 'wait_time', 'quality_score']:
-                logger.warning(f"sort_by inválido: {sort_by}")
-                return jsonify({'error': 'sort_by deve ser score, distance, wait_time ou quality_score'}), 400
-            try:
-                page = int(page)
-                per_page = int(per_page)
-                if page < 1 or per_page < 1:
-                    raise ValueError
-            except (ValueError, TypeError):
-                logger.warning(f"page ou per_page inválidos: page={page}, per_page={per_page}")
-                return jsonify({'error': 'page e per_page devem ser números positivos'}), 400
-
-            # Chave de cache
-            cache_key = f"cache:search_structured:{query}:{user_id}:{user_lat}:{user_lon}:{neighborhood}:{institution_type_id}:{institution_id}:{branch_id}:{service_category_id}:{max_wait_time}:{min_quality_score}:{sort_by}:{page}:{per_page}"
-            if redis_client:
-                try:
-                    cached = redis_client.get(cache_key)
-                    if cached:
-                        logger.info(f"Cache hit para {cache_key}")
-                        return jsonify(json.loads(cached)), 200
-                except Exception as e:
-                    logger.warning(f"Erro ao acessar cache Redis: {e}")
-
-            # Busca de serviços
-            suggestions = RecommendationService.search_services(
-                query=query,
-                user_id=user_id,
-                user_lat=user_lat,
-                user_lon=user_lon,
-                neighborhood=neighborhood,
-                max_results=per_page,
-                max_distance_km=10.0,
-                category_id=service_category_id,
-                tags=None,
-                max_wait_time=max_wait_time,
-                min_quality_score=min_quality_score,
-                institution_type_id=institution_type_id,
-                institution_id=institution_id,
-                branch_id=branch_id,
-                sort_by=sort_by,
-                offset=(page - 1) * per_page
-            )
-
-            # Aprimorar explicações
-            for service in suggestions['services']:
-                explanation = []
-                if service['institution']['id'] == institution_id:
-                    explanation.append(f"Você prefere {service['institution']['name']}")
-                if service['queue']['distance'] != 'Desconhecida':
-                    explanation.append(f"Filial a {service['queue']['distance']:.2f} km")
-                if service['queue']['wait_time'] != "N/A":
-                    wait_time = int(float(service['queue']['wait_time'].split()[0]))
-                    explanation.append(f"Espera de {wait_time} min")
-                if service['queue']['quality_score'] > 0.8:
-                    explanation.append("Alta qualidade")
-                service['queue']['explanation'] = "; ".join(explanation) or "Recomendado com base na sua busca"
-
-            # Paginação
-            total_results = suggestions.get('total_results', len(suggestions['services']))
-            response = {
-                'services': suggestions['services'],
-                'pagination': {
-                    'page': page,
-                    'per_page': per_page,
-                    'total_results': total_results,
-                    'total_pages': (total_results + per_page - 1) // per_page
-                }
-            }
-
-            # Armazenar no cache
-            if redis_client:
-                try:
-                    redis_client.setex(cache_key, 300, json.dumps(response, default=str))
-                    logger.info(f"Cache armazenado para {cache_key}")
-                except Exception as e:
-                    logger.warning(f"Erro ao salvar cache Redis: {e}")
-
-            logger.info(f"Busca estruturada retornada para user_id={user_id}: {len(suggestions['services'])} resultados")
-            return jsonify(response), 200
-        except Exception as e:
-            logger.error(f"Erro ao realizar busca estruturada: {str(e)}")
-            return jsonify({'error': 'Erro ao realizar busca estruturada'}), 500
-
-    @app.route('/api/recommendation/autocomplete', methods=['GET'])
-    def autocomplete():
-        """Sugestões de autocompletar para a barra de pesquisa."""
-        try:
-            query = request.args.get('query', '').strip()
-            user_id = request.args.get('user_id')
-            user_lat = request.args.get('latitude')
-            user_lon = request.args.get('longitude')
-            limit = request.args.get('limit', '10')
-
-            # Validações
-            if query and not re.match(r'^[A-Za-zÀ-ÿ\s]{1,100}$', query):
-                logger.warning(f"Query inválida: {query}")
-                return jsonify({'error': 'Query inválida'}), 400
-            if user_lat:
-                try:
-                    user_lat = float(user_lat)
-                except (ValueError, TypeError):
-                    logger.warning(f"Latitude inválida: {user_lat}")
-                    return jsonify({'error': 'Latitude deve ser um número'}), 400
-            if user_lon:
-                try:
-                    user_lon = float(user_lon)
-                except (ValueError, TypeError):
-                    logger.warning(f"Longitude inválida: {user_lon}")
-                    return jsonify({'error': 'Longitude deve ser um número'}), 400
-            try:
-                limit = int(limit)
-                if limit < 1:
-                    raise ValueError
-            except (ValueError, TypeError):
-                logger.warning(f"limit inválido: {limit}")
-                return jsonify({'error': 'limit deve ser um número positivo'}), 400
-
-            # Chave de cache
-            cache_key = f"cache:autocomplete:{query}:{user_id}:{user_lat}:{user_lon}:{limit}"
-            if redis_client:
-                try:
-                    cached = redis_client.get(cache_key)
-                    if cached:
-                        logger.info(f"Cache hit para {cache_key}")
-                        return jsonify(json.loads(cached)), 200
-                except Exception as e:
-                    logger.warning(f"Erro ao acessar cache Redis: {e}")
-
-            result = {
-                'institution_types': [],
-                'institutions': [],
-                'services': [],
-                'neighborhoods': []
-            }
-
-            if query:
-                # Tipos de instituições
-                institution_types = InstitutionType.query.filter(
-                    InstitutionType.name.ilike(f'%{query}%')
-                ).limit(limit).all()
-                result['institution_types'] = [{
-                    'id': t.id,
-                    'name': t.name,
-                    'icon': t.icon_url if hasattr(t, 'icon_url') else 'https://www.bancobai.ao/media/1635/icones-104.png'
-                } for t in institution_types]
-
-                # Instituições
-                institutions = Institution.query.filter(
-                    Institution.name.ilike(f'%{query}%')
-                ).limit(limit).all()
-                for inst in institutions:
-                    distance = None
-                    if user_lat and user_lon:
-                        branches = Branch.query.filter_by(institution_id=inst.id).all()
-                        distances = [
-                            geodesic((user_lat, user_lon), (b.latitude, b.longitude)).km
-                            for b in branches if b.latitude and b.longitude
-                        ]
-                        distance = min(distances) if distances else None
-                    result['institutions'].append({
-                        'id': inst.id,
-                        'name': inst.name,
-                        'type_id': inst.institution_type_id,
-                        'distance_km': float(distance) if distance is not None else 'Desconhecida'
-                    })
-
-                # Serviços
-                services = RecommendationService.search_services(
-                    query=query,
-                    user_id=user_id,
-                    user_lat=user_lat,
-                    user_lon=user_lon,
-                    max_results=limit,
-                    max_distance_km=10.0
-                )['services']
-                result['services'] = [{
-                    'queue_id': s['queue']['id'],
-                    'service': s['queue']['service'],
-                    'institution_id': s['institution']['id'],
-                    'institution_name': s['institution']['name'],
-                    'branch_id': s['queue']['branch_id'],
-                    'branch_name': s['queue']['branch'],
-                    'distance_km': s['queue']['distance'],
-                    'wait_time': s['queue']['wait_time']
-                } for s in services]
-
-                # Bairros
-                neighborhoods = Branch.query.filter(
-                    Branch.neighborhood.ilike(f'%{query}%')
-                ).distinct(Branch.neighborhood).limit(limit).all()
-                result['neighborhoods'] = [n.neighborhood for n in neighborhoods if n.neighborhood]
-
-            # Armazenar no cache
-            if redis_client:
-                try:
-                    redis_client.setex(cache_key, 300, json.dumps(result, default=str))
-                    logger.info(f"Cache armazenado para {cache_key}")
-                except Exception as e:
-                    logger.warning(f"Erro ao salvar cache Redis: {e}")
-
-            logger.info(f"Autocompletar retornado para query={query}: {len(result['services'])} serviços")
-            return jsonify(result), 200
-        except Exception as e:
-            logger.error(f"Erro ao gerar autocompletar: {str(e)}")
-            return jsonify({'error': 'Erro ao gerar autocompletar'}), 500
-
+    
     @app.route('/api/recommendation/featured', methods=['GET'])
     def featured_recommendations():
         """Recomendações personalizadas para a seção 'Recomendado para Você'."""
@@ -2057,6 +1495,429 @@ def init_queue_routes(app):
             logger.error(f"Erro ao gerar recomendações destacadas: {str(e)}")
             return jsonify({'error': 'Erro ao gerar recomendações destacadas'}), 500
 
+    @app.route('/api/institution_types', methods=['GET'])
+    def list_institution_types():
+        """Lista tipos de instituições com cache."""
+        try:
+            cache_key = "cache:institution_types"
+            if redis_client:
+                try:
+                    cached = redis_client.get(cache_key)
+                    if cached:
+                        logger.info(f"Cache hit para {cache_key}")
+                        return jsonify(json.loads(cached)), 200
+                except Exception as e:
+                    logger.warning(f"Erro ao acessar cache Redis: {e}")
+
+            types = InstitutionType.query.all()
+            result = [{
+                'id': t.id,
+                'name': t.name or "Desconhecido",
+                'icon': t.icon_url if hasattr(t, 'icon_url') else 'https://www.bancobai.ao/media/1635/icones-104.png'
+            } for t in types]
+
+            response = {'types': result}
+
+            if redis_client:
+                try:
+                    redis_client.setex(cache_key, 3600, json.dumps(response, default=str))
+                    logger.info(f"Cache armazenado para {cache_key}")
+                except Exception as e:
+                    logger.warning(f"Erro ao salvar cache Redis: {e}")
+
+            logger.info(f"Lista de tipos de instituições retornada: {len(result)} tipos")
+            return jsonify(response), 200
+        except Exception as e:
+            logger.error(f"Erro ao listar tipos de instituições: {str(e)}")
+            return jsonify({'error': 'Erro ao listar tipos de instituições'}), 500
+
+    @app.route('/api/branches', methods=['GET'])
+    def list_branches():
+        """Lista filiais com filtros e ordenação."""
+        try:
+            institution_id = request.args.get('institution_id')
+            user_lat = request.args.get('latitude')
+            user_lon = request.args.get('longitude')
+            neighborhood = request.args.get('neighborhood')
+            sort_by = request.args.get('sort_by', 'distance')
+            page = request.args.get('page', '1')
+            per_page = request.args.get('per_page', '20')
+
+            # Validações
+            if institution_id and not Institution.query.get(institution_id):
+                logger.warning(f"institution_id não encontrado: {institution_id}")
+                return jsonify({'error': 'Instituição não encontrada'}), 404
+            if user_lat:
+                try:
+                    user_lat = float(user_lat)
+                except (ValueError, TypeError):
+                    logger.warning(f"Latitude inválida: {user_lat}")
+                    return jsonify({'error': 'Latitude deve ser um número'}), 400
+            if user_lon:
+                try:
+                    user_lon = float(user_lon)
+                except (ValueError, TypeError):
+                    logger.warning(f"Longitude inválida: {user_lon}")
+                    return jsonify({'error': 'Longitude deve ser um número'}), 400
+            if neighborhood and not re.match(r'^[A-Za-zÀ-ÿ\s,]{1,100}$', neighborhood):
+                logger.warning(f"Bairro inválido: {neighborhood}")
+                return jsonify({'error': 'Bairro inválido'}), 400
+            if sort_by not in ['distance', 'quality_score', 'name']:
+                logger.warning(f"sort_by inválido: {sort_by}")
+                return jsonify({'error': 'sort_by deve ser distance, quality_score ou name'}), 400
+            try:
+                page = int(page)
+                per_page = int(per_page)
+                if page < 1 or per_page < 1:
+                    raise ValueError
+            except (ValueError, TypeError):
+                logger.warning(f"page ou per_page inválidos: page={page}, per_page={per_page}")
+                return jsonify({'error': 'page e per_page devem ser números positivos'}), 400
+
+            cache_key = f"cache:branches:{institution_id}:{user_lat}:{user_lon}:{neighborhood}:{sort_by}:{page}:{per_page}"
+            if redis_client:
+                try:
+                    cached = redis_client.get(cache_key)
+                    if cached:
+                        logger.info(f"Cache hit para {cache_key}")
+                        return jsonify(json.loads(cached)), 200
+                except Exception as e:
+                    logger.warning(f"Erro ao acessar cache Redis: {e}")
+
+            query = Branch.query
+            if institution_id:
+                query = query.filter_by(institution_id=institution_id)
+            if neighborhood:
+                query = query.filter(Branch.neighborhood.ilike(f'%{neighborhood}%'))
+
+            branches = query.all()
+            result = []
+
+            for branch in branches:
+                distance = None
+                if user_lat and user_lon and branch.latitude and branch.longitude:
+                    distance = geodesic((user_lat, user_lon), (branch.latitude, branch.longitude)).km
+
+                department_ids = [d.id for d in Department.query.filter_by(branch_id=branch.id).all()]
+                queues = Queue.query.filter(Queue.department_id.in_(department_ids)).all()
+                wait_times = [
+                    QueueService.calculate_wait_time(q.id, q.current_ticket + 1, 0)
+                    for q in queues
+                ]
+                wait_times = [wt for wt in wait_times if isinstance(wt, (int, float))]
+                avg_wait_time = sum(wait_times) / len(wait_times) if wait_times else None
+                quality_scores = [
+                    service_recommendation_predictor.predict(q) for q in queues
+                ]
+                avg_quality_score = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
+
+                result.append({
+                    'id': branch.id,
+                    'name': branch.name or "Desconhecida",
+                    'location': branch.location or "Desconhecida",
+                    'neighborhood': branch.neighborhood or "Desconhecido",
+                    'latitude': float(branch.latitude) if branch.latitude else None,
+                    'longitude': float(branch.longitude) if branch.longitude else None,
+                    'institution_id': branch.institution_id,
+                    'distance_km': float(distance) if distance is not None else 'Desconhecida',
+                    'avg_wait_time': f"{int(avg_wait_time)} minutos" if avg_wait_time else "N/A",
+                    'quality_score': float(avg_quality_score)
+                })
+
+            if sort_by == 'distance' and user_lat and user_lon:
+                result = sorted(result, key=lambda x: float(x['distance_km']) if x['distance_km'] != 'Desconhecida' else float('inf'))
+            elif sort_by == 'name':
+                result = sorted(result, key=lambda x: x['name'].lower())
+            else:
+                result = sorted(result, key=lambda x: x['quality_score'], reverse=True)
+
+            total_results = len(result)
+            start = (page - 1) * per_page
+            end = start + per_page
+            paginated_result = result[start:end]
+
+            response = {
+                'branches': paginated_result,
+                'pagination': {
+                    'page': page,
+                    'per_page': per_page,
+                    'total_results': total_results,
+                    'total_pages': (total_results + per_page - 1) // per_page
+                }
+            }
+
+            if redis_client:
+                try:
+                    redis_client.setex(cache_key, 300, json.dumps(response, default=str))
+                    logger.info(f"Cache armazenado para {cache_key}")
+                except Exception as e:
+                    logger.warning(f"Erro ao salvar cache Redis: {e}")
+
+            logger.info(f"Lista de filiais retornada: {len(paginated_result)} resultados")
+            return jsonify(response), 200
+        except Exception as e:
+            logger.error(f"Erro ao listar filiais: {str(e)}")
+            return jsonify({'error': 'Erro ao listar filiais'}), 500
+
+    @app.route('/api/recommendation/search_structured', methods=['GET'])
+    def search_structured():
+        """Busca estruturada para a página principal, com resultados para o mapa."""
+        try:
+            query = request.args.get('query', '').strip()
+            user_id = request.args.get('user_id')
+            user_lat = request.args.get('latitude')
+            user_lon = request.args.get('longitude')
+            neighborhood = request.args.get('neighborhood')
+            institution_type_id = request.args.get('institution_type_id')
+            institution_id = request.args.get('institution_id')
+            branch_id = request.args.get('branch_id')
+            service_category_id = request.args.get('service_category_id')
+            max_wait_time = request.args.get('max_wait_time')
+            min_quality_score = request.args.get('min_quality_score')
+            sort_by = request.args.get('sort_by', 'score')
+            page = request.args.get('page', '1')
+            per_page = request.args.get('per_page', '20')
+
+            if query and not re.match(r'^[A-Za-zÀ-ÿ\s]{1,100}$', query):
+                logger.warning(f"Query inválida: {query}")
+                return jsonify({'error': 'Query inválida'}), 400
+            if user_lat:
+                try:
+                    user_lat = float(user_lat)
+                except (ValueError, TypeError):
+                    logger.warning(f"Latitude inválida: {user_lat}")
+                    return jsonify({'error': 'Latitude deve ser um número'}), 400
+            if user_lon:
+                try:
+                    user_lon = float(user_lon)
+                except (ValueError, TypeError):
+                    logger.warning(f"Longitude inválida: {user_lon}")
+                    return jsonify({'error': 'Longitude deve ser um número'}), 400
+            if neighborhood and not re.match(r'^[A-Za-zÀ-ÿ\s,]{1,100}$', neighborhood):
+                logger.warning(f"Bairro inválido: {neighborhood}")
+                return jsonify({'error': 'Bairro inválido'}), 400
+            if institution_type_id and not InstitutionType.query.get(institution_type_id):
+                logger.warning(f"institution_type_id não encontrado: {institution_type_id}")
+                return jsonify({'error': 'Tipo de instituição não encontrado'}), 404
+            if institution_id and not Institution.query.get(institution_id):
+                logger.warning(f"institution_id não encontrado: {institution_id}")
+                return jsonify({'error': 'Instituição não encontrada'}), 404
+            if branch_id and not Branch.query.get(branch_id):
+                logger.warning(f"branch_id não encontrado: {branch_id}")
+                return jsonify({'error': 'Filial não encontrada'}), 404
+            if service_category_id and not ServiceCategory.query.get(service_category_id):
+                logger.warning(f"service_category_id não encontrado: {service_category_id}")
+                return jsonify({'error': 'Categoria de serviço não encontrada'}), 404
+            if max_wait_time:
+                try:
+                    max_wait_time = float(max_wait_time)
+                    if max_wait_time <= 0:
+                        raise ValueError
+                except (ValueError, TypeError):
+                    logger.warning(f"max_wait_time inválido: {max_wait_time}")
+                    return jsonify({'error': 'max_wait_time deve ser um número positivo'}), 400
+            if min_quality_score:
+                try:
+                    min_quality_score = float(min_quality_score)
+                    if not 0 <= min_quality_score <= 1:
+                        raise ValueError
+                except (ValueError, TypeError):
+                    logger.warning(f"min_quality_score inválido: {min_quality_score}")
+                    return jsonify({'error': 'min_quality_score deve estar entre 0 e 1'}), 400
+            if sort_by not in ['score', 'distance', 'wait_time', 'quality_score']:
+                logger.warning(f"sort_by inválido: {sort_by}")
+                return jsonify({'error': 'sort_by deve ser score, distance, wait_time ou quality_score'}), 400
+            try:
+                page = int(page)
+                per_page = int(per_page)
+                if page < 1 or per_page < 1:
+                    raise ValueError
+            except (ValueError, TypeError):
+                logger.warning(f"page ou per_page inválidos: page={page}, per_page={per_page}")
+                return jsonify({'error': 'page e per_page devem ser números positivos'}), 400
+
+            cache_key = f"cache:search_structured:{query}:{user_id}:{user_lat}:{user_lon}:{neighborhood}:{institution_type_id}:{institution_id}:{branch_id}:{service_category_id}:{max_wait_time}:{min_quality_score}:{sort_by}:{page}:{per_page}"
+            if redis_client:
+                try:
+                    cached = redis_client.get(cache_key)
+                    if cached:
+                        logger.info(f"Cache hit para {cache_key}")
+                        return jsonify(json.loads(cached)), 200
+                except Exception as e:
+                    logger.warning(f"Erro ao acessar cache Redis: {e}")
+
+            suggestions = RecommendationService.search_services(
+                query=query,
+                user_id=user_id,
+                user_lat=user_lat,
+                user_lon=user_lon,
+                neighborhood=neighborhood,
+                max_results=per_page,
+                max_distance_km=10.0,
+                category_id=service_category_id,
+                tags=None,
+                max_wait_time=max_wait_time,
+                min_quality_score=min_quality_score,
+                institution_type_id=institution_type_id,
+                institution_id=institution_id,
+                branch_id=branch_id,
+                sort_by=sort_by,
+                offset=(page - 1) * per_page
+            )
+
+            for service in suggestions['services']:
+                explanation = []
+                if service['institution']['id'] == institution_id:
+                    explanation.append(f"Você prefere {service['institution']['name']}")
+                if service['queue']['distance'] != 'Desconhecida':
+                    explanation.append(f"Filial a {service['queue']['distance']:.2f} km")
+                if service['queue']['wait_time'] != "N/A":
+                    wait_time = int(float(service['queue']['wait_time'].split()[0]))
+                    explanation.append(f"Espera de {wait_time} min")
+                if service['queue']['quality_score'] > 0.8:
+                    explanation.append("Alta qualidade")
+                service['queue']['explanation'] = "; ".join(explanation) or "Recomendado com base na sua busca"
+
+            total_results = suggestions.get('total_results', len(suggestions['services']))
+            response = {
+                'services': suggestions['services'],
+                'pagination': {
+                    'page': page,
+                    'per_page': per_page,
+                    'total_results': total_results,
+                    'total_pages': (total_results + per_page - 1) // per_page
+                }
+            }
+
+            if redis_client:
+                try:
+                    redis_client.setex(cache_key, 300, json.dumps(response, default=str))
+                    logger.info(f"Cache armazenado para {cache_key}")
+                except Exception as e:
+                    logger.warning(f"Erro ao salvar cache Redis: {e}")
+
+            logger.info(f"Busca estruturada retornada para user_id={user_id}: {len(suggestions['services'])} resultados")
+            return jsonify(response), 200
+        except Exception as e:
+            logger.error(f"Erro ao realizar busca estruturada: {str(e)}")
+            return jsonify({'error': 'Erro ao realizar busca estruturada'}), 500
+
+    @app.route('/api/recommendation/autocomplete', methods=['GET'])
+    def autocomplete():
+        """Sugestões de autocompletar para a barra de pesquisa."""
+        try:
+            query = request.args.get('query', '').strip()
+            user_id = request.args.get('user_id')
+            user_lat = request.args.get('latitude')
+            user_lon = request.args.get('longitude')
+            limit = request.args.get('limit', '10')
+
+            if query and not re.match(r'^[A-Za-zÀ-ÿ\s]{1,100}$', query):
+                logger.warning(f"Query inválida: {query}")
+                return jsonify({'error': 'Query inválida'}), 400
+            if user_lat:
+                try:
+                    user_lat = float(user_lat)
+                except (ValueError, TypeError):
+                    logger.warning(f"Latitude inválida: {user_lat}")
+                    return jsonify({'error': 'Latitude deve ser um número'}), 400
+            if user_lon:
+                try:
+                    user_lon = float(user_lon)
+                except (ValueError, TypeError):
+                    logger.warning(f"Longitude inválida: {user_lon}")
+                    return jsonify({'error': 'Longitude deve ser um número'}), 400
+            try:
+                limit = int(limit)
+                if limit < 1:
+                    raise ValueError
+            except (ValueError, TypeError):
+                logger.warning(f"limit inválido: {limit}")
+                return jsonify({'error': 'limit deve ser um número positivo'}), 400
+
+            cache_key = f"cache:autocomplete:{query}:{user_id}:{user_lat}:{user_lon}:{limit}"
+            if redis_client:
+                try:
+                    cached = redis_client.get(cache_key)
+                    if cached:
+                        logger.info(f"Cache hit para {cache_key}")
+                        return jsonify(json.loads(cached)), 200
+                except Exception as e:
+                    logger.warning(f"Erro ao acessar cache Redis: {e}")
+
+            result = {
+                'institution_types': [],
+                'institutions': [],
+                'services': [],
+                'neighborhoods': []
+            }
+
+            if query:
+                institution_types = InstitutionType.query.filter(
+                    InstitutionType.name.ilike(f'%{query}%')
+                ).limit(limit).all()
+                result['institution_types'] = [{
+                    'id': t.id,
+                    'name': t.name,
+                    'icon': t.icon_url if hasattr(t, 'icon_url') else 'https://www.bancobai.ao/media/1635/icones-104.png'
+                } for t in institution_types]
+
+                institutions = Institution.query.filter(
+                    Institution.name.ilike(f'%{query}%')
+                ).limit(limit).all()
+                for inst in institutions:
+                    distance = None
+                    if user_lat and user_lon:
+                        branches = Branch.query.filter_by(institution_id=inst.id).all()
+                        distances = [
+                            geodesic((user_lat, user_lon), (b.latitude, b.longitude)).km
+                            for b in branches if b.latitude and b.longitude
+                        ]
+                        distance = min(distances) if distances else None
+                    result['institutions'].append({
+                        'id': inst.id,
+                        'name': inst.name,
+                        'type_id': inst.institution_type_id,
+                        'distance_km': float(distance) if distance is not None else 'Desconhecida'
+                    })
+
+                services = RecommendationService.search_services(
+                    query=query,
+                    user_id=user_id,
+                    user_lat=user_lat,
+                    user_lon=user_lon,
+                    max_results=limit,
+                    max_distance_km=10.0
+                )['services']
+                result['services'] = [{
+                    'queue_id': s['queue']['id'],
+                    'service': s['queue']['service'],
+                    'institution_id': s['institution']['id'],
+                    'institution_name': s['institution']['name'],
+                    'branch_id': s['queue']['branch_id'],
+                    'branch_name': s['queue']['branch'],
+                    'distance_km': s['queue']['distance'],
+                    'wait_time': s['queue']['wait_time']
+                } for s in services]
+
+                neighborhoods = Branch.query.filter(
+                    Branch.neighborhood.ilike(f'%{query}%')
+                ).distinct(Branch.neighborhood).limit(limit).all()
+                result['neighborhoods'] = [n.neighborhood for n in neighborhoods if n.neighborhood]
+
+            if redis_client:
+                try:
+                    redis_client.setex(cache_key, 300, json.dumps(result, default=str))
+                    logger.info(f"Cache armazenado para {cache_key}")
+                except Exception as e:
+                    logger.warning(f"Erro ao salvar cache Redis: {e}")
+
+            logger.info(f"Autocompletar retornado para query={query}: {len(result['services'])} serviços")
+            return jsonify(result), 200
+        except Exception as e:
+            logger.error(f"Erro ao gerar autocompletar: {str(e)}")
+            return jsonify({'error': 'Erro ao gerar autocompletar'}), 500
+        
     @app.route('/api/services/by_branch', methods=['GET'])
     def services_by_branch():
         """Busca serviços oferecidos por uma filial específica."""
@@ -2069,11 +1930,10 @@ def init_queue_routes(app):
             service_category_id = request.args.get('service_category_id')
             max_wait_time = request.args.get('max_wait_time')
             min_quality_score = request.args.get('min_quality_score')
-            sort_by = request.args.get('sort_by', 'quality_score')  # quality_score, wait_time, name
+            sort_by = request.args.get('sort_by', 'quality_score')
             page = request.args.get('page', '1')
             per_page = request.args.get('per_page', '20')
 
-            # Validações
             if not branch_id:
                 logger.warning("branch_id não fornecido")
                 return jsonify({'error': 'branch_id é obrigatório'}), 400
@@ -2126,7 +1986,6 @@ def init_queue_routes(app):
                 logger.warning(f"page ou per_page inválidos: page={page}, per_page={per_page}")
                 return jsonify({'error': 'page e per_page devem ser números positivos'}), 400
 
-            # Chave de cache
             cache_key = f"cache:services_by_branch:{branch_id}:{user_id}:{user_lat}:{user_lon}:{query}:{service_category_id}:{max_wait_time}:{min_quality_score}:{sort_by}:{page}:{per_page}"
             if redis_client:
                 try:
@@ -2137,14 +1996,13 @@ def init_queue_routes(app):
                 except Exception as e:
                     logger.warning(f"Erro ao acessar cache Redis: {e}")
 
-            # Busca de serviços
             suggestions = RecommendationService.search_services(
                 query=query,
                 user_id=user_id,
                 user_lat=user_lat,
                 user_lon=user_lon,
                 max_results=per_page,
-                max_distance_km=0.0,  # Restrito à filial
+                max_distance_km=0.0,
                 category_id=service_category_id,
                 tags=None,
                 max_wait_time=max_wait_time,
@@ -2154,7 +2012,6 @@ def init_queue_routes(app):
                 offset=(page - 1) * per_page
             )
 
-            # Adicionar recommendation_level
             for service in suggestions['services']:
                 score = service['queue']['quality_score']
                 wait_time = service['queue']['wait_time']
@@ -2166,7 +2023,6 @@ def init_queue_routes(app):
                 else:
                     service['recommendation_level'] = 'low'
 
-                # Explicação
                 explanation = []
                 if wait_time != "N/A":
                     explanation.append(f"Espera de {wait_time_min} min")
@@ -2174,7 +2030,6 @@ def init_queue_routes(app):
                     explanation.append("Alta qualidade")
                 service['queue']['explanation'] = "; ".join(explanation) or "Disponível nesta filial"
 
-            # Paginação
             total_results = suggestions.get('total_results', len(suggestions['services']))
             response = {
                 'services': suggestions['services'],
@@ -2186,7 +2041,6 @@ def init_queue_routes(app):
                 }
             }
 
-            # Armazenar no cache
             if redis_client:
                 try:
                     redis_client.setex(cache_key, 300, json.dumps(response, default=str))
@@ -2210,7 +2064,6 @@ def init_queue_routes(app):
             user_lon = request.args.get('longitude')
             limit = request.args.get('limit', '5')
 
-            # Validações
             if not queue_id:
                 logger.warning("queue_id não fornecido")
                 return jsonify({'error': 'queue_id é obrigatório'}), 400
@@ -2238,7 +2091,6 @@ def init_queue_routes(app):
                 logger.warning(f"limit inválido: {limit}")
                 return jsonify({'error': 'limit deve ser um número positivo'}), 400
 
-            # Chave de cache
             cache_key = f"cache:similar_services:{queue_id}:{user_id}:{user_lat}:{user_lon}:{limit}"
             if redis_client:
                 try:
@@ -2249,13 +2101,11 @@ def init_queue_routes(app):
                 except Exception as e:
                     logger.warning(f"Erro ao acessar cache Redis: {e}")
 
-            # Obter instituição
             institution_id = queue.department.branch.institution_id if queue.department and queue.department.branch else None
             if not institution_id:
                 logger.warning(f"Instituição não encontrada para queue_id={queue_id}")
                 return jsonify({'error': 'Instituição não encontrada'}), 404
 
-            # Buscar serviços similares
             similar_queue_ids = clustering_model.get_alternatives(queue_id, n=limit, institution_id=institution_id)
             suggestions = RecommendationService.search_services(
                 query='',
@@ -2268,7 +2118,6 @@ def init_queue_routes(app):
                 institution_id=institution_id
             )
 
-            # Aprimorar explicações
             for service in suggestions['services']:
                 explanation = []
                 if service['queue']['distance'] != 'Desconhecida':
@@ -2280,7 +2129,6 @@ def init_queue_routes(app):
                     explanation.append("Alta qualidade")
                 service['queue']['explanation'] = "; ".join(explanation) or "Serviço similar"
 
-            # Armazenar no cache
             if redis_client:
                 try:
                     redis_client.setex(cache_key, 300, json.dumps(suggestions['services'], default=str))
@@ -2351,7 +2199,7 @@ def init_queue_routes(app):
                 logger.error(f"Erro ao salvar preferência: {str(e)}")
                 return jsonify({'error': 'Erro ao salvar preferência'}), 400
 
-            cache_key = f"cache:user_preference:{user_id}"
+            cache_key = f"cache:user_preferences:{user_id}"
             if redis_client:
                 try:
                     redis_client.delete(cache_key)
@@ -2363,7 +2211,7 @@ def init_queue_routes(app):
                 user_id=user_id,
                 action='set_user_preference',
                 resource_type='user_preference',
-                resource_id=institution_id,  # Usar o institution_id como resource_id para rastreamento
+                resource_id=institution_id,
                 details=f"Instituição favorita adicionada: institution_id={institution_id}"
             )
 
@@ -2379,63 +2227,7 @@ def init_queue_routes(app):
 
         except Exception as e:
             logger.error(f"Erro ao processar preferência: {str(e)}")
-            return jsonify({'error': 'Erro ao processar preferência'}), 500 
-        
-        """Remove a instituição favorita do usuário."""
-        try:
-            user_id = request.args.get('user_id')
-
-            # Validações
-            if not user_id:
-                logger.warning("user_id não fornecido")
-                return jsonify({'error': 'user_id é obrigatório'}), 400
-
-            # Verificar se user_id corresponde ao usuário autenticado
-            if user_id != request.user_id:  # Alterado de request.current_user_id para request.user_id
-                logger.warning(f"Tentativa de deletar preferências de outro usuário: user_id={user_id}, auth_user_id={request.user_id}")
-                return jsonify({'error': 'Acesso não autorizado'}), 403
-
-            if not re.match(r'^[A-Za-z0-9\-]{1,50}$', user_id):
-                logger.warning(f"user_id inválido: {user_id}")
-                return jsonify({'error': 'user_id inválido'}), 400
-
-            # Consultar preferência
-            pref = UserPreference.query.filter_by(user_id=user_id, is_client=True).first()
-            if not pref:
-                logger.debug(f"Nenhuma preferência encontrada para user_id={user_id}")
-                return jsonify({'message': 'Nenhuma instituição favorita para remover'}), 200
-
-            # Remover preferência
-            db.session.delete(pref)
-            try:
-                db.session.commit()
-            except SQLAlchemyError as e:
-                db.session.rollback()
-                logger.error(f"Erro ao remover preferência: {str(e)}")
-                return jsonify({'error': 'Erro ao remover preferência'}), 400
-
-            # Invalidar cache
-            cache_key = f"cache:user_preference:{user_id}"
-            if redis_client:
-                try:
-                    redis_client.delete(cache_key)
-                    logger.debug(f"Cache invalidado para {cache_key}")
-                except Exception as e:
-                    logger.warning(f"Erro ao invalidar cache: {str(e)}")
-
-            # Registrar auditoria
-            AuditLog.create(
-                user_id=user_id,
-                action='delete_user_preference',
-                details="Instituição favorita removida"
-            )
-
-            logger.info(f"Preferência removida com sucesso para user_id={user_id}")
-            return jsonify({'message': 'Instituição favorita removida com sucesso'}), 200
-
-        except Exception as e:
-            logger.error(f"Erro ao remover preferência: {str(e)}")
-            return jsonify({'error': 'Erro ao remover preferência'}), 500
+            return jsonify({'error': 'Erro ao processar preferência'}), 500
 
     @app.route('/api/user/preferences', methods=['GET'])
     @require_auth
@@ -2466,13 +2258,11 @@ def init_queue_routes(app):
                 except Exception as e:
                     logger.warning(f"Erro ao acessar cache Redis: {str(e)}")
 
-            # Consultar todas as preferências do usuário com is_client=True
             preferences = UserPreference.query.filter_by(user_id=user_id, is_client=True).all()
             if not preferences:
                 logger.debug(f"Nenhuma preferência encontrada para user_id={user_id}")
                 return jsonify({'message': 'Nenhuma instituição favorita definida', 'preferences': []}), 200
 
-            # Construir a lista de preferências
             response = {
                 'preferences': []
             }
@@ -2480,7 +2270,7 @@ def init_queue_routes(app):
                 institution = Institution.query.get(pref.institution_id)
                 if not institution:
                     logger.warning(f"Instituição não encontrada para preferência: institution_id={pref.institution_id}")
-                    continue  # Pular se a instituição não for encontrada
+                    continue
 
                 response['preferences'].append({
                     'user_id': user_id,
@@ -2490,7 +2280,6 @@ def init_queue_routes(app):
                     'updated_at': pref.updated_at.isoformat()
                 })
 
-            # Armazenar no cache
             if redis_client:
                 try:
                     redis_client.setex(cache_key, 3600, json.dumps(response))
@@ -2504,8 +2293,7 @@ def init_queue_routes(app):
         except Exception as e:
             logger.error(f"Erro ao consultar preferências: {str(e)}")
             return jsonify({'error': 'Erro ao consultar preferências'}), 500
-        
-        
+
     @app.route('/api/user/preferences', methods=['DELETE'])
     @require_auth
     def delete_user_preference():
@@ -2532,13 +2320,11 @@ def init_queue_routes(app):
                 logger.warning(f"institution_id inválido: {institution_id}")
                 return jsonify({'error': 'institution_id inválido'}), 400
 
-            # Consultar a preferência específica
             pref = UserPreference.query.filter_by(user_id=user_id, institution_id=institution_id, is_client=True).first()
             if not pref:
                 logger.debug(f"Nenhuma preferência encontrada para user_id={user_id}, institution_id={institution_id}")
                 return jsonify({'message': 'Instituição não está na lista de favoritas'}), 200
 
-            # Remover a preferência
             db.session.delete(pref)
             try:
                 db.session.commit()
@@ -2547,7 +2333,6 @@ def init_queue_routes(app):
                 logger.error(f"Erro ao remover preferência: {str(e)}")
                 return jsonify({'error': 'Erro ao remover preferência'}), 400
 
-            # Invalidar cache
             cache_key = f"cache:user_preferences:{user_id}"
             if redis_client:
                 try:
@@ -2556,7 +2341,6 @@ def init_queue_routes(app):
                 except Exception as e:
                     logger.warning(f"Erro ao invalidar cache: {str(e)}")
 
-            # Registrar auditoria
             AuditLog.create(
                 user_id=user_id,
                 action='delete_user_preference',
