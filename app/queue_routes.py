@@ -2516,9 +2516,6 @@ def init_queue_routes(app):
             return jsonify({'error': 'Erro ao remover preferência'}), 500
 
 
-    @app.route('/api/user/preferences', methods=['DELETE'])
-    @require_auth
-    def delete_user_preference():
         """Remove a instituição favorita do usuário."""
         try:
             user_id = request.args.get('user_id')
