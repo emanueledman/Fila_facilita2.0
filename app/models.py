@@ -4,6 +4,7 @@ import enum
 from app import db
 from datetime import datetime
 import bcrypt
+import uuid
 
 # Enums existentes
 class UserRole(enum.Enum):
