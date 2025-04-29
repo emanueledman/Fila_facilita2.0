@@ -206,16 +206,16 @@ class AuditLog(db.Model):
 # Tabela UserPreference atualizada
 class UserPreference(db.Model):
     __tablename__ = 'user_preference'
-    id = Column(String(36), primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String(36), ForeignKey('user.id'), nullable=False, index=True)
     institution_type_id = Column(String(36), ForeignKey('institution_type.id'), nullable=True, index=True)
     institution_id = Column(String(36), ForeignKey('institution.id'), nullable=True, index=True)
     service_category_id = Column(String(36), ForeignKey('service_category.id'), nullable=True, index=True)
     neighborhood = Column(String(100), nullable=True)
-    preference_score = Column(Integer, default=0)  # Adicionado para suportar pontuação
-    is_client = Column(Boolean, default=False, nullable=False)  # Adicionado para rastrear relação com instituição
-    created_at = Column(DateTime, default=datetime.utcnow)  # Adicionado para auditoria
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)  # Adicionado para auditoria
+    preference_score = Column(Integer, default=0)
+    is_client = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     user = relationship('User', backref=db.backref('preferences', lazy='dynamic'))
     institution_type = relationship('InstitutionType', backref=db.backref('preferred_by', lazy='dynamic'))

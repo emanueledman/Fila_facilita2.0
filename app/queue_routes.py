@@ -2303,17 +2303,14 @@ def init_queue_routes(app):
             user_id = data.get('user_id')
             institution_id = data.get('institution_id')
 
-            # Validações
             if not user_id or not institution_id:
                 logger.warning(f"Parâmetros obrigatórios faltando: user_id={user_id}, institution_id={institution_id}")
                 return jsonify({'error': 'user_id e institution_id são obrigatórios'}), 400
 
-            # Verificar se user_id corresponde ao usuário autenticado
-            if user_id != request.user_id:  # Alterado de request.current_user_id para request.user_id
+            if user_id != request.user_id:
                 logger.warning(f"Tentativa de modificar preferências de outro usuário: user_id={user_id}, auth_user_id={request.user_id}")
                 return jsonify({'error': 'Acesso não autorizado'}), 403
 
-            # Validar formatos
             if not re.match(r'^[A-Za-z0-9\-]{1,50}$', user_id):
                 logger.warning(f"user_id inválido: {user_id}")
                 return jsonify({'error': 'user_id inválido'}), 400
@@ -2321,7 +2318,6 @@ def init_queue_routes(app):
                 logger.warning(f"institution_id inválido: {institution_id}")
                 return jsonify({'error': 'institution_id inválido'}), 400
 
-            # Verificar existência
             user = User.query.get(user_id)
             if not user:
                 logger.warning(f"Usuário não encontrado: user_id={user_id}")
@@ -2332,16 +2328,14 @@ def init_queue_routes(app):
                 logger.warning(f"Instituição não encontrada: institution_id={institution_id}")
                 return jsonify({'error': 'Instituição não encontrada'}), 404
 
-            # Verificar se já existe uma preferência
             pref = UserPreference.query.filter_by(user_id=user_id, is_client=True).first()
             if pref:
-                # Atualizar preferência existente
                 pref.institution_id = institution_id
                 pref.updated_at = datetime.utcnow()
                 logger.debug(f"Atualizando preferência para user_id={user_id}, institution_id={institution_id}")
             else:
-                # Criar nova preferência
                 pref = UserPreference(
+                    id=str(uuid.uuid4()),  # Gerar um UUID para o campo id
                     user_id=user_id,
                     institution_id=institution_id,
                     is_client=True,
@@ -2358,7 +2352,6 @@ def init_queue_routes(app):
                 logger.error(f"Erro ao salvar preferência: {str(e)}")
                 return jsonify({'error': 'Erro ao salvar preferência'}), 400
 
-            # Invalidar cache
             cache_key = f"cache:user_preference:{user_id}"
             if redis_client:
                 try:
@@ -2367,7 +2360,6 @@ def init_queue_routes(app):
                 except Exception as e:
                     logger.warning(f"Erro ao invalidar cache: {str(e)}")
 
-            # Registrar auditoria
             AuditLog.create(
                 user_id=user_id,
                 action='set_user_preference',
