@@ -56,7 +56,6 @@ class RecommendationService:
     def get_filter_options(institution_id=None):
         """Retorna opções para filtros dinâmicos."""
         try:
-            # Iniciar a consulta com o modelo Institution
             query = db.session.query(Institution)
             if institution_id:
                 query = query.filter(Institution.id == institution_id)
@@ -279,14 +278,14 @@ class RecommendationService:
                             func.to_tsquery('portuguese', search_query)
                         )
                     ).filter(Queue.id == queue.id).scalar() or 0.0
-                    composite_score += rank * 0.3
+                    composite_score += float(rank) * 0.3
                 if distance is not None:
-                    composite_score += (1 / (1 + distance)) * 0.25
-                composite_score += quality_score * 0.2
-                composite_score += collaborative_scores.get(queue.id, 0.5) * 0.15
-                composite_score += (1 / (1 + predicted_demand / 10)) * 0.1
+                    composite_score += (1 / (1 + float(distance))) * 0.25
+                composite_score += float(quality_score) * 0.2
+                composite_score += float(collaborative_scores.get(queue.id, 0.5)) * 0.15
+                composite_score += (1 / (1 + float(predicted_demand) / 10)) * 0.1
                 if isinstance(wait_time, (int, float)):
-                    composite_score += (1 / (1 + wait_time / 10)) * 0.1
+                    composite_score += (1 / (1 + float(wait_time) / 10)) * 0.1
                 if user_prefs:
                     if institution.id in preferred_institutions:
                         composite_score += 0.2
@@ -634,14 +633,14 @@ class RecommendationService:
                             func.to_tsquery('portuguese', search_query)
                         )
                     ).filter(Queue.id == queue.id).scalar() or 0.0
-                    composite_score += rank * 0.2
+                    composite_score += float(rank) * 0.2
                 if distance is not None:
-                    composite_score += (1 / (1 + distance)) * 0.25
-                composite_score += quality_score * 0.2
-                composite_score += collaborative_scores.get(queue.id, 0.5) * 0.15
-                composite_score += (1 / (1 + predicted_demand / 10)) * 0.1
+                    composite_score += (1 / (1 + float(distance))) * 0.25
+                composite_score += float(quality_score) * 0.2
+                composite_score += float(collaborative_scores.get(queue.id, 0.5)) * 0.15
+                composite_score += (1 / (1 + float(predicted_demand) / 10)) * 0.1
                 if isinstance(wait_time, (int, float)):
-                    composite_score += (1 / (1 + wait_time / 10)) * 0.05
+                    composite_score += (1 / (1 + float(wait_time) / 10)) * 0.05
                 if user_prefs:
                     if institution.id in preferred_institutions:
                         composite_score += 0.2
