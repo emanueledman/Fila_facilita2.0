@@ -2355,7 +2355,11 @@ def init_queue_routes(app):
         except Exception as e:
             logger.error(f"Erro ao remover preferência: {str(e)}")
             return jsonify({'error': 'Erro ao remover preferência'}), 500
-        
+    
+    @app.route("/api/ping")
+    def ping():
+        return "pong", 200
+
     
     @app.route('/api/institutions', methods=['GET'])
     def list_institutions():
