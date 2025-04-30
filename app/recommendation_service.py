@@ -56,7 +56,8 @@ class RecommendationService:
     def get_filter_options(institution_id=None):
         """Retorna opções para filtros dinâmicos."""
         try:
-            query = db.session.query
+            # Iniciar a consulta com o modelo Institution
+            query = db.session.query(Institution)
             if institution_id:
                 query = query.filter(Institution.id == institution_id)
             categories = ServiceCategory.query.all()
@@ -560,7 +561,7 @@ class RecommendationService:
 
                 # Previsão de demanda
                 predicted_demand = demand_model.predict(queue.id, hours_ahead=1)
-                logger.debug(f"Previsão de demandaLIKE para queue_id={queue.id}: {predicted_demand}")
+                logger.debug(f"Previsão de demanda para queue_id={queue.id}: {predicted_demand}")
 
                 # Pontuação de qualidade
                 quality_score = service_recommendation_predictor.predict(queue, user_id, user_lat, user_lon)

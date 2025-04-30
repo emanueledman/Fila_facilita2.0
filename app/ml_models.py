@@ -12,7 +12,7 @@ try:
 except ImportError as e:
     logger.error(f"Erro ao importar Prophet: {e}")
     Prophet = None
-from sqlalchemy import and_
+from sqlalchemy import and_, func
 from datetime import datetime, timedelta
 from app import db
 from app.models import Queue, Ticket, Department, ServiceTag, UserPreference, QueueSchedule, Branch, Weekday, Institution
