@@ -2,7 +2,7 @@ import logging
 import eventlet
 eventlet.monkey_patch()
 
-from flask import Flask, jsonify, request
+from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO
 from flask_limiter import Limiter
@@ -63,6 +63,7 @@ def create_app():
             "https://fila-facilita2-0-4uzw.onrender.com"
         ],
         async_mode='eventlet',
+        #path='/tickets',
         logger=os.getenv('FLASK_ENV') != 'production',
         engineio_logger=os.getenv('FLASK_ENV') != 'production',
         message_queue=os.getenv('REDIS_URL', 'rediss://red-d053vpre5dus738stejg:yUiGYAY9yrGzyXvw2LyUPzoRqkdwY3Og@oregon-keyvalue.render.com:6379/0'),
@@ -86,6 +87,53 @@ def create_app():
     # Configurar Flask-Limiter com Redis
     limiter.storage_uri = os.getenv('REDIS_URL', 'rediss://red-d053vpre5dus738stejg:yUiGYAY9yrGzyXvw2LyUPzoRqkdwY3Og@oregon-keyvalue.render.com:6379/0')
     
+    with app.app_context():
+        from .models import Institution, Queue, User, Ticket, Department, UserPreference, UserRole, Branch, ServiceCategory, ServiceTag, QueueSchedule, AuditLog
+        
+        # Criar tabelas, limpando a base a cada inicialização
+        db.drop_all()
+        db.create_all()
+        app.logger.info("Tabelas criadas ou verificadas no banco de dados")
+        
+        # Inserir dados iniciais de forma idempotente
+        from .data_init import populate_initial_data
+        try:
+            populate_initial_data(app)
+            app.logger.info("Dados iniciais inseridos automaticamente")
+        except Exception as e:
+            app.logger.error(f"Erro ao inserir dados iniciais: {str(e)}")
+            raise  # Re-lançar para depuração no Render
+        
+        # Inicializar modelos de ML
+        app.logger.debug("Tentando importar preditores de ML")
+        try:
+            from .ml_models import wait_time_predictor, service_recommendation_predictor, collaborative_model, demand_model, clustering_model
+            app.logger.info("Preditores de ML importados com sucesso")
+        except ImportError as e:
+            app.logger.error(f"Erro ao importar preditores de ML: {e}")
+            app.logger.warning("Continuando inicialização sem modelos de ML")
+        wait_time_predictor = service_recommendation_predictor = collaborative_model = demand_model = clustering_model = None
+        
+        if wait_time_predictor:  # Verificar se os modelos foram importados
+            app.logger.debug("Iniciando treinamento dos modelos de ML")
+            try:
+                queues = Queue.query.all()
+                for queue in queues:
+                    app.logger.debug(f"Treinando WaitTimePredictor para queue_id={queue.id}")
+                    wait_time_predictor.train(queue.id)
+                    app.logger.debug(f"Treinando DemandForecastingModel para queue_id={queue.id}")
+                    demand_model.train(queue.id)
+                app.logger.debug("Treinando ServiceRecommendationPredictor")
+                service_recommendation_predictor.train()
+                app.logger.debug("Treinando CollaborativeFilteringModel")
+                collaborative_model.train()
+                app.logger.debug("Treinando ServiceClusteringModel")
+                clustering_model.train()
+                app.logger.info("Modelos de ML inicializados na startup")
+            except Exception as e:
+                app.logger.error(f"Erro ao inicializar modelos de ML: {str(e)}")
+                app.logger.warning("Continuando inicialização apesar de erros nos modelos de ML")
+    
     # Registrar rotas
     from .routes import init_routes
     from .queue_routes import init_queue_routes
@@ -96,55 +144,6 @@ def create_app():
     init_queue_routes(app)
     init_user_routes(app)
     init_admin_routes(app)
-
-    # Rota para inicializar o banco de dados
-    @app.route('/init-db', methods=['POST'])
-    @limiter.limit("5 per minute")  # Limitar a 5 requisições por minuto
-    def init_db():
-        with app.app_context():
-            from .models import Institution, Queue, User, Ticket, Department, UserPreference, UserRole, Branch, ServiceCategory, ServiceTag, QueueSchedule, AuditLog
-            from .data_init import populate_initial_data
-
-            try:
-                # Criar tabelas, limpando a base
-                db.drop_all()
-                db.create_all()
-                app.logger.info("Tabelas criadas ou verificadas no banco de dados")
-
-                # Inserir dados iniciais de forma idempotente
-                populate_initial_data(app)
-                app.logger.info("Dados iniciais inseridos automaticamente")
-
-                # Opcional: Inicializar modelos de ML
-                app.logger.debug("Tentando importar preditores de ML")
-                try:
-                    from .ml_models import wait_time_predictor, service_recommendation_predictor, collaborative_model, demand_model, clustering_model
-                    app.logger.info("Preditores de ML importados com sucesso")
-                    if wait_time_predictor:
-                        queues = Queue.query.all()
-                        for queue in queues:
-                            app.logger.debug(f"Treinando WaitTimePredictor para queue_id={queue.id}")
-                            wait_time_predictor.train(queue.id)
-                            app.logger.debug(f"Treinando DemandForecastingModel para queue_id={queue.id}")
-                            demand_model.train(queue.id)
-                        app.logger.debug("Treinando ServiceRecommendationPredictor")
-                        service_recommendation_predictor.train()
-                        app.logger.debug("Treinando CollaborativeFilteringModel")
-                        collaborative_model.train()
-                        app.logger.debug("Treinando ServiceClusteringModel")
-                        clustering_model.train()
-                        app.logger.info("Modelos de ML inicializados com sucesso")
-                except ImportError as e:
-                    app.logger.error(f"Erro ao importar preditores de ML: {e}")
-                    app.logger.warning("Continuando sem modelos de ML")
-                except Exception as e:
-                    app.logger.error(f"Erro ao inicializar modelos de ML: {str(e)}")
-                    app.logger.warning("Continuando apesar de erros nos modelos de ML")
-
-                return jsonify({"status": "success", "message": "Banco de dados inicializado e dados populados com sucesso"}), 200
-            except Exception as e:
-                app.logger.error(f"Erro ao inicializar banco de dados: {str(e)}")
-                return jsonify({"status": "error", "message": f"Erro ao inicializar banco de dados: {str(e)}"}), 500
 
     if os.getenv('FLASK_ENV') == 'production':
         app.config['DEBUG'] = False
