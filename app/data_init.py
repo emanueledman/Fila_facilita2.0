@@ -35,6 +35,13 @@ def populate_initial_data(app):
                     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
                 # --------------------------------------
+                # Função auxiliar para normalizar strings
+                # --------------------------------------
+                from unidecode import unidecode
+                def normalize_string(s):
+                    return unidecode(s.lower().replace(' ', '_'))[:50]
+
+                # --------------------------------------
                 # Criar Tipos de Instituição
                 # --------------------------------------
                 def create_institution_types():
@@ -53,9 +60,8 @@ def populate_initial_data(app):
                             )
                             db.session.add(it)
                             db.session.flush()
-                            type_map[inst_type["name"]] = it.id
-                        else:
-                            type_map[inst_type["name"]] = InstitutionType.query.filter_by(name=inst_type["name"]).first().id
+                            app.logger.debug(f"Tipo de instituição criado: {inst_type['name']}")
+                        type_map[inst_type["name"]] = InstitutionType.query.filter_by(name=inst_type["name"]).first().id
                     app.logger.info("Tipos de instituição criados ou recuperados com sucesso.")
                     return type_map
 
@@ -87,9 +93,8 @@ def populate_initial_data(app):
                             )
                             db.session.add(sc)
                             db.session.flush()
-                            category_map[cat["name"]] = sc.id
-                        else:
-                            category_map[cat["name"]] = ServiceCategory.query.filter_by(name=cat["name"]).first().id
+                            app.logger.debug(f"Categoria de serviço criada: {cat['name']}")
+                        category_map[cat["name"]] = ServiceCategory.query.filter_by(name=cat["name"]).first().id
                     # Definir hierarquia
                     for cat_name, parent_name in [
                         ("Conta", "Bancário"), ("Empréstimo", "Bancário"), ("Investimento", "Bancário"),
@@ -933,6 +938,7 @@ def populate_initial_data(app):
                                 description=srv["description"]
                             )
                             db.session.add(s)
+                            app.logger.debug(f"Serviço criado: {srv['name']} para instituição {institution_id}")
                     db.session.flush()
 
                 def create_branch_schedules(branch_id):
@@ -948,6 +954,7 @@ def populate_initial_data(app):
                                 is_closed=False
                             )
                             db.session.add(bs)
+                            app.logger.debug(f"Horário de filial criado: {day} para filial {branch_id}")
                     db.session.flush()
 
                 def create_queue(department_id, queue_data, service_id):
@@ -978,6 +985,7 @@ def populate_initial_data(app):
                                     is_closed=schedule.get("is_closed", False)
                                 )
                                 db.session.add(qs)
+                                app.logger.debug(f"Horário de fila criado: {schedule['weekday']} para fila {q.id}")
                         for tag in queue_data["tags"]:
                             if not exists(ServiceTag, queue_id=q.id, tag=tag):
                                 st = ServiceTag(
@@ -986,6 +994,7 @@ def populate_initial_data(app):
                                     tag=tag
                                 )
                                 db.session.add(st)
+                                app.logger.debug(f"Tag criada: {tag} para fila {q.id}")
                         return q
                     return Queue.query.filter_by(id=queue_data["id"]).first()
 
@@ -999,14 +1008,21 @@ def populate_initial_data(app):
                         )
                         db.session.add(d)
                         db.session.flush()
+                        app.logger.debug(f"Departamento criado: {dept_data['name']} para filial {branch_id}")
                         for queue_data in dept_data["queues"]:
-                            service = InstitutionService.query.filter_by(name=queue_data["service_name"]).first()
-                            create_queue(d.id, queue_data, service.id)
+                            service = InstitutionService.query.filter_by(institution_id=Branch.query.get(branch_id).institution_id, name=queue_data["service_name"]).first()
+                            if service:
+                                create_queue(d.id, queue_data, service.id)
+                            else:
+                                app.logger.warning(f"Serviço {queue_data['service_name']} não encontrado para filial {branch_id}")
                         return d
                     d = Department.query.filter_by(branch_id=branch_id, name=dept_data["name"]).first()
                     for queue_data in dept_data["queues"]:
-                        service = InstitutionService.query.filter_by(name=queue_data["service_name"]).first()
-                        create_queue(d.id, queue_data, service.id)
+                        service = InstitutionService.query.filter_by(institution_id=Branch.query.get(branch_id).institution_id, name=queue_data["service_name"]).first()
+                        if service:
+                            create_queue(d.id, queue_data, service.id)
+                        else:
+                            app.logger.warning(f"Serviço {queue_data['service_name']} não encontrado para filial {branch_id}")
                     return d
 
                 def create_branch(institution_id, branch_data):
@@ -1022,6 +1038,7 @@ def populate_initial_data(app):
                         )
                         db.session.add(b)
                         db.session.flush()
+                        app.logger.debug(f"Filial criada: {branch_data['name']} para instituição {institution_id}")
                         create_branch_schedules(b.id)
                         for dept_data in branch_data["departments"]:
                             create_department(b.id, dept_data)
@@ -1041,6 +1058,7 @@ def populate_initial_data(app):
                         )
                         db.session.add(i)
                         db.session.flush()
+                        app.logger.debug(f"Instituição criada: {inst_data['name']}")
                         create_institution_services(i.id, inst_data["services"])
                         for branch_data in inst_data["branches"]:
                             create_branch(i.id, branch_data)
@@ -1074,10 +1092,11 @@ def populate_initial_data(app):
                         )
                         db.session.add(admin)
                         users.append(admin)
+                        app.logger.debug("Usuário criado: sysadmin@queue.com")
 
                     # Institution Admins
                     for inst in Institution.query.all():
-                        email = f"admin_{inst.name.lower().replace(' ', '_')}@queue.com"
+                        email = f"admin_{normalize_string(inst.name)}@queue.com"
                         if not exists(User, email=email):
                             admin = User(
                                 id=str(uuid.uuid4()),
@@ -1091,10 +1110,12 @@ def populate_initial_data(app):
                             )
                             db.session.add(admin)
                             users.append(admin)
+                            app.logger.debug(f"Usuário criado: {email}")
 
                     # Branch Admins
                     for branch in Branch.query.all():
-                        email = f"branch_admin_{branch.name.lower().replace(' ', '_')}@queue.com"
+                        institution = Institution.query.get(branch.institution_id)
+                        email = f"branch_admin_{normalize_string(institution.name)}_{normalize_string(branch.name)}@queue.com"
                         if not exists(User, email=email):
                             admin = User(
                                 id=str(uuid.uuid4()),
@@ -1109,10 +1130,13 @@ def populate_initial_data(app):
                             )
                             db.session.add(admin)
                             users.append(admin)
+                            app.logger.debug(f"Usuário criado: {email}")
 
                     # Attendants
                     for dept in Department.query.all():
-                        email = f"attendant_{dept.name.lower().replace(' ', '_')}_{dept.branch.name.lower().replace(' ', '_')}@queue.com"
+                        branch = Branch.query.get(dept.branch_id)
+                        institution = Institution.query.get(branch.institution_id)
+                        email = f"attendant_{normalize_string(dept.name)}_{normalize_string(branch.name)}_{normalize_string(institution.name)}@queue.com"
                         if not exists(User, email=email):
                             attendant = User(
                                 id=str(uuid.uuid4()),
@@ -1127,6 +1151,7 @@ def populate_initial_data(app):
                             )
                             db.session.add(attendant)
                             users.append(attendant)
+                            app.logger.debug(f"Usuário criado: {email}")
 
                     # Regular Users
                     user_count = User.query.filter_by(user_role=UserRole.USER).count()
@@ -1144,6 +1169,7 @@ def populate_initial_data(app):
                             )
                             db.session.add(user)
                             users.append(user)
+                            app.logger.debug(f"Usuário criado: {email}")
 
                     db.session.flush()
                     app.logger.info("Usuários criados com sucesso.")
@@ -1180,6 +1206,7 @@ def populate_initial_data(app):
                                     updated_at=now
                                 )
                                 db.session.add(pref)
+                                app.logger.debug(f"Preferência criada para usuário {user.id} e instituição {inst.id}")
                     db.session.flush()
                     app.logger.info("Preferências de usuário criadas com sucesso.")
 
@@ -1200,7 +1227,7 @@ def populate_initial_data(app):
                             ticket_number = (Ticket.query.filter_by(queue_id=queue.id).count() or 0) + i + 1
                             qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
                             if Ticket.query.filter_by(qr_code=qr_code).first():
-                                qr_code += f"-{int(now.timestamp())}"
+                                qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}-{int(now.timestamp())}"
                             status = "Atendido" if i % 2 == 0 else "Pendente"
                             issued_at = now - timedelta(days=i % 14, hours=i % 24)
                             ticket = Ticket(
@@ -1220,6 +1247,7 @@ def populate_initial_data(app):
                                 trade_available=False
                             )
                             db.session.add(ticket)
+                            app.logger.debug(f"Ticket criado: {qr_code} para fila {queue.id}")
                         queue.active_tickets = Ticket.query.filter_by(queue_id=queue.id, status="Pendente").count()
                     db.session.flush()
                     app.logger.info("Tickets criados com sucesso para todas as filas.")
@@ -1236,17 +1264,18 @@ def populate_initial_data(app):
                         for inst in Institution.query.limit(3).all():
                             service = InstitutionService.query.filter_by(institution_id=inst.id).first()
                             branch = Branch.query.filter_by(institution_id=inst.id).first()
-                            if not exists(UserBehavior, user_id=user.id, institution_id=inst.id):
+                            if not exists(UserBehavior, user_id=user.id, institution_id=inst.id, action="issued_ticket", timestamp=now - timedelta(days=1)):
                                 ub = UserBehavior(
                                     id=str(uuid.uuid4()),
                                     user_id=user.id,
                                     institution_id=inst.id,
-                                    service_id=service.id,
+                                    service_id=service.id if service else None,
                                     branch_id=branch.id,
                                     action="issued_ticket",
                                     timestamp=now - timedelta(days=1)
                                 )
                                 db.session.add(ub)
+                                app.logger.debug(f"Comportamento criado para usuário {user.id} e instituição {inst.id}")
                     db.session.flush()
                     app.logger.info("Comportamentos de usuário criados com sucesso.")
 
@@ -1268,6 +1297,7 @@ def populate_initial_data(app):
                                 updated_at=datetime.utcnow()
                             )
                             db.session.add(ulf)
+                            app.logger.debug(f"Localização alternativa criada para usuário {user.id}")
                     db.session.flush()
                     app.logger.info("Localizações alternativas criadas com sucesso.")
 
@@ -1283,7 +1313,8 @@ def populate_initial_data(app):
                     for i in range(100):
                         user = users[i % len(users)]
                         action = actions[i % len(actions)]
-                        if not exists(AuditLog, user_id=user.id, action=action, timestamp=now - timedelta(days=i % 30)):
+                        timestamp = now - timedelta(days=i % 30, hours=i % 24)
+                        if not exists(AuditLog, user_id=user.id, action=action, timestamp=timestamp):
                             al = AuditLog(
                                 id=str(uuid.uuid4()),
                                 user_id=user.id,
@@ -1291,9 +1322,10 @@ def populate_initial_data(app):
                                 resource_type=action.split("_")[0].lower(),
                                 resource_id=str(uuid.uuid4()),
                                 details=f"{action} por {user.email}",
-                                timestamp=now - timedelta(days=i % 30, hours=i % 24)
+                                                                timestamp=timestamp
                             )
                             db.session.add(al)
+                            app.logger.debug(f"Log de auditoria criado: {action} para usuário {user.id}")
                     db.session.flush()
                     app.logger.info("Logs de auditoria criados com sucesso.")
 
@@ -1305,20 +1337,21 @@ def populate_initial_data(app):
                 def create_notification_logs():
                     now = datetime.utcnow()
                     users = User.query.filter_by(user_role=UserRole.USER).limit(15).all()
-                    for user in users:
-                        for queue in Queue.query.limit(2).all():
-                            branch = Branch.query.join(Department).filter(Department.id == queue.department_id).first()
-                            if not exists(NotificationLog, user_id=user.id, queue_id=queue.id):
+                    for i, user in enumerate(users):
+                        ticket = Ticket.query.filter_by(user_id=user.id).first()
+                        if ticket:
+                            message = f"Ticket {ticket.qr_code} emitido com sucesso."
+                            if not exists(NotificationLog, user_id=user.id, message=message):
                                 nl = NotificationLog(
                                     id=str(uuid.uuid4()),
                                     user_id=user.id,
-                                    branch_id=branch.id,
-                                    queue_id=queue.id,
-                                    message=f"{branch.name}: Fila {queue.prefix} com 5 min de espera",
-                                    sent_at=now - timedelta(days=1),
-                                    status="Sent"
+                                    message=message,
+                                    channel="email",
+                                    sent_at=now - timedelta(days=i % 7),
+                                    status="sent"
                                 )
                                 db.session.add(nl)
+                                app.logger.debug(f"Log de notificação criado para usuário {user.id}")
                     db.session.flush()
                     app.logger.info("Logs de notificação criados com sucesso.")
 
@@ -1332,5 +1365,7 @@ def populate_initial_data(app):
 
         except Exception as e:
             db.session.rollback()
-            app.logger.error(f"Erro ao popular dados iniciais: {str(e)}")
+            app.logger.error(f"Erro durante a população de dados: {str(e)}")
             raise
+
+    return {"message": "População de dados concluída com sucesso."}
