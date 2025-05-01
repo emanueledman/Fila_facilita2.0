@@ -1,367 +1,20 @@
 import uuid
-from datetime import time, datetime, timedelta
-from .models import AuditLog, Institution, Queue, User, Ticket, Department, UserPreference, UserRole, QueueSchedule, Weekday, Branch, ServiceCategory, ServiceTag, InstitutionType
-from . import db
-import os
-from sqlalchemy.exc import SQLAlchemyError
-
-# Dados de teste para 5 instituições, cada uma com 3 filiais
-institutions_data = [
-    {
-        "id": str(uuid.uuid4()),
-        "name": "Banco BAI",
-        "description": "Serviços bancários em Luanda",
-        "institution_type_id": None,  # Será preenchido com Bancário
-        "branches": [
-            {
-                "name": "Agência Central",
-                "location": "Rua Rainha Ginga, Ingombota, Luanda",
-                "neighborhood": "Ingombota",
-                "latitude": -8.8170,
-                "longitude": 13.2350,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Atendimento Bancário",
-                                "category_id": None,  # Será preenchido com Bancário
-                                "prefix": "AB",
-                                "open_time": time(0, 0),
-                                "end_time": time(23, 59),
-                                "daily_limit": 100,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
-                                ],
-                                "tags": ["Bancário", "Atendimento", "24/7"]
-                            },
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Empréstimos",
-                                "category_id": None,  # Será preenchido com Empréstimo
-                                "prefix": "EM",
-                                "open_time": time(8, 30),
-                                "end_time": time(15, 30),
-                                "daily_limit": 100,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Bancário", "Empréstimo"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Talatona",
-                "location": "Via Expressa, Talatona, Luanda",
-                "neighborhood": "Talatona",
-                "latitude": -8.9180,
-                "longitude": 13.1840,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Abertura de Conta",
-                                "category_id": None,
-                                "prefix": "AB",
-                                "open_time": time(0, 0),
-                                "end_time": time(23, 59),
-                                "daily_limit": 100,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
-                                ],
-                                "tags": ["Bancário", "Atendimento", "24/7"]
-                            },
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Empréstimos",
-                                "category_id": None,
-                                "prefix": "EM",
-                                "open_time": time(8, 30),
-                                "end_time": time(15, 30),
-                                "daily_limit": 100,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Bancário", "Empréstimo"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Viana",
-                "location": "Rua Principal, Viana, Luanda",
-                "neighborhood": "Viana",
-                "latitude": -8.9040,
-                "longitude": 13.3750,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Atendimento Bancário",
-                                "category_id": None,
-                                "prefix": "AB",
-                                "open_time": time(0, 0),
-                                "end_time": time(23, 59),
-                                "daily_limit": 100,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
-                                ],
-                                "tags": ["Bancário", "Atendimento", "24/7"]
-                            },
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Empréstimos",
-                                "category_id": None,
-                                "prefix": "EM",
-                                "open_time": time(8, 30),
-                                "end_time": time(15, 30),
-                                "daily_limit": 100,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Bancário", "Empréstimo"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    {
-        "id": str(uuid.uuid4()),
-        "name": "Banco BFA",
-        "description": "Serviços bancários em Luanda",
-        "institution_type_id": None,  # Será preenchido com Bancário
-        "branches": [
-            {
-                "name": "Agência Maianga",
-                "location": "Rua Joaquim Kapango, Maianga, Luanda",
-                "neighborhood": "Maianga",
-                "latitude": -8.8150,
-                "longitude": 13.2310,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Atendimento Bancário",
-                                "category_id": None,  # Será preenchido com Bancário
-                                "prefix": "AB",
-                                "open_time": time(0, 0),
-                                "end_time": time(23, 59),
-                                "daily_limit": 100,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
-                                ],
-                                "tags": ["Bancário", "Atendimento", "24/7"]
-                            },
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Investimentos",
-                                "category_id": None,  # Será preenchido com Investimento
-                                "prefix": "IN",
-                                "open_time": time(8, 30),
-                                "end_time": time(15, 30),
-                                "daily_limit": 100,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Bancário", "Investimento"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Kilamba",
-                "location": "Avenida do Kilamba, Kilamba, Luanda",
-                "neighborhood": "Kilamba",
-                "latitude": -8.9340,
-                "longitude": 13.2670,
-                "departments": [
-                    {
-                        "name": "Deposito",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Atendimento Bancário",
-                                "category_id": None,
-                                "prefix": "AB",
-                                "open_time": time(0, 0),
-                                "end_time": time(23, 59),
-                                "daily_limit": 100,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
-                                ],
-                                "tags": ["Bancário", "Atendimento", "24/7"]
-                            },
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Investimentos",
-                                "category_id": None,
-                                "prefix": "IN",
-                                "open_time": time(8, 30),
-                                "end_time": time(15, 30),
-                                "daily_limit": 100,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Bancário", "Investimento"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Cazenga",
-                "location": "Avenida dos Combatentes, Cazenga, Luanda",
-                "neighborhood": "Cazenga",
-                "latitude": -8.8510,
-                "longitude": 13.2840,
-                "departments": [
-                    {
-                        "name": "Manutençao de Conta",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Atendimento Bancário",
-                                "category_id": None,
-                                "prefix": "AB",
-                                "open_time": time(0, 0),
-                                "end_time": time(23, 59),
-                                "daily_limit": 100,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
-                                ],
-                                "tags": ["Bancário", "Atendimento", "24/7"]
-                            },
-                            {
-                                "id": str(uuid.uuid4()),
-                                "service": "Investimentos",
-                                "category_id": None,
-                                "prefix": "IN",
-                                "open_time": time(8, 30),
-                                "end_time": time(15, 30),
-                                "daily_limit": 100,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Bancário", "Investimento"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    }
-]
+from datetime import datetime, time, timedelta
+import bcrypt
+from app import db
+from app.models import (
+    InstitutionType, Institution, Branch, BranchSchedule, Department, Queue, QueueSchedule,
+    InstitutionService, ServiceCategory, ServiceTag, User, UserRole, Ticket, UserPreference,
+    UserBehavior, UserLocationFallback, NotificationLog, AuditLog, Weekday
+)
 
 def populate_initial_data(app):
     """
-    Popula o banco de dados com dados iniciais para testes, incluindo 5 instituições (SIAC, Banco BIC, Hospital Josina Machel, Banco BAI, Banco BFA),
-    cada uma com 3 filiais em Luanda. Cada filial tem 2 filas (1 24/7 e 1 com horário comercial). Cada fila tem 50 tickets.
-    Mantém idempotência, logs em português, e compatibilidade com models.py atualizado (incluindo is_client).
-    Usa bcrypt para senhas e respeita todos os relacionamentos, incluindo InstitutionType e UserPreference.
-    Suporta modelos de ML com dados suficientes para treinamento inicial.
+    Popula o banco de dados com dados iniciais para testes, incluindo 5 instituições (Banco BAI, Banco BFA, Banco BIC,
+    Hospital Josina Machel, SIAC), cada uma com 3 filiais em Luanda. Cada filial tem departamentos com 2 filas
+    (1 24/7 e 1 com horário comercial). Cada fila tem 50 tickets. Inclui usuários, preferências, comportamentos,
+    localizações alternativas, logs de auditoria e notificações. Mantém idempotência, logs em português, e compatibilidade
+    com models.py atualizado (incluindo is_client e is_favorite). Suporta modelos de ML com dados suficientes para treinamento.
     """
     with app.app_context():
         try:
@@ -370,363 +23,1127 @@ def populate_initial_data(app):
                 app.logger.info("Iniciando população de dados iniciais...")
 
                 # --------------------------------------
+                # Função auxiliar para verificar existência
+                # --------------------------------------
+                def exists(model, **kwargs):
+                    return model.query.filter_by(**kwargs).first() is not None
+
+                # --------------------------------------
+                # Função auxiliar para hashear senhas
+                # --------------------------------------
+                def hash_password(password):
+                    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+                # --------------------------------------
                 # Criar Tipos de Instituição
                 # --------------------------------------
                 def create_institution_types():
                     types = [
-                        {'name': 'Administrativo', 'description': 'Serviços administrativos e atendimento ao cidadão'},
-                        {'name': 'Bancário', 'description': 'Serviços financeiros e bancários'},
-                        {'name': 'Saúde', 'description': 'Serviços de saúde e atendimento médico'}
+                        {"name": "Bancário", "description": "Serviços financeiros e bancários"},
+                        {"name": "Saúde", "description": "Serviços de saúde e atendimento médico"},
+                        {"name": "Administrativo", "description": "Serviços administrativos e atendimento ao cidadão"}
                     ]
                     type_map = {}
                     for inst_type in types:
-                        existing_type = db.session.query(InstitutionType).filter(InstitutionType.name == inst_type['name']).first()
-                        if existing_type:
-                            type_map[inst_type['name']] = existing_type.id
-                            continue
-                        institution_type = InstitutionType(
-                            id=str(uuid.uuid4()),
-                            name=inst_type['name'],
-                            description=inst_type['description']
-                        )
-                        db.session.add(institution_type)
-                        db.session.flush()
-                        type_map[inst_type['name']] = institution_type.id
-                    app.logger.info("Tipos de instituição criados com sucesso.")
+                        if not exists(InstitutionType, name=inst_type["name"]):
+                            it = InstitutionType(
+                                id=str(uuid.uuid4()),
+                                name=inst_type["name"],
+                                description=inst_type["description"]
+                            )
+                            db.session.add(it)
+                            db.session.flush()
+                            type_map[inst_type["name"]] = it.id
+                        else:
+                            type_map[inst_type["name"]] = InstitutionType.query.filter_by(name=inst_type["name"]).first().id
+                    app.logger.info("Tipos de instituição criados ou recuperados com sucesso.")
                     return type_map
 
                 institution_type_map = create_institution_types()
-
-                # Atualizar institution_type_id nos dados de teste
-                for inst in institutions_data:
-                    if inst['name'] == 'SIAC':
-                        inst['institution_type_id'] = institution_type_map['Administrativo']
-                    elif inst['name'] in ['Banco BIC', 'Banco BAI', 'Banco BFA']:
-                        inst['institution_type_id'] = institution_type_map['Bancário']
-                    elif inst['name'] == 'Hospital Josina Machel':
-                        inst['institution_type_id'] = institution_type_map['Saúde']
 
                 # --------------------------------------
                 # Criar Categorias de Serviço
                 # --------------------------------------
                 def create_service_categories():
                     categories = [
-                        {'name': 'Saúde', 'description': 'Serviços de saúde e atendimento médico', 'parent_id': None},
-                        {'name': 'Consulta Médica', 'description': 'Consultas gerais e especializadas', 'parent_id': None},
-                        {'name': 'Administrativo', 'description': 'Serviços administrativos municipais e atendimento ao cidadão', 'parent_id': None},
-                        {'name': 'Bancário', 'description': 'Serviços financeiros e bancários', 'parent_id': None},
-                        {'name': 'Documentos', 'description': 'Emissão e renovação de documentos', 'parent_id': None},
-                        {'name': 'Exames', 'description': 'Exames laboratoriais e diagnósticos', 'parent_id': None},
-                        {'name': 'Conta', 'description': 'Abertura e gestão de contas bancárias', 'parent_id': None},
-                        {'name': 'Empréstimo', 'description': 'Solicitação e gestão de empréstimos', 'parent_id': None},
-                        {'name': 'Investimento', 'description': 'Serviços de investimento financeiro', 'parent_id': None}
+                        {"name": "Bancário", "description": "Serviços financeiros e bancários", "parent_id": None},
+                        {"name": "Conta", "description": "Abertura e gestão de contas bancárias", "parent_id": None},
+                        {"name": "Empréstimo", "description": "Solicitação e gestão de empréstimos", "parent_id": None},
+                        {"name": "Investimento", "description": "Serviços de investimento financeiro", "parent_id": None},
+                        {"name": "Saúde", "description": "Serviços de saúde e atendimento médico", "parent_id": None},
+                        {"name": "Consulta Médica", "description": "Consultas gerais e especializadas", "parent_id": None},
+                        {"name": "Exames", "description": "Exames laboratoriais e diagnósticos", "parent_id": None},
+                        {"name": "Administrativo", "description": "Serviços administrativos e atendimento ao cidadão", "parent_id": None},
+                        {"name": "Documentos", "description": "Emissão e renovação de documentos", "parent_id": None}
                     ]
                     category_map = {}
                     for cat in categories:
-                        existing_cat = db.session.query(ServiceCategory).filter(ServiceCategory.name == cat['name']).first()
-                        if existing_cat:
-                            category_map[cat['name']] = existing_cat.id
-                            continue
-                        category = ServiceCategory(
-                            id=str(uuid.uuid4()),
-                            name=cat['name'],
-                            description=cat['description'],
-                            parent_id=cat['parent_id']
-                        )
-                        db.session.add(category)
-                        db.session.flush()
-                        category_map[cat['name']] = category.id
+                        if not exists(ServiceCategory, name=cat["name"]):
+                            sc = ServiceCategory(
+                                id=str(uuid.uuid4()),
+                                name=cat["name"],
+                                description=cat["description"],
+                                parent_id=cat["parent_id"]
+                            )
+                            db.session.add(sc)
+                            db.session.flush()
+                            category_map[cat["name"]] = sc.id
+                        else:
+                            category_map[cat["name"]] = ServiceCategory.query.filter_by(name=cat["name"]).first().id
+                    # Definir hierarquia
                     for cat_name, parent_name in [
-                        ('Consulta Médica', 'Saúde'),
-                        ('Exames', 'Saúde'),
-                        ('Documentos', 'Administrativo'),
-                        ('Conta', 'Bancário'),
-                        ('Empréstimo', 'Bancário'),
-                        ('Investimento', 'Bancário')
+                        ("Conta", "Bancário"), ("Empréstimo", "Bancário"), ("Investimento", "Bancário"),
+                        ("Consulta Médica", "Saúde"), ("Exames", "Saúde"),
+                        ("Documentos", "Administrativo")
                     ]:
-                        cat = db.session.query(ServiceCategory).filter(ServiceCategory.name == cat_name).first()
+                        cat = ServiceCategory.query.filter_by(name=cat_name).first()
                         if cat and not cat.parent_id:
                             cat.parent_id = category_map[parent_name]
                             db.session.flush()
-                    app.logger.info("Categorias de serviço criadas com sucesso.")
+                    app.logger.info("Categorias de serviço criadas ou recuperadas com sucesso.")
                     return category_map
 
                 category_map = create_service_categories()
-
-                # Atualizar category_id nas filas dos dados de teste
-                for inst in institutions_data:
-                    for branch in inst['branches']:
-                        for dept in branch['departments']:
-                            for queue in dept['queues']:
-                                if 'Saúde' in queue['tags'] and 'Consulta' in queue['tags']:
-                                    queue['category_id'] = category_map['Consulta Médica']
-                                elif 'Saúde' in queue['tags'] and 'Exames' in queue['tags']:
-                                    queue['category_id'] = category_map['Exames']
-                                elif 'Administrativo' in queue['tags'] and 'Documentos' in queue['tags']:
-                                    queue['category_id'] = category_map['Documentos']
-                                elif 'Administrativo' in queue['tags']:
-                                    queue['category_id'] = category_map['Administrativo']
-                                elif 'Bancário' in queue['tags'] and 'Conta' in queue['tags']:
-                                    queue['category_id'] = category_map['Conta']
-                                elif 'Bancário' in queue['tags'] and 'Empréstimo' in queue['tags']:
-                                    queue['category_id'] = category_map['Empréstimo']
-                                elif 'Bancário' in queue['tags'] and 'Investimento' in queue['tags']:
-                                    queue['category_id'] = category_map['Investimento']
-                                elif 'Bancário' in queue['tags']:
-                                    queue['category_id'] = category_map['Bancário']
 
                 # --------------------------------------
                 # Bairros de Luanda
                 # --------------------------------------
                 neighborhoods = [
-                    {'name': 'Ingombota', 'latitude': -8.8167, 'longitude': 13.2332},
-                    {'name': 'Maianga', 'latitude': -8.8147, 'longitude': 13.2302},
-                    {'name': 'Talatona', 'latitude': -8.9167, 'longitude': 13.1833},
-                    {'name': 'Kilamba', 'latitude': -8.9333, 'longitude': 13.2667},
-                    {'name': 'Cazenga', 'latitude': -8.8500, 'longitude': 13.2833},
-                    {'name': 'Viana', 'latitude': -8.9035, 'longitude': 13.3741},
-                    {'name': 'Rangel', 'latitude': -8.8300, 'longitude': 13.2500}
+                    {"name": "Ingombota", "latitude": -8.8167, "longitude": 13.2332},
+                    {"name": "Maianga", "latitude": -8.8147, "longitude": 13.2302},
+                    {"name": "Talatona", "latitude": -8.9167, "longitude": 13.1833},
+                    {"name": "Kilamba", "latitude": -8.9333, "longitude": 13.2667},
+                    {"name": "Cazenga", "latitude": -8.8500, "longitude": 13.2833},
+                    {"name": "Viana", "latitude": -8.9035, "longitude": 13.3741},
+                    {"name": "Rangel", "latitude": -8.8300, "longitude": 13.2500}
+                ]
+
+                # --------------------------------------
+                # Dados de Instituições
+                # --------------------------------------
+                institutions_data = [
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Banco BAI",
+                        "description": "Serviços bancários em Luanda",
+                        "institution_type_id": institution_type_map["Bancário"],
+                        "services": [
+                            {"name": "Atendimento Bancário", "category_id": category_map["Conta"], "description": "Depósitos e saques"},
+                            {"name": "Empréstimos", "category_id": category_map["Empréstimo"], "description": "Empréstimos pessoais"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "Agência Central",
+                                "location": "Rua Rainha Ginga, Ingombota, Luanda",
+                                "neighborhood": "Ingombota",
+                                "latitude": -8.8170,
+                                "longitude": 13.2350,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento ao Cliente",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento Bancário",
+                                                "prefix": "AB",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                                ],
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Empréstimos",
+                                                "prefix": "EM",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                                ],
+                                                "tags": ["Bancário", "Empréstimo"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Agência Talatona",
+                                "location": "Via Expressa, Talatona, Luanda",
+                                "neighborhood": "Talatona",
+                                "latitude": -8.9180,
+                                "longitude": 13.1840,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento ao Cliente",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento Bancário",
+                                                "prefix": "AB",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                                ],
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Empréstimos",
+                                                "prefix": "EM",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                                ],
+                                                "tags": ["Bancário", "Empréstimo"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Agência Viana",
+                                "location": "Rua Principal, Viana, Luanda",
+                                "neighborhood": "Viana",
+                                "latitude": -8.9040,
+                                "longitude": 13.3750,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento ao Cliente",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento Bancário",
+                                                "prefix": "AB",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                                ],
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Empréstimos",
+                                                "prefix": "EM",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                                ],
+                                                "tags": ["Bancário", "Empréstimo"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Banco BFA",
+                        "description": "Serviços bancários em Luanda",
+                        "institution_type_id": institution_type_map["Bancário"],
+                        "services": [
+                            {"name": "Atendimento Bancário", "category_id": category_map["Conta"], "description": "Gestão de contas"},
+                            {"name": "Investimentos", "category_id": category_map["Investimento"], "description": "Investimentos financeiros"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "Agência Maianga",
+                                "location": "Rua Joaquim Kapango, Maianga, Luanda",
+                                "neighborhood": "Maianga",
+                                "latitude": -8.8150,
+                                "longitude": 13.2310,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento ao Cliente",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento Bancário",
+                                                "prefix": "AB",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                                ],
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Investimentos",
+                                                "prefix": "IN",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                                ],
+                                                "tags": ["Bancário", "Investimento"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Agência Kilamba",
+                                "location": "Avenida do Kilamba, Kilamba, Luanda",
+                                "neighborhood": "Kilamba",
+                                "latitude": -8.9340,
+                                "longitude": 13.2670,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento ao Cliente",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento Bancário",
+                                                "prefix": "AB",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                                ],
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Investimentos",
+                                                "prefix": "IN",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                                ],
+                                                "tags": ["Bancário", "Investimento"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Agência Cazenga",
+                                "location": "Avenida dos Combatentes, Cazenga, Luanda",
+                                "neighborhood": "Cazenga",
+                                "latitude": -8.8510,
+                                "longitude": 13.2840,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento ao Cliente",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento Bancário",
+                                                "prefix": "AB",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                                ],
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Investimentos",
+                                                "prefix": "IN",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                                ],
+                                                "tags": ["Bancário", "Investimento"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Banco BIC",
+                        "description": "Serviços bancários em Luanda",
+                        "institution_type_id": institution_type_map["Bancário"],
+                        "services": [
+                            {"name": "Atendimento Bancário", "category_id": category_map["Conta"], "description": "Gestão de contas"},
+                            {"name": "Empréstimos", "category_id": category_map["Empréstimo"], "description": "Empréstimos empresariais"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "Agência Rangel",
+                                "location": "Rua do Rangel, Rangel, Luanda",
+                                "neighborhood": "Rangel",
+                                "latitude": -8.8300,
+                                "longitude": 13.2500,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento ao Cliente",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento Bancário",
+                                                "prefix": "AB",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                                ],
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Empréstimos",
+                                                "prefix": "EM",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                                ],
+                                                "tags": ["Bancário", "Empréstimo"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Agência Ingombota",
+                                "location": "Avenida 4 de Fevereiro, Ingombota, Luanda",
+                                "neighborhood": "Ingombota",
+                                "latitude": -8.8167,
+                                "longitude": 13.2332,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento ao Cliente",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento Bancário",
+                                                "prefix": "AB",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                                ],
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Empréstimos",
+                                                "prefix": "EM",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                                ],
+                                                "tags": ["Bancário", "Empréstimo"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Agência Talatona",
+                                "location": "Rua Principal, Talatona, Luanda",
+                                "neighborhood": "Talatona",
+                                "latitude": -8.9167,
+                                "longitude": 13.1833,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento ao Cliente",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento Bancário",
+                                                "prefix": "AB",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                                ],
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Empréstimos",
+                                                "prefix": "EM",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 30), "end_time": time(15, 30)},
+                                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                                ],
+                                                "tags": ["Bancário", "Empréstimo"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Hospital Josina Machel",
+                        "description": "Serviços de saúde em Luanda",
+                        "institution_type_id": institution_type_map["Saúde"],
+                        "services": [
+                            {"name": "Consulta Geral", "category_id": category_map["Consulta Médica"], "description": "Consultas médicas gerais"},
+                            {"name": "Exames Laboratoriais", "category_id": category_map["Exames"], "description": "Exames de diagnóstico"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "Unidade Central",
+                                "location": "Avenida Ho Chi Minh, Maianga, Luanda",
+                                "neighborhood": "Maianga",
+                                "latitude": -8.8147,
+                                "longitude": 13.2302,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                                ],
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                                ],
+                                                "tags": ["Saúde", "Exames"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Kilamba",
+                                "location": "Rua Principal, Kilamba, Luanda",
+                                "neighborhood": "Kilamba",
+                                "latitude": -8.9333,
+                                "longitude": 13.2667,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                                ],
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                                ],
+                                                "tags": ["Saúde", "Exames"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Cazenga",
+                                "location": "Rua dos Combatentes, Cazenga, Luanda",
+                                "neighborhood": "Cazenga",
+                                "latitude": -8.8500,
+                                "longitude": 13.2833,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                                ],
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(7, 0), "end_time": time(17, 0)},
+                                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                                ],
+                                                "tags": ["Saúde", "Exames"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "SIAC",
+                        "description": "Serviços administrativos em Luanda",
+                        "institution_type_id": institution_type_map["Administrativo"],
+                        "services": [
+                            {"name": "Emissão de BI", "category_id": category_map["Documentos"], "description": "Emissão de bilhete de identidade"},
+                            {"name": "Registo Civil", "category_id": category_map["Documentos"], "description": "Registos civis"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "SIAC Talatona",
+                                "location": "Rua Principal, Talatona, Luanda",
+                                "neighborhood": "Talatona",
+                                "latitude": -8.9167,
+                                "longitude": 13.1833,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                                ],
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
+                                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                                ],
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Viana",
+                                "location": "Rua Principal, Viana, Luanda",
+                                "neighborhood": "Viana",
+                                "latitude": -8.9035,
+                                "longitude": 13.3741,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                                ],
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
+                                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                                ],
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Rangel",
+                                "location": "Rua do Rangel, Rangel, Luanda",
+                                "neighborhood": "Rangel",
+                                "latitude": -8.8300,
+                                "longitude": 13.2500,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
+                                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
+                                                ],
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "schedules": [
+                                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
+                                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
+                                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
+                                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
+                                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
+                                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
+                                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
+                                                ],
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
                 ]
 
                 # --------------------------------------
                 # Funções Auxiliares para Criação de Entidades
                 # --------------------------------------
-                def create_queue(department_id, queue_data):
-                    existing_queue = db.session.query(Queue).filter(Queue.id == queue_data['id']).first()
-                    if not existing_queue:
-                        existing_queue = db.session.query(Queue).filter(
-                            Queue.department_id == department_id, 
-                            Queue.service == queue_data['service'],
-                            Queue.prefix == queue_data['prefix']
-                        ).first()
-                    
-                    if existing_queue:
-                        app.logger.info(f"Fila {queue_data['service']} já existe com ID {existing_queue.id}, pulando.")
-                        return existing_queue
-
-                    queue = Queue(
-                        id=queue_data['id'],
-                        department_id=department_id,
-                        service=queue_data['service'],
-                        category_id=queue_data['category_id'],
-                        prefix=queue_data['prefix'],
-                        open_time=queue_data['open_time'],
-                        end_time=queue_data['end_time'],
-                        daily_limit=queue_data['daily_limit'],
-                        active_tickets=0,
-                        current_ticket=0,
-                        avg_wait_time=0.0,
-                        last_service_time=0.0,
-                        num_counters=queue_data['num_counters'],
-                        last_counter=0
-                    )
-                    db.session.add(queue)
+                def create_institution_services(institution_id, services):
+                    for srv in services:
+                        if not exists(InstitutionService, institution_id=institution_id, name=srv["name"]):
+                            s = InstitutionService(
+                                id=str(uuid.uuid4()),
+                                institution_id=institution_id,
+                                name=srv["name"],
+                                category_id=srv["category_id"],
+                                description=srv["description"]
+                            )
+                            db.session.add(s)
                     db.session.flush()
 
-                    for schedule in queue_data['schedules']:
-                        existing_schedule = db.session.query(QueueSchedule).filter(
-                            QueueSchedule.queue_id == queue.id, 
-                            QueueSchedule.weekday == schedule['weekday']
-                        ).first()
-                        if existing_schedule:
-                            continue
-                        queue_schedule = QueueSchedule(
-                            id=str(uuid.uuid4()),
-                            queue_id=queue.id,
-                            weekday=schedule['weekday'],
-                            open_time=schedule.get('open_time'),
-                            end_time=schedule.get('end_time'),
-                            is_closed=schedule.get('is_closed', False)
-                        )
-                        db.session.add(queue_schedule)
+                def create_branch_schedules(branch_id):
+                    weekdays = [Weekday.MONDAY, Weekday.TUESDAY, Weekday.WEDNESDAY, Weekday.THURSDAY, Weekday.FRIDAY]
+                    for day in weekdays:
+                        if not exists(BranchSchedule, branch_id=branch_id, weekday=day):
+                            bs = BranchSchedule(
+                                id=str(uuid.uuid4()),
+                                branch_id=branch_id,
+                                weekday=day,
+                                open_time=time(8, 0),
+                                end_time=time(16, 0),
+                                is_closed=False
+                            )
+                            db.session.add(bs)
+                    db.session.flush()
 
-                    for tag_name in queue_data['tags']:
-                        existing_tag = db.session.query(ServiceTag).filter(
-                            ServiceTag.queue_id == queue.id, 
-                            ServiceTag.tag == tag_name
-                        ).first()
-                        if existing_tag:
-                            continue
-                        tag = ServiceTag(
-                            id=str(uuid.uuid4()),
-                            queue_id=queue.id,
-                            tag=tag_name
+                def create_queue(department_id, queue_data, service_id):
+                    if not exists(Queue, id=queue_data["id"]):
+                        q = Queue(
+                            id=queue_data["id"],
+                            department_id=department_id,
+                            service_id=service_id,
+                            prefix=queue_data["prefix"],
+                            daily_limit=queue_data["daily_limit"],
+                            active_tickets=0,
+                            current_ticket=0,
+                            avg_wait_time=5.0,
+                            last_service_time=2.0,
+                            num_counters=queue_data["num_counters"],
+                            last_counter=0
                         )
-                        db.session.add(tag)
-
-                    return queue
+                        db.session.add(q)
+                        db.session.flush()
+                        for schedule in queue_data["schedules"]:
+                            if not exists(QueueSchedule, queue_id=q.id, weekday=schedule["weekday"]):
+                                qs = QueueSchedule(
+                                    id=str(uuid.uuid4()),
+                                    queue_id=q.id,
+                                    weekday=schedule["weekday"],
+                                    open_time=schedule.get("open_time"),
+                                    end_time=schedule.get("end_time"),
+                                    is_closed=schedule.get("is_closed", False)
+                                )
+                                db.session.add(qs)
+                        for tag in queue_data["tags"]:
+                            if not exists(ServiceTag, queue_id=q.id, tag=tag):
+                                st = ServiceTag(
+                                    id=str(uuid.uuid4()),
+                                    queue_id=q.id,
+                                    tag=tag
+                                )
+                                db.session.add(st)
+                        return q
+                    return Queue.query.filter_by(id=queue_data["id"]).first()
 
                 def create_department(branch_id, dept_data):
-                    existing_dept = db.session.query(Department).filter(
-                        Department.branch_id == branch_id, 
-                        Department.name == dept_data['name']
-                    ).first()
-                    if existing_dept:
-                        app.logger.info(f"Departamento {dept_data['name']} já existe na filial, pulando.")
-                        return existing_dept
-
-                    department = Department(
-                        id=str(uuid.uuid4()),
-                        branch_id=branch_id,
-                        name=dept_data['name'],
-                        sector=dept_data['sector']
-                    )
-                    db.session.add(department)
-                    db.session.flush()
-
-                    for queue_data in dept_data['queues']:
-                        create_queue(department.id, queue_data)
-
-                    return department
+                    if not exists(Department, branch_id=branch_id, name=dept_data["name"]):
+                        d = Department(
+                            id=str(uuid.uuid4()),
+                            branch_id=branch_id,
+                            name=dept_data["name"],
+                            sector=dept_data["sector"]
+                        )
+                        db.session.add(d)
+                        db.session.flush()
+                        for queue_data in dept_data["queues"]:
+                            service = InstitutionService.query.filter_by(name=queue_data["service_name"]).first()
+                            create_queue(d.id, queue_data, service.id)
+                        return d
+                    d = Department.query.filter_by(branch_id=branch_id, name=dept_data["name"]).first()
+                    for queue_data in dept_data["queues"]:
+                        service = InstitutionService.query.filter_by(name=queue_data["service_name"]).first()
+                        create_queue(d.id, queue_data, service.id)
+                    return d
 
                 def create_branch(institution_id, branch_data):
-                    existing_branch = db.session.query(Branch).filter(
-                        Branch.institution_id == institution_id, 
-                        Branch.name == branch_data['name']
-                    ).first()
-                    if existing_branch:
-                        app.logger.info(f"Filial {branch_data['name']} já existe na instituição, pulando.")
-                        for dept_data in branch_data['departments']:
-                            existing_dept = db.session.query(Department).filter(
-                                Department.branch_id == existing_branch.id, 
-                                Department.name == dept_data['name']
-                            ).first()
-                            if not existing_dept:
-                                create_department(existing_branch.id, dept_data)
-                            else:
-                                for queue_data in dept_data['queues']:
-                                    create_queue(existing_dept.id, queue_data)
-                        return existing_branch
-
-                    branch = Branch(
-                        id=str(uuid.uuid4()),
-                        institution_id=institution_id,
-                        name=branch_data['name'],
-                        location=branch_data['location'],
-                        neighborhood=branch_data['neighborhood'],
-                        latitude=branch_data['latitude'],
-                        longitude=branch_data['longitude']
-                    )
-                    db.session.add(branch)
-                    db.session.flush()
-
-                    for dept_data in branch_data['departments']:
-                        create_department(branch.id, dept_data)
-
-                    return branch
+                    if not exists(Branch, institution_id=institution_id, name=branch_data["name"]):
+                        b = Branch(
+                            id=str(uuid.uuid4()),
+                            institution_id=institution_id,
+                            name=branch_data["name"],
+                            location=branch_data["location"],
+                            neighborhood=branch_data["neighborhood"],
+                            latitude=branch_data["latitude"],
+                            longitude=branch_data["longitude"]
+                        )
+                        db.session.add(b)
+                        db.session.flush()
+                        create_branch_schedules(b.id)
+                        for dept_data in branch_data["departments"]:
+                            create_department(b.id, dept_data)
+                        return b
+                    b = Branch.query.filter_by(institution_id=institution_id, name=branch_data["name"]).first()
+                    for dept_data in branch_data["departments"]:
+                        create_department(b.id, dept_data)
+                    return b
 
                 def create_institution(inst_data):
-                    existing_inst = db.session.query(Institution).filter(Institution.name == inst_data['name']).first()
-                    if existing_inst:
-                        app.logger.info(f"Instituição {inst_data['name']} já existe, atualizando filiais se necessário.")
-                        for branch_data in inst_data['branches']:
-                            existing_branch = db.session.query(Branch).filter(
-                                Branch.institution_id == existing_inst.id, 
-                                Branch.name == branch_data['name']
-                            ).first()
-                            if not existing_branch:
-                                create_branch(existing_inst.id, branch_data)
-                            else:
-                                for dept_data in branch_data['departments']:
-                                    existing_dept = db.session.query(Department).filter(
-                                        Department.branch_id == existing_branch.id, 
-                                        Department.name == dept_data['name']
-                                    ).first()
-                                    if not existing_dept:
-                                        create_department(existing_branch.id, dept_data)
-                                    else:
-                                        for queue_data in dept_data['queues']:
-                                            create_queue(existing_dept.id, queue_data)
-                        return existing_inst
+                    if not exists(Institution, name=inst_data["name"]):
+                        i = Institution(
+                            id=inst_data["id"],
+                            name=inst_data["name"],
+                            description=inst_data["description"],
+                            institution_type_id=inst_data["institution_type_id"]
+                        )
+                        db.session.add(i)
+                        db.session.flush()
+                        create_institution_services(i.id, inst_data["services"])
+                        for branch_data in inst_data["branches"]:
+                            create_branch(i.id, branch_data)
+                        return i
+                    i = Institution.query.filter_by(name=inst_data["name"]).first()
+                    create_institution_services(i.id, inst_data["services"])
+                    for branch_data in inst_data["branches"]:
+                        create_branch(i.id, branch_data)
+                    return i
 
-                    institution = Institution(
-                        id=inst_data['id'],
-                        name=inst_data['name'],
-                        description=inst_data['description'],
-                        institution_type_id=inst_data['institution_type_id']
-                    )
-                    db.session.add(institution)
-                    db.session.flush()
-
-                    for branch_data in inst_data['branches']:
-                        create_branch(institution.id, branch_data)
-
-                    return institution
-
-                app.logger.info("Criando ou atualizando instituições...")
+                # Criar instituições
                 for inst_data in institutions_data:
                     create_institution(inst_data)
-                app.logger.info("Instituições, filiais, departamentos e filas criados ou atualizados com sucesso.")
+                app.logger.info("Instituições, serviços, filiais, departamentos e filas criados ou atualizados com sucesso.")
 
                 # --------------------------------------
                 # Criar Usuários
                 # --------------------------------------
                 def create_users():
                     users = []
-                    if not db.session.query(User).filter(User.email == 'sysadmin@queue.com').first():
-                        super_admin = User(
+                    # System Admin
+                    if not exists(User, email="sysadmin@queue.com"):
+                        admin = User(
                             id=str(uuid.uuid4()),
-                            email='sysadmin@queue.com',
-                            name='Sistema Admin',
+                            email="sysadmin@queue.com",
+                            name="Sistema Admin",
+                            password_hash=hash_password("sysadmin123"),
                             user_role=UserRole.SYSTEM_ADMIN,
                             created_at=datetime.utcnow(),
                             active=True
                         )
-                        super_admin.set_password('sysadmin123')
-                        db.session.add(super_admin)
-                        users.append(super_admin)
+                        db.session.add(admin)
+                        users.append(admin)
 
-                    for inst in db.session.query(Institution).all():
-                        email = f'admin_{inst.name.lower().replace(" ", "_")}@queue.com'
-                        if not db.session.query(User).filter(User.email == email).first():
+                    # Institution Admins
+                    for inst in Institution.query.all():
+                        email = f"admin_{inst.name.lower().replace(' ', '_')}@queue.com"
+                        if not exists(User, email=email):
                             admin = User(
                                 id=str(uuid.uuid4()),
                                 email=email,
-                                name=f'Admin {inst.name}',
+                                name=f"Admin {inst.name}",
+                                password_hash=hash_password("admin123"),
                                 user_role=UserRole.INSTITUTION_ADMIN,
                                 institution_id=inst.id,
                                 created_at=datetime.utcnow(),
                                 active=True
                             )
-                            admin.set_password('admin123')
                             db.session.add(admin)
                             users.append(admin)
 
-                    for dept in db.session.query(Department).all():
-                        inst_name = dept.branch.institution.name.lower().replace(" ", "_")
-                        branch_name = dept.branch.name.lower().replace(" ", "_")
-                        email = f'manager_{dept.name.lower().replace(" ", "_")}_{inst_name}_{branch_name}@queue.com'
-                        if not db.session.query(User).filter(User.email == email).first():
-                            manager = User(
+                    # Branch Admins
+                    for branch in Branch.query.all():
+                        email = f"branch_admin_{branch.name.lower().replace(' ', '_')}@queue.com"
+                        if not exists(User, email=email):
+                            admin = User(
                                 id=str(uuid.uuid4()),
                                 email=email,
-                                name=f'Gerente {dept.name} {dept.branch.name}',
-                                user_role=UserRole.DEPARTMENT_ADMIN,
-                                department_id=dept.id,
+                                name=f"Gerente {branch.name}",
+                                password_hash=hash_password("branch123"),
+                                user_role=UserRole.BRANCH_ADMIN,
+                                branch_id=branch.id,
+                                institution_id=branch.institution_id,
+                                created_at=datetime.utcnow(),
+                                active=True
+                            )
+                            db.session.add(admin)
+                            users.append(admin)
+
+                    # Attendants
+                    for dept in Department.query.all():
+                        email = f"attendant_{dept.name.lower().replace(' ', '_')}_{dept.branch.name.lower().replace(' ', '_')}@queue.com"
+                        if not exists(User, email=email):
+                            attendant = User(
+                                id=str(uuid.uuid4()),
+                                email=email,
+                                name=f"Atendente {dept.name}",
+                                password_hash=hash_password("attendant123"),
+                                user_role=UserRole.ATTENDANT,
+                                branch_id=dept.branch_id,
                                 institution_id=dept.branch.institution_id,
                                 created_at=datetime.utcnow(),
                                 active=True
                             )
-                            manager.set_password('manager123')
-                            db.session.add(manager)
-                            users.append(manager)
+                            db.session.add(attendant)
+                            users.append(attendant)
 
-                    user_count = db.session.query(User).filter(User.user_role == UserRole.USER).count()
-                    if user_count < 15:
-                        for i in range(15 - user_count):
-                            email = f'user_{i}@queue.com'
-                            if not db.session.query(User).filter(User.email == email).first():
-                                user = User(
-                                    id=str(uuid.uuid4()),
-                                    email=email,
-                                    name=f'Usuário {i+1}',
-                                    user_role=UserRole.USER,
-                                    created_at=datetime.utcnow(),
-                                    active=True
-                                )
-                                user.set_password('user123')
-                                db.session.add(user)
-                                users.append(user)
+                    # Regular Users
+                    user_count = User.query.filter_by(user_role=UserRole.USER).count()
+                    for i in range(15 - user_count):
+                        email = f"user_{i}@queue.com"
+                        if not exists(User, email=email):
+                            user = User(
+                                id=str(uuid.uuid4()),
+                                email=email,
+                                name=f"Usuário {i+1}",
+                                password_hash=hash_password("user123"),
+                                user_role=UserRole.USER,
+                                created_at=datetime.utcnow(),
+                                active=True
+                            )
+                            db.session.add(user)
+                            users.append(user)
 
                     db.session.flush()
                     app.logger.info("Usuários criados com sucesso.")
@@ -739,63 +1156,32 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_user_preferences():
                     now = datetime.utcnow()
-                    user_list = db.session.query(User).filter(User.user_role == UserRole.USER).limit(15).all()
-                    categories = db.session.query(ServiceCategory).all()
-                    institutions = db.session.query(Institution).all()
-                    
-                    ticket_counts = {}
-                    for user in user_list:
-                        ticket_counts[user.id] = {}
-                        counts = (
-                            db.session.query(Branch.institution_id, db.func.count(Ticket.id).label('ticket_count'))
-                            .join(Queue, Ticket.queue_id == Queue.id)
-                            .join(Department, Queue.department_id == Department.id)
-                            .join(Branch, Department.branch_id == Branch.id)
-                            .filter(Ticket.user_id == user.id)
-                            .group_by(Branch.institution_id)
-                            .all()
-                        )
-                        for inst_id, count in counts:
-                            ticket_counts[user.id][inst_id] = count
-
+                    user_list = User.query.filter_by(user_role=UserRole.USER).limit(15).all()
+                    institutions = Institution.query.all()
                     for i, user in enumerate(user_list):
                         for j in range(3):
-                            category = categories[(i + j) % len(categories)]
-                            institution = institutions[(i + j) % len(institutions)]
-                            neighborhood = neighborhoods[(i + j) % len(neighborhoods)]['name']
-                            is_client = ticket_counts[user.id].get(institution.id, 0) >= 3
-                            preference_score = min(ticket_counts[user.id].get(institution.id, 0) * 10, 50) if is_client else 0
-
-                            existing_pref = db.session.query(UserPreference).filter(
-                                UserPreference.user_id == user.id, 
-                                UserPreference.service_category_id == category.id,
-                                UserPreference.institution_id == institution.id
-                            ).first()
-                            if not existing_pref:
-                                preference = UserPreference(
+                            inst = institutions[(i + j) % len(institutions)]
+                            neighborhood = neighborhoods[(i + j) % len(neighborhoods)]["name"]
+                            is_client = (i + j) % 2 == 0
+                            is_favorite = is_client and (i + j) % 3 == 0
+                            if not exists(UserPreference, user_id=user.id, institution_id=inst.id):
+                                pref = UserPreference(
                                     id=str(uuid.uuid4()),
                                     user_id=user.id,
-                                    service_category_id=category.id,
-                                    institution_type_id=institution.institution_type_id,
-                                    institution_id=institution.id,
+                                    institution_id=inst.id,
+                                    institution_type_id=inst.institution_type_id,
                                     neighborhood=neighborhood,
-                                    preference_score=preference_score,
+                                    preference_score=50 if is_client else 0,
                                     is_client=is_client,
+                                    is_favorite=is_favorite,
+                                    visit_count=5 if is_client else 0,
+                                    last_visited=now if is_client else None,
                                     created_at=now,
                                     updated_at=now
                                 )
-                                db.session.add(preference)
-                                # Cachear preferência no Redis (opcional)
-                                try:
-                                    app.redis_client.setex(
-                                        f"user_preference:{user.id}:{institution.id}",
-                                        timedelta(days=7),
-                                        str(preference_score)
-                                    )
-                                except Exception as e:
-                                    app.logger.warning(f"Erro ao cachear preferência no Redis: {str(e)}")
+                                db.session.add(pref)
                     db.session.flush()
-                    app.logger.info("Preferências de usuário criadas com sucesso (3 por usuário, com is_client).")
+                    app.logger.info("Preferências de usuário criadas com sucesso.")
 
                 create_user_preferences()
 
@@ -804,29 +1190,23 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_tickets():
                     now = datetime.utcnow()
-                    for queue in db.session.query(Queue).all():
-                        existing_tickets = db.session.query(Ticket).filter(Ticket.queue_id == queue.id).count()
+                    for queue in Queue.query.all():
+                        existing_tickets = Ticket.query.filter_by(queue_id=queue.id).count()
                         if existing_tickets >= 50:
-                            app.logger.info(f"Fila {queue.service} já tem {existing_tickets} tickets, pulando.")
                             continue
-
-                        department = db.session.query(Department).filter(Department.id == queue.department_id).first()
-                        branch_id = department.branch_id
-                        branch_code = branch_id[-4:]
-
+                        branch = Branch.query.join(Department).filter(Department.id == queue.department_id).first()
+                        branch_code = branch.id[-4:]
                         for i in range(50 - existing_tickets):
-                            max_ticket_number = db.session.query(db.func.max(Ticket.ticket_number)).filter(Ticket.queue_id == queue.id).scalar() or 0
-                            ticket_number = max_ticket_number + i + 1
+                            ticket_number = (Ticket.query.filter_by(queue_id=queue.id).count() or 0) + i + 1
                             qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
-                            if db.session.query(Ticket).filter(Ticket.qr_code == qr_code).first():
-                                qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}-{int(now.timestamp())}"
-
-                            status = 'Atendido' if i % 2 == 0 else 'Pendente'
+                            if Ticket.query.filter_by(qr_code=qr_code).first():
+                                qr_code += f"-{int(now.timestamp())}"
+                            status = "Atendido" if i % 2 == 0 else "Pendente"
                             issued_at = now - timedelta(days=i % 14, hours=i % 24)
                             ticket = Ticket(
                                 id=str(uuid.uuid4()),
                                 queue_id=queue.id,
-                                user_id=db.session.query(User).filter(User.user_role == UserRole.USER).offset(i % 15).first().id,
+                                user_id=User.query.filter_by(user_role=UserRole.USER).offset(i % 15).first().id,
                                 ticket_number=ticket_number,
                                 qr_code=qr_code,
                                 priority=1 if i % 5 == 0 else 0,
@@ -834,72 +1214,115 @@ def populate_initial_data(app):
                                 status=status,
                                 issued_at=issued_at,
                                 expires_at=issued_at + timedelta(days=1),
-                                counter=(i % queue.num_counters) + 1 if status == 'Atendido' else None,
-                                service_time=300.0 + (i % 5) * 60 if status == 'Atendido' else 0.0,
+                                attended_at=issued_at + timedelta(minutes=10) if status == "Atendido" else None,
+                                counter=(i % queue.num_counters) + 1 if status == "Atendido" else None,
+                                service_time=300.0 + (i % 5) * 60 if status == "Atendido" else None,
                                 trade_available=False
                             )
                             db.session.add(ticket)
-                            # Cachear ticket no Redis (opcional)
-                            try:
-                                app.redis_client.setex(
-                                    f"ticket:{ticket.id}",
-                                    timedelta(days=1),
-                                    ticket.qr_code
-                                )
-                            except Exception as e:
-                                app.logger.warning(f"Erro ao cachear ticket no Redis: {str(e)}")
-                        queue.active_tickets = db.session.query(Ticket).filter(
-                            Ticket.queue_id == queue.id, Ticket.status == 'Pendente'
-                        ).count()
-                        app.logger.info(f"50 tickets criados para a fila {queue.service}.")
+                        queue.active_tickets = Ticket.query.filter_by(queue_id=queue.id, status="Pendente").count()
                     db.session.flush()
                     app.logger.info("Tickets criados com sucesso para todas as filas.")
 
                 create_tickets()
 
                 # --------------------------------------
+                # Criar Comportamentos de Usuário
+                # --------------------------------------
+                def create_user_behaviors():
+                    now = datetime.utcnow()
+                    user_list = User.query.filter_by(user_role=UserRole.USER).limit(15).all()
+                    for user in user_list:
+                        for inst in Institution.query.limit(3).all():
+                            service = InstitutionService.query.filter_by(institution_id=inst.id).first()
+                            branch = Branch.query.filter_by(institution_id=inst.id).first()
+                            if not exists(UserBehavior, user_id=user.id, institution_id=inst.id):
+                                ub = UserBehavior(
+                                    id=str(uuid.uuid4()),
+                                    user_id=user.id,
+                                    institution_id=inst.id,
+                                    service_id=service.id,
+                                    branch_id=branch.id,
+                                    action="issued_ticket",
+                                    timestamp=now - timedelta(days=1)
+                                )
+                                db.session.add(ub)
+                    db.session.flush()
+                    app.logger.info("Comportamentos de usuário criados com sucesso.")
+
+                create_user_behaviors()
+
+                # --------------------------------------
+                # Criar Localizações Alternativas
+                # --------------------------------------
+                def create_user_location_fallbacks():
+                    user_list = User.query.filter_by(user_role=UserRole.USER).limit(15).all()
+                    for i, user in enumerate(user_list):
+                        neighborhood = neighborhoods[i % len(neighborhoods)]["name"]
+                        if not exists(UserLocationFallback, user_id=user.id):
+                            ulf = UserLocationFallback(
+                                id=str(uuid.uuid4()),
+                                user_id=user.id,
+                                neighborhood=neighborhood,
+                                address=f"Rua Principal, {neighborhood}",
+                                updated_at=datetime.utcnow()
+                            )
+                            db.session.add(ulf)
+                    db.session.flush()
+                    app.logger.info("Localizações alternativas criadas com sucesso.")
+
+                create_user_location_fallbacks()
+
+                # --------------------------------------
                 # Criar Logs de Auditoria
                 # --------------------------------------
-               
                 def create_audit_logs():
                     now = datetime.utcnow()
-                    users = db.session.query(User).limit(20).all()
-                    actions = [
-                        'USER_LOGIN', 'TICKET_CREATED', 'TICKET_UPDATED', 'QUEUE_MODIFIED',
-                        'USER_PROFILE_UPDATED', 'DEPARTMENT_UPDATED'
-                    ]
-                    # Mapeamento de ações para tipos de recursos
-                    action_resource_types = {
-                        'USER_LOGIN': 'User',
-                        'TICKET_CREATED': 'Ticket',
-                        'TICKET_UPDATED': 'Ticket',
-                        'QUEUE_MODIFIED': 'Queue',
-                        'USER_PROFILE_UPDATED': 'User',
-                        'DEPARTMENT_UPDATED': 'Department'
-                    }
-                    existing_logs = db.session.query(AuditLog).count()
-                    if existing_logs >= 100:
-                        app.logger.info("Logs de auditoria já existem, pulando.")
-                        return
-
-                    for i in range(100 - existing_logs):
+                    users = User.query.limit(20).all()
+                    actions = ["USER_LOGIN", "TICKET_CREATED", "TICKET_UPDATED", "QUEUE_MODIFIED", "USER_PROFILE_UPDATED"]
+                    for i in range(100):
                         user = users[i % len(users)]
                         action = actions[i % len(actions)]
-                        resource_type = action_resource_types.get(action, 'Unknown')
-                        log = AuditLog(
-                            id=str(uuid.uuid4()),
-                            user_id=user.id,
-                            action=action,
-                            resource_type=resource_type,
-                            resource_id=str(uuid.uuid4()),  # Substitui entity_id
-                            details=f"{action} realizado por {user.email}",  # Substitui description
-                            timestamp=now - timedelta(days=i % 30, hours=i % 24)  # Substitui created_at
-                        )
-                        db.session.add(log)
+                        if not exists(AuditLog, user_id=user.id, action=action, timestamp=now - timedelta(days=i % 30)):
+                            al = AuditLog(
+                                id=str(uuid.uuid4()),
+                                user_id=user.id,
+                                action=action,
+                                resource_type=action.split("_")[0].lower(),
+                                resource_id=str(uuid.uuid4()),
+                                details=f"{action} por {user.email}",
+                                timestamp=now - timedelta(days=i % 30, hours=i % 24)
+                            )
+                            db.session.add(al)
                     db.session.flush()
                     app.logger.info("Logs de auditoria criados com sucesso.")
-                                
+
                 create_audit_logs()
+
+                # --------------------------------------
+                # Criar Logs de Notificação
+                # --------------------------------------
+                def create_notification_logs():
+                    now = datetime.utcnow()
+                    users = User.query.filter_by(user_role=UserRole.USER).limit(15).all()
+                    for user in users:
+                        for queue in Queue.query.limit(2).all():
+                            branch = Branch.query.join(Department).filter(Department.id == queue.department_id).first()
+                            if not exists(NotificationLog, user_id=user.id, queue_id=queue.id):
+                                nl = NotificationLog(
+                                    id=str(uuid.uuid4()),
+                                    user_id=user.id,
+                                    branch_id=branch.id,
+                                    queue_id=queue.id,
+                                    message=f"{branch.name}: Fila {queue.prefix} com 5 min de espera",
+                                    sent_at=now - timedelta(days=1),
+                                    status="Sent"
+                                )
+                                db.session.add(nl)
+                    db.session.flush()
+                    app.logger.info("Logs de notificação criados com sucesso.")
+
+                create_notification_logs()
 
                 # --------------------------------------
                 # Commit Final
@@ -907,11 +1330,7 @@ def populate_initial_data(app):
                 db.session.commit()
                 app.logger.info("População de dados iniciais concluída com sucesso.")
 
-        except SQLAlchemyError as e:
-            db.session.rollback()
-            app.logger.error(f"Erro ao popular dados iniciais: {str(e)}")
-            raise
         except Exception as e:
             db.session.rollback()
-            app.logger.error(f"Erro inesperado ao popular dados: {str(e)}")
+            app.logger.error(f"Erro ao popular dados iniciais: {str(e)}")
             raise
