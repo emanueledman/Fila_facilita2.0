@@ -5,7 +5,7 @@ import json
 import re
 from sqlalchemy import and_, func, or_
 from datetime import datetime, time, timedelta
-from app.models import Queue, QueueSchedule, Ticket, AuditLog, Department, Institution, User, UserPreference, Weekday, Branch, InstitutionService, ServiceCategory, ServiceTag, UserBehavior, UserLocationFallback, NotificationLog
+from app.models import Queue, QueueSchedule, Ticket, AuditLog, Department, Institution, User, UserPreference, Weekday, Branch, InstitutionService, ServiceCategory, ServiceTag, UserBehavior, UserLocationFallback, NotificationLog, BranchSchedule
 from app.ml_models import wait_time_predictor, service_recommendation_predictor, clustering_model, demand_model
 from app import db, redis_client, socketio
 from .utils.pdf_generator import generate_ticket_pdf
@@ -24,6 +24,34 @@ class QueueService:
     PRESENCE_PROXIMITY_THRESHOLD_KM = 0.5
 
     @staticmethod
+    def is_branch_open(branch, now=None):
+        """Verifica se a filial está aberta com base em BranchSchedule."""
+        try:
+            if not now:
+                now = datetime.utcnow()
+
+            weekday_str = now.strftime('%A').upper()
+            weekday_enum = Weekday[weekday_str]
+
+            # Consultar BranchSchedule para o dia atual
+            schedule = BranchSchedule.query.filter_by(
+                branch_id=branch.id,
+                weekday=weekday_enum
+            ).first()
+
+            if not schedule or schedule.is_closed:
+                logger.debug(f"Filial {branch.id} fechada: sem horário ou marcada como fechada para {weekday_str}")
+                return False
+
+            current_time = now.time()
+            is_open = schedule.open_time <= current_time <= schedule.end_time
+            logger.debug(f"Filial {branch.id} {'aberta' if is_open else 'fechada'}: {schedule.open_time} - {schedule.end_time}")
+            return is_open
+        except (KeyError, AttributeError) as e:
+            logger.error(f"Erro ao verificar filial {branch.id}: dia {weekday_str} inválido - {e}")
+            return False
+
+    @staticmethod
     def generate_qr_code():
         """Gera um QR code único para tickets."""
         qr_code = f"QR-{uuid.uuid4().hex[:8]}"
@@ -39,7 +67,7 @@ class QueueService:
                 logger.error(f"Dados incompletos para o ticket {ticket.id}")
                 raise ValueError("Fila, departamento, instituição ou serviço associado ao ticket não encontrado")
 
-            institution_type_name = queue.department.branch.institution.type.name if queue.department.branch.institution.type else "Desconhecido"
+            institution_type_name = queue.department.branch.institution.institution_type.name if queue.department.branch.institution.institution_type else "Desconhecido"
 
             receipt = (
                 "=== Comprovante Facilita 2.0 ===\n"
@@ -70,7 +98,7 @@ class QueueService:
                 logger.error(f"Dados incompletos para o ticket {ticket.id}")
                 raise ValueError("Fila, departamento, instituição ou serviço associado ao ticket não encontrado")
 
-            institution_type_name = ticket.queue.department.branch.institution.type.name if ticket.queue.department.branch.institution.type else "Desconhecido"
+            institution_type_name = ticket.queue.department.branch.institution.institution_type.name if ticket.queue.department.branch.institution.institution_type else "Desconhecido"
 
             if position is None:
                 position = max(0, ticket.ticket_number - ticket.queue.current_ticket)
@@ -160,6 +188,9 @@ class QueueService:
             for alt_queue in alt_queues:
                 if not alt_queue.department or not alt_queue.department.branch:
                     continue
+                if not QueueService.is_branch_open(alt_queue.department.branch):
+                    logger.debug(f"Filial {alt_queue.department.branch.id} fechada para queue_id={alt_queue.id}")
+                    continue
                 distance = QueueService.calculate_distance(user_lat, user_lon, alt_queue.department.branch) if user_lat and user_lon else None
                 if distance and distance > max_distance_km:
                     continue
@@ -213,6 +244,7 @@ class QueueService:
             else:
                 queue.avg_wait_time = 5.0
                 queue.last_service_time = None
+            queue.update_estimated_wait_time()  # Atualiza estimated_wait_time
             db.session.commit()
             logger.debug(f"Métricas atualizadas para queue_id={queue_id}: avg_wait_time={queue.avg_wait_time:.1f} min")
         except Exception as e:
@@ -268,6 +300,7 @@ class QueueService:
                 return queue.avg_wait_time or 5
 
             wait_time = round(wait_time, 1)
+            queue.update_estimated_wait_time()  # Atualiza estimated_wait_time
             logger.debug(f"Wait time calculado para ticket {ticket_number} na fila {queue_id}: {wait_time} min (preferência: {user_service_preference:.2f})")
             return wait_time
         except Exception as e:
@@ -303,6 +336,17 @@ class QueueService:
             if not user:
                 logger.warning(f"Usuário não encontrado para user_id={user_id}, ticket_id={ticket_id}")
                 return
+
+            # Verificar preferências de notificação
+            if user.notification_preferences:
+                max_wait_time = user.notification_preferences.get('max_wait_time')
+                if max_wait_time and isinstance(max_wait_time, (int, float)):
+                    wait_time_str = re.search(r'(\d+)\s*min', message)
+                    if wait_time_str:
+                        wait_time = int(wait_time_str.group(1))
+                        if wait_time > max_wait_time:
+                            logger.debug(f"Notificação suprimida para user_id={user_id}: wait_time={wait_time} excede max_wait_time={max_wait_time}")
+                            return
 
             if not fcm_token and user.fcm_token:
                 fcm_token = user.fcm_token
@@ -392,8 +436,12 @@ class QueueService:
 
     @staticmethod
     def add_to_queue(service, user_id, priority=0, is_physical=False, fcm_token=None, branch_id=None, user_lat=None, user_lon=None):
-        """Adiciona um ticket à fila, priorizando serviços semelhantes e preferências do usuário."""
+        """Adiciona um ticket à fila, priorizando serviços semelhantes e preferências do usuário. Senhas físicas só via totem."""
         try:
+            if is_physical:
+                logger.error("Senhas físicas só podem ser geradas via totem (use generate_physical_ticket_for_totem)")
+                raise ValueError("Senhas físicas só podem ser geradas no totem da filial")
+
             if not isinstance(service, str) or not service.strip():
                 logger.error("Serviço inválido")
                 raise ValueError("Serviço inválido")
@@ -445,7 +493,7 @@ class QueueService:
 
             if not QueueService.is_queue_open(queue):
                 logger.warning(f"Fila {queue.id} está fechada")
-                raise ValueError(f"A fila {queue.service.name} está fechada")
+                raise ValueError(f"A fila {queue.service.name} está fechada (fora do horário da filial ou da fila)")
 
             if queue.active_tickets >= queue.daily_limit:
                 alternatives = QueueService.suggest_alternative_queues(queue.id, user_id, user_lat, user_lon)
@@ -459,7 +507,7 @@ class QueueService:
 
             ticket_number = queue.active_tickets + 1
             qr_code = QueueService.generate_qr_code()
-            expires_at = datetime.utcnow() + timedelta(minutes=QueueService.DEFAULT_EXPIRATION_MINUTES) if is_physical else None
+            expires_at = None  # Senhas virtuais não expiram por padrão
             ticket = Ticket(
                 id=str(uuid.uuid4()),
                 queue_id=queue.id,
@@ -467,7 +515,7 @@ class QueueService:
                 ticket_number=ticket_number,
                 qr_code=qr_code,
                 priority=priority,
-                is_physical=is_physical,
+                is_physical=False,
                 expires_at=expires_at,
                 issued_at=datetime.utcnow(),
                 status='Pendente'
@@ -492,15 +540,10 @@ class QueueService:
                 logger.error(f"Relação ticket.queue não carregada para ticket {ticket.id}")
                 raise ValueError("Erro ao carregar a fila associada")
 
-            ticket.receipt_data = QueueService.generate_receipt(ticket) if is_physical else None
             wait_time = QueueService.calculate_wait_time(queue.id, ticket_number, priority, user_id, user_lat, user_lon)
             position = max(0, ticket.ticket_number - queue.current_ticket)
-            pdf_buffer = None
 
-            if is_physical:
-                pdf_buffer = QueueService.generate_pdf_ticket(ticket, position, wait_time)
-
-            message = f"Senha {queue.prefix}{ticket_number} emitida para {queue.service.name}. QR: {qr_code}. Espera: {wait_time if wait_time != 'N/A' else 'Aguardando início'} min"
+            message = f"Senha {queue.prefix}{ticket_number} emitida (virtual, via telefone) para {queue.service.name}. QR: {qr_code}. Espera: {wait_time if wait_time != 'N/A' else 'Aguardando início'} min"
             QueueService.send_notification(fcm_token, message, ticket.id, via_websocket=True, user_id=user_id)
 
             if socketio:
@@ -513,44 +556,79 @@ class QueueService:
 
             QueueService.update_queue_metrics(queue.id)
 
-            logger.info(f"Ticket {ticket.id} adicionado à fila {queue.service.name}")
-            return ticket, pdf_buffer
+            logger.info(f"Ticket {ticket.id} (virtual) adicionado à fila {queue.service.name}")
+            return ticket, None
         except Exception as e:
             db.session.rollback()
             logger.error(f"Erro ao adicionar ticket à fila {service}: {e}")
             raise
 
     @staticmethod
-    def generate_physical_ticket_for_totem(queue_id, client_ip):
-        """Gera um ticket físico via totem, sugerindo alternativas se necessário."""
+    def generate_physical_ticket_for_totem(service, branch_id, client_ip):
+        """Gera um ticket físico via totem para um usuário anônimo, baseado no serviço selecionado."""
         try:
-            if not isinstance(queue_id, str) or not queue_id:
-                logger.error(f"queue_id inválido: {queue_id}")
-                raise ValueError("queue_id inválido")
+            if not isinstance(service, str) or not service.strip():
+                logger.error("Serviço inválido")
+                raise ValueError("Serviço inválido")
+            if not isinstance(branch_id, str) or not branch_id:
+                logger.error(f"branch_id inválido: {branch_id}")
+                raise ValueError("branch_id inválido")
             if not isinstance(client_ip, str) or not client_ip:
                 logger.error("client_ip inválido")
                 raise ValueError("client_ip inválido")
 
-            queue = Queue.query.get(queue_id)
+            # Verificar se a filial existe
+            branch = Branch.query.get(branch_id)
+            if not branch:
+                logger.error(f"Filial não encontrada: branch_id={branch_id}")
+                raise ValueError("Filial não encontrada")
+
+            service_id = QueueService.get_service_id_from_query(service)
+            if not service_id:
+                logger.warning(f"Serviço '{service}' não encontrado, usando consulta textual")
+
+            # Verificar se o serviço está disponível na filial
+            query = Queue.query.join(Department).join(Branch).join(InstitutionService).filter(Branch.id == branch_id)
+            if service_id:
+                query = query.filter(Queue.service_id == service_id)
+            else:
+                search_terms = re.sub(r'[^\w\sÀ-ÿ]', '', service.lower()).split()
+                if search_terms:
+                    search_query = ' & '.join(search_terms)
+                    query = query.filter(
+                        or_(
+                            func.to_tsvector('portuguese', func.concat(
+                                InstitutionService.name, ' ', InstitutionService.description
+                            )).op('@@')(func.to_tsquery('portuguese', search_query)),
+                            Queue.id.in_(
+                                db.session.query(ServiceTag.queue_id).filter(
+                                    ServiceTag.tag.ilike(f'%{service.lower()}%')
+                                )
+                            )
+                        )
+                    )
+
+            queue = query.first()
             if not queue:
-                logger.error(f"Fila não encontrada para queue_id={queue_id}")
-                raise ValueError("Fila não encontrada")
+                logger.error(f"Fila não encontrada para serviço: {service}, branch_id: {branch_id}")
+                raise ValueError(f"O serviço '{service}' não está disponível nesta filial")
 
             if not QueueService.is_queue_open(queue):
-                logger.warning(f"Fila {queue_id} está fechada")
-                raise ValueError("Fila está fechada")
+                logger.warning(f"Fila {queue.id} está fechada")
+                raise ValueError("Fila está fechada (fora do horário da filial ou da fila)")
 
             if queue.active_tickets >= queue.daily_limit:
                 alternatives = QueueService.suggest_alternative_queues(queue.id)
                 alt_message = "Alternativas: " + ", ".join([f"{alt['service']} ({alt['branch']}, {alt['wait_time']})" for alt in alternatives])
-                logger.warning(f"Fila {queue_id} cheia")
+                logger.warning(f"Fila {queue.id} cheia")
                 raise ValueError(f"Limite diário atingido. {alt_message}")
 
-            cache_key = f'ticket_limit:{client_ip}:{queue.department.branch.institution_id}'
+            # Usar branch_id no cache_key para diferenciar totens em filiais diferentes
+            cache_key = f'ticket_limit:{client_ip}:{branch_id}'
             emission_count = redis_client.get(cache_key)
             emission_count = int(emission_count) if emission_count else 0
             if emission_count >= 5:
-                logger.warning(f"Limite de emissões atingido para IP {client_ip}")
+                logger.warning(f"Limite de emissões atingido para IP {client_ip} na filial {branch_id}")
                 raise ValueError("Limite de emissões por hora atingido")
             redis_client.setex(cache_key, 3600, emission_count + 1)
 
@@ -584,7 +662,7 @@ class QueueService:
                 action='GENERATE_USER_PHYSICAL_TICKET',
                 resource_type='Ticket',
                 resource_id=ticket.id,
-                details=f"Ticket {qr_code} gerado via totem para fila {queue.service.name} (IP: {client_ip})",
+                details=f"Ticket {qr_code} gerado via totem para fila {queue.service.name} (IP: {client_ip}, Filial: {branch_id})",
                 timestamp=datetime.utcnow()
             )
             db.session.add(audit_log)
@@ -600,7 +678,7 @@ class QueueService:
 
             QueueService.update_queue_metrics(queue.id)
 
-            logger.info(f"Ticket físico {ticket.id} gerado para fila {queue_id}")
+            logger.info(f"Ticket físico {ticket.id} gerado para serviço {service} na filial {branch_id}")
             return {
                 'ticket': {
                     'id': ticket.id,
@@ -615,7 +693,7 @@ class QueueService:
             }
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Erro ao gerar ticket físico para queue_id={queue_id}: {e}")
+            logger.error(f"Erro ao gerar ticket físico para serviço {service}, branch_id={branch_id}: {e}")
             raise
 
     @staticmethod
@@ -652,7 +730,7 @@ class QueueService:
 
             if not QueueService.is_queue_open(queue):
                 logger.warning(f"Fila {queue.id} está fechada")
-                raise ValueError("Fila está fechada")
+                raise ValueError("Fila está fechada (fora do horário da filial ou da fila)")
 
             if queue.active_tickets == 0:
                 logger.warning(f"Fila {queue.service.name} está vazia")
@@ -676,7 +754,10 @@ class QueueService:
             db.session.commit()
 
             message = f"Dirija-se ao guichê {next_ticket.counter:02d}! Senha {queue.prefix}{next_ticket.ticket_number} chamada para {queue.service.name}."
-            QueueService.send_notification(None, message, next_ticket.id, via_websocket=True, user_id=next_ticket.user_id)
+            if next_ticket.user_id != 'PRESENCIAL':
+                QueueService.send_notification(None, message, next_ticket.id, via_websocket=True, user_id=next_ticket.user_id)
+            else:
+                logger.debug(f"Notificação não enviada para ticket físico {next_ticket.id} (usuário PRESENCIAL)")
 
             if socketio:
                 emit('queue_update', {
@@ -736,7 +817,18 @@ class QueueService:
             service = InstitutionService.query.get(service_id) if service_id else None
             target_category_id = service.category_id if service else None
 
+            # Filtrar filiais próximas primeiro
+            nearby_branches = Branch.query.filter(
+                func.sqrt(
+                    func.pow(Branch.latitude - user_lat, 2) +
+                    func.pow(Branch.longitude - user_lon, 2)
+                ) < QueueService.PROXIMITY_THRESHOLD_KM / 111.0  # Aproximadamente 1 grau = 111 km
+            ).all()
+            branch_ids = [b.id for b in nearby_branches]
+
             query = Queue.query.join(Department).join(Branch).join(Institution).join(InstitutionService)
+            if branch_ids:
+                query = query.filter(Branch.id.in_(branch_ids))
             if institution_id:
                 if not isinstance(institution_id, str):
                     logger.error(f"institution_id inválido: {institution_id}")
@@ -843,14 +935,15 @@ class QueueService:
                     ticket.status = 'Cancelado'
                     ticket.queue.active_tickets -= 1
                     db.session.commit()
-                    QueueService.send_notification(
-                        None,
-                        f"Sua senha {ticket.queue.prefix}{ticket.ticket_number} foi cancelada (horário encerrado).",
-                        ticket.id,
-                        via_websocket=True,
-                        user_id=ticket.user_id
-                    )
-                    logger.info(f"Ticket {ticket.id} cancelado (horário encerrado)")
+                    if ticket.user_id != 'PRESENCIAL':
+                        QueueService.send_notification(
+                            None,
+                            f"Sua senha {ticket.queue.prefix}{ticket.ticket_number} foi cancelada (horário da filial ou fila encerrado).",
+                            ticket.id,
+                            via_websocket=True,
+                            user_id=ticket.user_id
+                        )
+                    logger.info(f"Ticket {ticket.id} cancelado (horário da filial ou fila encerrado)")
                     continue
 
                 wait_time = QueueService.calculate_wait_time(ticket.queue_id, ticket.ticket_number, ticket.priority, user_id=ticket.user_id)
@@ -897,13 +990,14 @@ class QueueService:
                     ticket.status = 'Cancelado'
                     ticket.queue.active_tickets -= 1
                     db.session.commit()
-                    QueueService.send_notification(
-                        None,
-                        f"Sua senha {ticket.queue.prefix}{ticket.ticket_number} foi cancelada (tempo esgotado).",
-                        ticket.id,
-                        via_websocket=True,
-                        user_id=ticket.user_id
-                    )
+                    if ticket.user_id != 'PRESENCIAL':
+                        QueueService.send_notification(
+                            None,
+                            f"Sua senha {ticket.queue.prefix}{ticket.ticket_number} foi cancelada (tempo esgotado).",
+                            ticket.id,
+                            via_websocket=True,
+                            user_id=ticket.user_id
+                        )
                     logger.info(f"Ticket {ticket.id} cancelado por falta de validação")
         except Exception as e:
             db.session.rollback()
@@ -920,9 +1014,9 @@ class QueueService:
                 raise ValueError("Ticket não encontrado")
             if ticket_from.user_id != user_from_id or not ticket_to.trade_available or \
                ticket_from.queue_id != ticket_to.queue_id or ticket_from.status != 'Pendente' or \
-               ticket_to.status != 'Pendente':
+               ticket_to.status != 'Pendente' or ticket_from.user_id == 'PRESENCIAL' or ticket_to.user_id == 'PRESENCIAL':
                 logger.warning(f"Tentativa inválida de troca entre {ticket_from_id} e {ticket_to_id}")
-                raise ValueError("Troca inválida")
+                raise ValueError("Troca inválida ou não permitida para senhas físicas")
 
             user_from, user_to = ticket_from.user_id, ticket_to.user_id
             num_from, num_to = ticket_from.ticket_number, ticket_to.ticket_number
@@ -969,7 +1063,7 @@ class QueueService:
                 raise ValueError("Senha inválida ou não chamada")
             if not QueueService.is_queue_open(ticket.queue):
                 logger.warning(f"Fila {ticket.queue.id} está fechada")
-                raise ValueError("Fila está fechada")
+                raise ValueError("Fila está fechada (fora do horário da filial ou da fila)")
 
             if user_lat and user_lon:
                 branch = ticket.queue.department.branch
@@ -1016,6 +1110,9 @@ class QueueService:
             if ticket.trade_available:
                 logger.warning(f"Ticket {ticket_id} já está oferecido")
                 raise ValueError("Esta senha já está oferecida.")
+            if ticket.user_id == 'PRESENCIAL':
+                logger.warning(f"Ticket físico {ticket_id} não pode ser oferecido para troca")
+                raise ValueError("Senhas físicas não podem ser oferecidas para troca")
 
             ticket.trade_available = True
             db.session.commit()
@@ -1033,7 +1130,8 @@ class QueueService:
                 Ticket.queue_id == ticket.queue_id,
                 Ticket.user_id != user_id,
                 Ticket.status == 'Pendente',
-                Ticket.trade_available == False
+                Ticket.trade_available == False,
+                Ticket.user_id != 'PRESENCIAL'
             ).order_by(Ticket.issued_at.asc()).limit(5).all()
 
             if socketio:
@@ -1068,6 +1166,9 @@ class QueueService:
             if ticket.status != 'Pendente':
                 logger.warning(f"Ticket {ticket_id} no estado {ticket.status} não pode ser cancelado")
                 raise ValueError("Esta senha não pode ser cancelada")
+            if ticket.user_id == 'PRESENCIAL':
+                logger.warning(f"Ticket físico {ticket_id} não pode ser cancelado remotamente")
+                raise ValueError("Senhas físicas não podem ser canceladas remotamente")
 
             ticket.status = 'Cancelado'
             ticket.queue.active_tickets -= 1
@@ -1086,7 +1187,7 @@ class QueueService:
                 emit('queue_update', {
                     'queue_id': ticket.queue_id,
                     'active_tickets': ticket.queue.active_tickets,
-                    'current_ticket': ticket.queue.current_ticket,
+                    'current_ticket': ticket.current_ticket,
                     'message': f"Senha {ticket.queue.prefix}{ticket.ticket_number} cancelada"
                 }, namespace='/', room=str(ticket.queue_id))
 
@@ -1101,11 +1202,18 @@ class QueueService:
 
     @staticmethod
     def is_queue_open(queue, now=None):
-        """Verifica se a fila está aberta com base no horário."""
+        """Verifica se a fila está aberta com base no horário da fila e da filial."""
         try:
             if not now:
                 now = datetime.utcnow()
 
+            # Verificar se a filial está aberta
+            branch = queue.department.branch if queue.department and queue.department.branch else None
+            if not branch or not QueueService.is_branch_open(branch, now):
+                logger.debug(f"Fila {queue.id} fechada: filial {branch.id if branch else 'N/A'} fora do horário")
+                return False
+
+            # Verificar horário da fila
             weekday_str = now.strftime('%A')
             weekday_enum = Weekday[weekday_str.upper()]
             schedule = QueueSchedule.query.filter_by(
@@ -1144,8 +1252,8 @@ class QueueService:
                     'id': institution.id,
                     'name': institution.name or "Desconhecida",
                     'type': {
-                        'id': institution.institution_type_id if institution.type else None,
-                        'name': institution.type.name if institution.type else "Desconhecido"
+                        'id': institution.institution_type_id if institution.institution_type else None,
+                        'name': institution.institution_type.name if institution.institution_type else "Desconhecido"
                     }
                 },
                 'branches': [],
@@ -1181,6 +1289,8 @@ class QueueService:
                     })
 
             for branch in branches:
+                if not QueueService.is_branch_open(branch):
+                    logger.debug(f"Filial {branch.id} fechada, mas incluída no dashboard")
                 departments = Department.query.filter_by(branch_id=branch.id).all()
                 department_ids = [d.id for d in departments]
                 queues = Queue.query.filter(Queue.department_id.in_(department_ids)).all()

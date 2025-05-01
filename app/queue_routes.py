@@ -1640,7 +1640,6 @@ def init_queue_routes(app):
             logger.error(f"Erro ao obter logs de auditoria para queue_id={queue_id}: {str(e)}")
             return jsonify({'error': 'Erro ao obter logs de auditoria'}), 500
 
-    # Rotas
     @app.route('/api/queues/<queue_id>/ticket', methods=['POST'])
     @require_auth
     def generate_ticket(queue_id):
@@ -1714,32 +1713,9 @@ def init_queue_routes(app):
                 user_lon=user_lon
             )
             db.session.commit()
-
-            # Atualizar comportamento do usuário
-            behavior = UserBehavior(
-                user_id=user_id,
-                action='generate_ticket',
-                queue_id=queue_id,
-                service_id=queue.service_id,
-                institution_id=branch.institution_id,
-                timestamp=datetime.utcnow()
-            )
-            db.session.add(behavior)
-
-            # Registrar auditoria
-            AuditLog.create(
-                user_id=user_id,
-                action="generate_ticket",
-                resource_type="ticket",
-                resource_id=ticket.id,
-                details=f"Ticket {ticket.queue.prefix}{ticket.ticket_number} gerado para queue_id={queue_id}"
-            )
-            db.session.commit()
-
-            # Enviar notificações
             emit_ticket_update(ticket)
             emit_dashboard_update(
-                institution_id=branch.institution_id,
+                institution_id=queue.department.branch.institution_id,
                 queue_id=queue_id,
                 event_type='ticket_issued',
                 data={
@@ -1748,20 +1724,18 @@ def init_queue_routes(app):
                 }
             )
 
-            # Invalidar cache
-            if redis_client:
-                try:
-                    redis_client.delete(f"cache:queue_stats:{queue_id}")
-                    redis_client.delete(f"cache:queue_metrics:{queue_id}")
-                    redis_client.delete(f"cache:predict_wait_time:{queue_id}")
-                    logger.info(f"Cache invalidado para queue_id={queue_id}")
-                except Exception as e:
-                    logger.warning(f"Erro ao invalidar cache Redis: {e}")
+            AuditLog.create(
+                user_id=user_id,
+                action="generate_ticket",
+                resource_type="ticket",
+                resource_id=ticket.id,
+                details=f"Ticket {ticket.queue.prefix}{ticket.ticket_number} gerado na fila {queue_id}"
+            )
 
             response = {
                 'ticket_id': ticket.id,
-                'queue_id': ticket.queue_id,
                 'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
+                'queue_id': ticket.queue_id,
                 'status': ticket.status,
                 'priority': ticket.priority,
                 'issued_at': ticket.issued_at.isoformat(),
@@ -1769,159 +1743,268 @@ def init_queue_routes(app):
                 'estimated_wait_time': f"{int(queue.estimated_wait_time)} minutos" if queue.estimated_wait_time else "N/A"
             }
 
-            logger.info(f"Ticket gerado: {ticket.queue.prefix}{ticket.ticket_number} para user_id={user_id}")
+            logger.info(f"Ticket gerado: {ticket.queue.prefix}{ticket.ticket_number} (ticket_id={ticket.id}, user_id={user_id})")
             return jsonify(response), 201
-
         except ValueError as e:
             db.session.rollback()
-            logger.error(f"Erro ao gerar ticket para queue_id={queue_id}: {str(e)}")
+            logger.error(f"Erro ao gerar ticket para queue_id={queue_id}, user_id={user_id}: {str(e)}")
             return jsonify({'error': str(e)}), 400
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Erro inesperado ao gerar ticket para queue_id={queue_id}: {str(e)}")
+            logger.error(f"Erro inesperado ao gerar ticket para queue_id={queue_id}, user_id={user_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao gerar ticket'}), 500
-
-    @app.route('/api/tickets/trade', methods=['POST'])
+        
+    @app.route('/api/tickets/<ticket_id>/trade', methods=['POST'])
     @require_auth
-    def trade_ticket():
-        """Permite a troca de tickets entre dois usuários."""
+    def trade_ticket(ticket_id):
+        """Realiza a troca de um ticket com outro usuário."""
         user_id = request.user_id
         data = request.get_json() or {}
-        user_ticket_id = data.get('user_ticket_id')
         target_ticket_id = data.get('target_ticket_id')
 
-        if not user_ticket_id or not target_ticket_id:
-            logger.warning(f"Dados insuficientes para troca de tickets: user_id={user_id}")
-            return jsonify({'error': 'user_ticket_id e target_ticket_id são obrigatórios'}), 400
-
-        user_ticket = Ticket.query.get(user_ticket_id)
-        target_ticket = Ticket.query.get(target_ticket_id)
-
-        if not user_ticket or not target_ticket:
-            logger.warning(f"Ticket não encontrado: user_ticket_id={user_ticket_id}, target_ticket_id={target_ticket_id}")
-            return jsonify({'error': 'Um ou ambos os tickets não foram encontrados'}), 404
-
-        if user_ticket.user_id != user_id:
-            logger.warning(f"Tentativa não autorizada de trocar ticket {user_ticket_id} por user_id={user_id}")
-            return jsonify({'error': 'Você não possui permissão para este ticket'}), 403
-
-        if user_ticket.queue_id != target_ticket.queue_id:
-            logger.warning(f"Tickets de filas diferentes: user_ticket_id={user_ticket_id}, target_ticket_id={target_ticket_id}")
-            return jsonify({'error': 'Os tickets devem ser da mesma fila'}), 400
-
-        if user_ticket.status != 'Pendente' or target_ticket.status != 'Pendente':
-            logger.warning(f"Tickets não estão pendentes: user_ticket_id={user_ticket_id}, target_ticket_id={target_ticket_id}")
-            return jsonify({'error': 'Ambos os tickets devem estar pendentes'}), 400
-
-        if not target_ticket.trade_available:
-            logger.warning(f"Ticket alvo não disponível para troca: target_ticket_id={target_ticket_id}")
-            return jsonify({'error': 'O ticket alvo não está disponível para troca'}), 400
+        if not target_ticket_id:
+            logger.warning(f"target_ticket_id não fornecido para troca por user_id={user_id}")
+            return jsonify({'error': 'target_ticket_id é obrigatório'}), 400
 
         try:
-            # Trocar os números dos tickets
-            user_ticket_number = user_ticket.ticket_number
-            target_ticket_number = target_ticket.ticket_number
+            ticket = Ticket.query.get(ticket_id)
+            target_ticket = Ticket.query.get(target_ticket_id)
 
-            user_ticket.ticket_number = target_ticket_number
-            target_ticket.ticket_number = user_ticket_number
+            if not ticket or not target_ticket:
+                logger.warning(f"Ticket não encontrado: ticket_id={ticket_id}, target_ticket_id={target_ticket_id}")
+                return jsonify({'error': 'Ticket não encontrado'}), 404
 
-            # Atualizar prioridades, se necessário
-            user_priority = user_ticket.priority
-            target_priority = target_ticket.priority
-            user_ticket.priority = target_priority
-            target_ticket.priority = user_priority
+            if ticket.user_id != user_id:
+                logger.warning(f"Usuário {user_id} não é dono do ticket {ticket_id}")
+                return jsonify({'error': 'Você não é o dono deste ticket'}), 403
+
+            if not target_ticket.trade_available:
+                logger.warning(f"Ticket {target_ticket_id} não está disponível para troca")
+                return jsonify({'error': 'O ticket solicitado não está disponível para troca'}), 400
+
+            if ticket.queue_id != target_ticket.queue_id:
+                logger.warning(f"Tickets de filas diferentes: ticket_id={ticket_id}, target_ticket_id={target_ticket_id}")
+                return jsonify({'error': 'Os tickets devem pertencer à mesma fila'}), 400
+
+            if ticket.status != 'Pendente' or target_ticket.status != 'Pendente':
+                logger.warning(f"Tickets não estão pendentes: ticket_id={ticket_id}, target_ticket_id={target_ticket_id}")
+                return jsonify({'error': 'Ambos os tickets devem estar pendentes'}), 400
+
+            ticket.user_id, target_ticket.user_id = target_ticket.user_id, ticket.user_id
+            ticket.updated_at = datetime.utcnow()
+            target_ticket.updated_at = datetime.utcnow()
 
             db.session.commit()
 
-            # Registrar auditoria para ambos os tickets
+            emit_ticket_update(ticket)
+            emit_ticket_update(target_ticket)
+
             AuditLog.create(
                 user_id=user_id,
                 action="trade_ticket",
                 resource_type="ticket",
-                resource_id=user_ticket_id,
-                details=f"Ticket {user_ticket.queue.prefix}{user_ticket.ticket_number} trocado com ticket {target_ticket.queue.prefix}{target_ticket.ticket_number}"
-            )
-            AuditLog.create(
-                user_id=target_ticket.user_id,
-                action="trade_ticket",
-                resource_type="ticket",
-                resource_id=target_ticket_id,
-                details=f"Ticket {target_ticket.queue.prefix}{target_ticket.ticket_number} trocado com ticket {user_ticket.queue.prefix}{user_ticket.ticket_number}"
+                resource_id=ticket_id,
+                details=f"Ticket {ticket.queue.prefix}{ticket.ticket_number} trocado com {target_ticket.queue.prefix}{target_ticket.ticket_number}"
             )
 
-            # Enviar notificações
-            emit_ticket_update(user_ticket)
-            emit_ticket_update(target_ticket)
-            QueueService.send_notification(
-                fcm_token=User.query.get(user_id).fcm_token,
-                message=f"Ticket {user_ticket.queue.prefix}{user_ticket.ticket_number} trocado com sucesso",
-                ticket_id=user_ticket.id,
-                via_websocket=True,
-                user_id=user_id
-            )
-            QueueService.send_notification(
-                fcm_token=User.query.get(target_ticket.user_id).fcm_token,
-                message=f"Ticket {target_ticket.queue.prefix}{target_ticket.ticket_number} trocado com sucesso",
-                ticket_id=target_ticket.id,
-                via_websocket=True,
-                user_id=target_ticket.user_id
-            )
-
-            # Invalidar cache
-            if redis_client:
-                try:
-                    redis_client.delete(f"cache:queue_stats:{user_ticket.queue_id}")
-                    redis_client.delete(f"cache:queue_metrics:{user_ticket.queue_id}")
-                    redis_client.delete(f"cache:predict_wait_time:{user_ticket.queue_id}")
-                    logger.info(f"Cache invalidado para queue_id={user_ticket.queue_id}")
-                except Exception as e:
-                    logger.warning(f"Erro ao invalidar cache Redis: {e}")
-
-            logger.info(f"Tickets trocados: user_ticket_id={user_ticket_id}, target_ticket_id={target_ticket_id}")
+            logger.info(f"Ticket trocado: {ticket.queue.prefix}{ticket.ticket_number} com {target_ticket.queue.prefix}{target_ticket.ticket_number}")
             return jsonify({
-                'message': 'Tickets trocados com sucesso',
-                'user_ticket': {
-                    'id': user_ticket.id,
-                    'ticket_number': f"{user_ticket.queue.prefix}{user_ticket.ticket_number}",
-                    'priority': user_ticket.priority
-                },
-                'target_ticket': {
-                    'id': target_ticket.id,
-                    'ticket_number': f"{target_ticket.queue.prefix}{target_ticket.ticket_number}",
-                    'priority': target_ticket.priority
-                }
+                'message': 'Troca realizada com sucesso',
+                'ticket_id': ticket.id,
+                'target_ticket_id': target_ticket.id
             }), 200
-
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Erro ao trocar tickets: user_ticket_id={user_ticket_id}, target_ticket_id={target_ticket_id}: {str(e)}")
-            return jsonify({'error': 'Erro ao trocar tickets'}), 500
+            logger.error(f"Erro ao trocar ticket {ticket_id} com {target_ticket_id}: {str(e)}")
+            return jsonify({'error': 'Erro ao realizar troca de ticket'}), 500
 
-    @app.route('/api/queues/<queue_id>', methods=['GET'])
-    def get_queue_details(queue_id):
-        """Retorna detalhes completos de uma fila."""
+    @app.route('/api/tickets/<ticket_id>/trade_available', methods=['PATCH'])
+    @require_auth
+    def toggle_trade_availability(ticket_id):
+        """Alterna a disponibilidade de um ticket para troca."""
+        user_id = request.user_id
+        try:
+            ticket = Ticket.query.get(ticket_id)
+            if not ticket:
+                logger.warning(f"Ticket não encontrado: ticket_id={ticket_id}")
+                return jsonify({'error': 'Ticket não encontrado'}), 404
+
+            if ticket.user_id != user_id:
+                logger.warning(f"Usuário {user_id} não é dono do ticket {ticket_id}")
+                return jsonify({'error': 'Você não é o dono deste ticket'}), 403
+
+            if ticket.status != 'Pendente':
+                logger.warning(f"Ticket {ticket_id} não está pendente")
+                return jsonify({'error': 'O ticket deve estar pendente para alterar a disponibilidade de troca'}), 400
+
+            ticket.trade_available = not ticket.trade_available
+            db.session.commit()
+
+            emit_ticket_update(ticket)
+            AuditLog.create(
+                user_id=user_id,
+                action="toggle_trade_availability",
+                resource_type="ticket",
+                resource_id=ticket_id,
+                details=f"Disponibilidade de troca do ticket {ticket.queue.prefix}{ticket.ticket_number} alterada para {ticket.trade_available}"
+            )
+
+            logger.info(f"Disponibilidade de troca alterada para ticket_id={ticket_id}: {ticket.trade_available}")
+            return jsonify({
+                'message': f"Disponibilidade de troca {'ativada' if ticket.trade_available else 'desativada'}",
+                'ticket_id': ticket.id,
+                'trade_available': ticket.trade_available
+            }), 200
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao alterar disponibilidade de troca do ticket {ticket_id}: {str(e)}")
+            return jsonify({'error': 'Erro ao alterar disponibilidade de troca'}), 500
+
+    @app.route('/api/queues/<queue_id>/call', methods=['POST'])
+    @require_auth
+    def call_next_ticket(queue_id):
+        """Chama o próximo ticket de uma fila."""
+        user_id = request.user_id
+        user = User.query.get(user_id)
+        if not user or user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+            logger.warning(f"Tentativa não autorizada de chamar ticket por user_id={user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores'}), 403
+
         queue = Queue.query.get(queue_id)
         if not queue:
             logger.warning(f"Fila não encontrada: queue_id={queue_id}")
             return jsonify({'error': 'Fila não encontrada'}), 404
 
-        user_lat = request.args.get('latitude')
-        user_lon = request.args.get('longitude')
+        if user.user_role == UserRole.BRANCH_ADMIN and queue.department.branch_id != user.branch_id:
+            logger.warning(f"Usuário {user_id} não tem permissão para chamar ticket na fila {queue_id}")
+            return jsonify({'error': 'Sem permissão para esta fila'}), 403
+        if user.user_role == UserRole.INSTITUTION_ADMIN and queue.department.branch.institution_id != user.institution_id:
+            logger.warning(f"Usuário {user_id} não tem permissão para chamar ticket na instituição {queue.department.branch.institution_id}")
+            return jsonify({'error': 'Sem permissão para esta instituição'}), 403
 
-        if user_lat:
-            try:
-                user_lat = float(user_lat)
-            except (ValueError, TypeError):
-                logger.warning(f"Latitude inválida: {user_lat}")
-                return jsonify({'error': 'Latitude deve ser um número'}), 400
-        if user_lon:
-            try:
-                user_lon = float(user_lon)
-            except (ValueError, TypeError):
-                logger.warning(f"Longitude inválida: {user_lon}")
-                return jsonify({'error': 'Longitude deve ser um número'}), 400
+        data = request.get_json() or {}
+        counter = data.get('counter')
 
-        cache_key = f"cache:queue_details:{queue_id}:{user_lat}:{user_lon}"
+        if not counter:
+            logger.warning("counter é obrigatório")
+            return jsonify({'error': 'counter é obrigatório'}), 400
+
+        try:
+            ticket = QueueService.call_next_ticket(queue_id, counter)
+            if not ticket:
+                logger.info(f"Nenhum ticket pendente para chamar na fila {queue_id}")
+                return jsonify({'message': 'Nenhum ticket pendente para chamar'}), 200
+
+            emit_ticket_update(ticket)
+            emit_dashboard_update(
+                institution_id=queue.department.branch.institution_id,
+                queue_id=queue_id,
+                event_type='ticket_called',
+                data={
+                    'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
+                    'counter': counter,
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+            )
+
+            AuditLog.create(
+                user_id=user_id,
+                action="call_ticket",
+                resource_type="ticket",
+                resource_id=ticket.id,
+                details=f"Ticket {ticket.queue.prefix}{ticket.ticket_number} chamado no guichê {counter}"
+            )
+
+            logger.info(f"Ticket chamado: {ticket.queue.prefix}{ticket.ticket_number} no guichê {counter} (queue_id={queue_id})")
+            return jsonify({
+                'message': 'Ticket chamado com sucesso',
+                'ticket_id': ticket.id,
+                'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
+                'counter': counter
+            }), 200
+        except ValueError as e:
+            logger.error(f"Erro ao chamar próximo ticket na fila {queue_id}: {str(e)}")
+            return jsonify({'error': str(e)}), 400
+        except Exception as e:
+            logger.error(f"Erro inesperado ao chamar próximo ticket na fila {queue_id}: {str(e)}")
+            return jsonify({'error': 'Erro interno ao chamar ticket'}), 500
+
+    @app.route('/api/tickets/<ticket_id>/complete', methods=['POST'])
+    @require_auth
+    def complete_ticket(ticket_id):
+        """Marca um ticket como atendido."""
+        user_id = request.user_id
+        user = User.query.get(user_id)
+        if not user or user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+            logger.warning(f"Tentativa não autorizada de completar ticket por user_id={user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores'}), 403
+
+        ticket = Ticket.query.get(ticket_id)
+        if not ticket:
+            logger.warning(f"Ticket não encontrado: ticket_id={ticket_id}")
+            return jsonify({'error': 'Ticket não encontrado'}), 404
+
+        queue = ticket.queue
+        if user.user_role == UserRole.BRANCH_ADMIN and queue.department.branch_id != user.branch_id:
+            logger.warning(f"Usuário {user_id} não tem permissão para completar ticket na fila {queue.id}")
+            return jsonify({'error': 'Sem permissão para esta fila'}), 403
+        if user.user_role == UserRole.INSTITUTION_ADMIN and queue.department.branch.institution_id != user.institution_id:
+            logger.warning(f"Usuário {user_id} não tem permissão para completar ticket na instituição {queue.department.branch.institution_id}")
+            return jsonify({'error': 'Sem permissão para esta instituição'}), 403
+
+        try:
+            ticket = QueueService.complete_ticket(ticket_id)
+            emit_ticket_update(ticket)
+            emit_dashboard_update(
+                institution_id=queue.department.branch.institution_id,
+                queue_id=queue.id,
+                event_type='ticket_completed',
+                data={
+                    'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+            )
+
+            AuditLog.create(
+                user_id=user_id,
+                action="complete_ticket",
+                resource_type="ticket",
+                resource_id=ticket_id,
+                details=f"Ticket {ticket.queue.prefix}{ticket.ticket_number} marcado como atendido"
+            )
+
+            logger.info(f"Ticket completado: {ticket.queue.prefix}{ticket.ticket_number} (ticket_id={ticket_id})")
+            return jsonify({
+                'message': 'Ticket marcado como atendido',
+                'ticket_id': ticket.id,
+                'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}"
+            }), 200
+        except ValueError as e:
+            logger.error(f"Erro ao completar ticket {ticket_id}: {str(e)}")
+            return jsonify({'error': str(e)}), 400
+        except Exception as e:
+            logger.error(f"Erro inesperado ao completar ticket {ticket_id}: {str(e)}")
+            return jsonify({'error': 'Erro interno ao completar ticket'}), 500
+
+    @app.route('/api/user/tickets', methods=['GET'])
+    @require_auth
+    def get_user_tickets():
+        """Retorna os tickets de um usuário."""
+        user_id = request.user_id
+        status = request.args.get('status')
+        page = request.args.get('page', '1')
+        per_page = request.args.get('per_page', '20')
+
+        try:
+            page = int(page)
+            per_page = int(per_page)
+            if page < 1 or per_page < 1:
+                raise ValueError
+        except (ValueError, TypeError):
+            logger.warning(f"page ou per_page inválidos: page={page}, per_page={per_page}")
+            return jsonify({'error': 'page e per_page devem ser números positivos'}), 400
+
+        cache_key = f"cache:user_tickets:{user_id}:{status}:{page}:{per_page}"
         if redis_client:
             try:
                 cached = redis_client.get(cache_key)
@@ -1932,46 +2015,117 @@ def init_queue_routes(app):
                 logger.warning(f"Erro ao acessar cache Redis: {e}")
 
         try:
-            branch = queue.department.branch
-            distance = QueueService.calculate_distance(user_lat, user_lon, branch) if user_lat and user_lon else None
-            schedules = BranchSchedule.query.filter_by(branch_id=branch.id).all()
+            query = Ticket.query.filter_by(user_id=user_id)
+            if status:
+                query = query.filter_by(status=status)
+
+            tickets = query.paginate(page=page, per_page=per_page, error_out=False)
+            result = [
+                {
+                    'id': t.id,
+                    'ticket_number': f"{t.queue.prefix}{t.ticket_number}",
+                    'queue_id': t.queue_id,
+                    'service': t.queue.service.name,
+                    'branch': t.queue.department.branch.name,
+                    'institution': t.queue.department.branch.institution.name,
+                    'status': t.status,
+                    'priority': t.priority,
+                    'is_physical': t.is_physical,
+                    'trade_available': t.trade_available,
+                    'issued_at': t.issued_at.isoformat(),
+                    'expires_at': t.expires_at.isoformat() if t.expires_at else None,
+                    'counter': t.counter,
+                    'estimated_wait_time': f"{int(t.queue.estimated_wait_time)} minutos" if t.queue.estimated_wait_time else "N/A"
+                } for t in tickets.items
+            ]
 
             response = {
-                'queue_id': queue.id,
-                'prefix': queue.prefix,
-                'service': {
-                    'id': queue.service.id,
-                    'name': queue.service.name,
-                    'category': {
-                        'id': queue.service.category.id,
-                        'name': queue.service.category.name
-                    } if queue.service.category else None
+                'tickets': result,
+                'pagination': {
+                    'page': page,
+                    'per_page': per_page,
+                    'total_results': tickets.total,
+                    'total_pages': tickets.pages
+                }
+            }
+
+            if redis_client:
+                try:
+                    redis_client.setex(cache_key, 300, json.dumps(response, default=str))
+                    logger.info(f"Cache armazenado para {cache_key}")
+                except Exception as e:
+                    logger.warning(f"Erro ao salvar cache Redis: {e}")
+
+            logger.info(f"Tickets retornados para user_id={user_id}: {len(result)} tickets")
+            return jsonify(response), 200
+        except Exception as e:
+            logger.error(f"Erro ao obter tickets do usuário {user_id}: {str(e)}")
+            return jsonify({'error': 'Erro ao obter tickets'}), 500
+
+    @app.route('/api/institutions/<institution_id>/dashboard', methods=['GET'])
+    @require_auth
+    def institution_dashboard(institution_id):
+        """Retorna dados para o painel de uma instituição."""
+        user_id = request.user_id
+        user = User.query.get(user_id)
+        if not user or user.user_role not in [UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+            logger.warning(f"Tentativa não autorizada de acessar painel por user_id={user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores'}), 403
+
+        institution = Institution.query.get(institution_id)
+        if not institution:
+            logger.warning(f"Instituição não encontrada: institution_id={institution_id}")
+            return jsonify({'error': 'Instituição não encontrada'}), 404
+
+        if user.user_role == UserRole.INSTITUTION_ADMIN and institution.id != user.institution_id:
+            logger.warning(f"Usuário {user_id} não tem permissão para acessar painel da instituição {institution_id}")
+            return jsonify({'error': 'Sem permissão para esta instituição'}), 403
+
+        cache_key = f"cache:institution_dashboard:{institution_id}"
+        if redis_client:
+            try:
+                cached = redis_client.get(cache_key)
+                if cached:
+                    logger.info(f"Cache hit para {cache_key}")
+                    return jsonify(json.loads(cached)), 200
+            except Exception as e:
+                logger.warning(f"Erro ao acessar cache Redis: {e}")
+
+        try:
+            branches = Branch.query.filter_by(institution_id=institution_id).all()
+            branch_ids = [b.id for b in branches]
+            department_ids = [d.id for d in Department.query.filter(Department.branch_id.in_(branch_ids)).all()]
+            queues = Queue.query.filter(Queue.department_id.in_(department_ids)).all()
+
+            total_tickets = sum(q.active_tickets for q in queues)
+            avg_wait_time = sum(q.avg_wait_time or 0 for q in queues) / len(queues) if queues else 0
+            quality_scores = [service_recommendation_predictor.predict(q) for q in queues]
+            avg_quality_score = sum(quality_scores) / len(quality_scores) if quality_scores else 0
+
+            response = {
+                'institution_id': institution_id,
+                'name': institution.name,
+                'stats': {
+                    'total_branches': len(branches),
+                    'total_queues': len(queues),
+                    'total_tickets': total_tickets,
+                    'avg_wait_time': f"{int(avg_wait_time)} minutos" if avg_wait_time else "N/A",
+                    'avg_quality_score': float(avg_quality_score),
+                    'predicted_demand': float(demand_model.predict_institution(institution_id, hours_ahead=1))
                 },
-                'branch': {
-                    'id': branch.id,
-                    'name': branch.name,
-                    'neighborhood': branch.neighborhood,
-                    'latitude': float(branch.latitude) if branch.latitude else None,
-                    'longitude': float(branch.longitude) if branch.longitude else None,
-                    'distance_km': float(distance) if distance is not None else 'Desconhecida'
-                },
-                'institution': {
-                    'id': branch.institution.id,
-                    'name': branch.institution.name
-                },
-                'active_tickets': queue.active_tickets,
-                'estimated_wait_time': f"{int(queue.estimated_wait_time)} minutos" if queue.estimated_wait_time else "N/A",
-                'avg_service_time': f"{int(queue.last_service_time)} minutos" if queue.last_service_time else "N/A",
-                'current_ticket': f"{queue.prefix}{queue.current_ticket}" if queue.current_ticket else "N/A",
-                'predicted_demand': float(demand_model.predict(queue_id, hours_ahead=1)),
-                'quality_score': float(service_recommendation_predictor.predict(queue)),
-                'schedules': [
+                'branches': [
                     {
-                        'weekday': s.weekday.value,
-                        'open_time': s.open_time.strftime('%H:%M') if s.open_time else None,
-                        'end_time': s.end_time.strftime('%H:%M') if s.end_time else None,
-                        'is_closed': s.is_closed
-                    } for s in schedules
+                        'id': b.id,
+                        'name': b.name,
+                        'queues': [
+                            {
+                                'id': q.id,
+                                'service': q.service.name,
+                                'active_tickets': q.active_tickets,
+                                'estimated_wait_time': f"{int(q.estimated_wait_time)} minutos" if q.estimated_wait_time else "N/A"
+                            } for q in queues if q.department.branch_id == b.id
+                        ]
+                    } for b in branches
                 ]
             }
 
@@ -1982,114 +2136,79 @@ def init_queue_routes(app):
                 except Exception as e:
                     logger.warning(f"Erro ao salvar cache Redis: {e}")
 
-            logger.info(f"Detalhes da fila retornados para queue_id={queue_id}")
+            logger.info(f"Dados do painel retornados para institution_id={institution_id}")
             return jsonify(response), 200
-
         except Exception as e:
-            logger.error(f"Erro ao obter detalhes da fila {queue_id}: {str(e)}")
-            return jsonify({'error': 'Erro ao obter detalhes da fila'}), 500
+            logger.error(f"Erro ao obter dados do painel para institution_id={institution_id}: {str(e)}")
+            return jsonify({'error': 'Erro ao obter dados do painel'}), 500
 
-    @app.route('/api/branches/<branch_id>/queues', methods=['GET'])
-    def list_queues_by_branch(branch_id):
-        """Lista todas as filas de uma filial."""
-        branch = Branch.query.get(branch_id)
-        if not branch:
-            logger.warning(f"Filial não encontrada: branch_id={branch_id}")
-            return jsonify({'error': 'Filial não encontrada'}), 404
-
-        user_lat = request.args.get('latitude')
-        user_lon = request.args.get('longitude')
-        page = request.args.get('page', '1')
-        per_page = request.args.get('per_page', '20')
-
-        if user_lat:
-            try:
-                user_lat = float(user_lat)
-            except (ValueError, TypeError):
-                logger.warning(f"Latitude inválida: {user_lat}")
-                return jsonify({'error': 'Latitude deve ser um número'}), 400
-        if user_lon:
-            try:
-                user_lon = float(user_lon)
-            except (ValueError, TypeError):
-                logger.warning(f"Longitude inválida: {user_lon}")
-                return jsonify({'error': 'Longitude deve ser um  Longitude deve ser um número'}), 400
+    @socketio.on('connect', namespace='/')
+    def handle_connect():
+        """Gerencia conexão WebSocket."""
         try:
-            page = int(page)
-            per_page = int(per_page)
-            if page < 1 or per_page < 1:
-                raise ValueError
-        except (ValueError, TypeError):
-            logger.warning(f"page ou per_page inválidos: page={page}, per_page={per_page}")
-            return jsonify({'error': 'page e per_page devem ser números positivos'}), 400
+            token = request.args.get('token')
+            if not token:
+                logger.warning("Token não fornecido na conexão WebSocket")
+                raise ConnectionRefusedError('Token não fornecido')
 
-        cache_key = f"cache:queues_by_branch:{branch_id}:{user_lat}:{user_lon}:{page}:{per_page}"
-        if redis_client:
-            try:
-                cached = redis_client.get(cache_key)
-                if cached:
-                    logger.info(f"Cache hit para {cache_key}")
-                    return jsonify(json.loads(cached)), 200
-            except Exception as e:
-                logger.warning(f"Erro ao acessar cache Redis: {e}")
+            decoded_token = auth.verify_id_token(token)
+            user_id = decoded_token.get('uid')
+            if not user_id:
+                logger.warning("ID do usuário não encontrado no token")
+                raise ConnectionRefusedError('ID do usuário inválido')
 
-        try:
-            department_ids = [d.id for d in Department.query.filter_by(branch_id=branch_id).all()]
-            queues = Queue.query.filter(Queue.department_id.in_(department_ids)).paginate(
-                page=page, per_page=per_page, error_out=False
-            )
-
-            distance = QueueService.calculate_distance(user_lat, user_lon, branch) if user_lat and user_lon else None
-            result = [
-                {
-                    'queue_id': q.id,
-                    'prefix': q.prefix,
-                    'service': {
-                        'id': q.service.id,
-                        'name': q.service.name,
-                        'category': {
-                            'id': q.service.category.id,
-                            'name': q.service.category.name
-                        } if q.service.category else None
-                    },
-                    'department': {
-                        'id': q.department.id,
-                        'name': q.department.name
-                    },
-                    'active_tickets': q.active_tickets,
-                    'estimated_wait_time': f"{int(q.estimated_wait_time)} minutos" if q.estimated_wait_time else "N/A",
-                    'avg_service_time': f"{int(q.last_service_time)} minutos" if q.last_service_time else "N/A",
-                    'current_ticket': f"{q.prefix}{q.current_ticket}" if q.current_ticket else "N/A",
-                    'predicted_demand': float(demand_model.predict(q.id, hours_ahead=1)),
-                    'quality_score': float(service_recommendation_predictor.predict(q))
-                } for q in queues.items
-            ]
-
-            response = {
-                'branch_id': branch_id,
-                'queues': result,
-                'pagination': {
-                    'page': page,
-                    'per_page': per_page,
-                    'total_results': queues.total,
-                    'total_pages': queues.pages
-                }
-            }
-
-            if redis_client:
-                try:
-                    redis_client.setex(cache_key, 300, json.dumps(response, default=str))
-                    logger.info(f"Cache armazenado para {cache_key}")
-                except Exception as e:
-                    logger.warning(f"Erro ao salvar cache Redis: {e}")
-
-            logger.info(f"Filas retornadas para branch_id={branch_id}: {len(result)} filas")
-            return jsonify(response), 200
-
+            join_room(user_id)
+            logger.info(f"Usuário {user_id} conectado ao WebSocket")
         except Exception as e:
-            logger.error(f"Erro ao listar filas para branch_id={branch_id}: {str(e)}")
-            return jsonify({'error': 'Erro ao listar filas'}), 500
-    
+            logger.error(f"Erro na conexão WebSocket: {str(e)}")
+            raise ConnectionRefusedError('Autenticação falhou')
+
+    @socketio.on('disconnect', namespace='/')
+    def handle_disconnect():
+        """Gerencia desconexão WebSocket."""
+        try:
+            user_id = request.sid
+            leave_room(user_id)
+            logger.info(f"Usuário {user_id} desconectado do WebSocket")
+        except Exception as e:
+            logger.error(f"Erro na desconexão WebSocket: {str(e)}")
+
+    @socketio.on('connect', namespace='/dashboard')
+    def handle_dashboard_connect():
+        """Gerencia conexão WebSocket para painel."""
+        try:
+            token = request.args.get('token')
+            if not token:
+                logger.warning("Token não fornecido na conexão WebSocket do painel")
+                raise ConnectionRefusedError('Token não fornecido')
+
+            decoded_token = auth.verify_id_token(token)
+            user_id = decoded_token.get('uid')
+            user = User.query.get(user_id)
+            if not user or user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+                logger.warning(f"Usuário {user_id} não autorizado para painel")
+                raise ConnectionRefusedError('Acesso não autorizado')
+
+            institution_id = user.institution_id if user.user_role == UserRole.INSTITUTION_ADMIN else request.args.get('institution_id')
+            if not institution_id:
+                logger.warning("institution_id não fornecido")
+                raise ConnectionRefusedError('institution_id não fornecido')
+
+            join_room(institution_id)
+            logger.info(f"Usuário {user_id} conectado ao painel WebSocket para institution_id={institution_id}")
+        except Exception as e:
+            logger.error(f"Erro na conexão WebSocket do painel: {str(e)}")
+            raise ConnectionRefusedError('Autenticação falhou')
+
+    @socketio.on('disconnect', namespace='/dashboard')
+    def handle_dashboard_disconnect():
+        """Gerencia desconexão WebSocket para painel."""
+        try:
+            user_id = request.sid
+            logger.info(f"Usuário {user_id} desconectado do painel WebSocket")
+        except Exception as e:
+            logger.error(f"Erro na desconexão WebSocket do painel: {str(e)}")
+            
     @app.route("/api/ping")
     def ping():
         return "pong", 200
