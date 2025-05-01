@@ -1,7 +1,7 @@
 from flask import jsonify, request, send_file
 from flask_socketio import join_room, leave_room, ConnectionRefusedError
 from . import db, socketio, redis_client
-from .models import AuditLog, Institution, Branch, Queue, Ticket, User, Department, UserRole, InstitutionType, InstitutionService, ServiceCategory, ServiceTag, UserPreference, BranchSchedule, UserBehavior, NotificationLog, Weekday
+from .models import AuditLog, Institution,QueueSchedule ,Branch, Queue, Ticket, User, Department, UserRole, InstitutionType, InstitutionService, ServiceCategory, ServiceTag, UserPreference, BranchSchedule, UserBehavior, NotificationLog, Weekday
 from .services import QueueService
 from .ml_models import wait_time_predictor, service_recommendation_predictor, collaborative_model, demand_model, clustering_model
 import uuid
@@ -21,6 +21,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def init_queue_routes(app):
+    
+    def cache_key(endpoint, **kwargs):
+        """Gera uma chave de cache única para o endpoint com base nos parâmetros."""
+        params = ':'.join(f"{k}={v}" for k, v in sorted(kwargs.items()) if v is not None)
+        return f"{endpoint}:{params}"
 
     # Funções auxiliares
     def emit_ticket_update(ticket):
@@ -89,145 +94,6 @@ def init_queue_routes(app):
         except Exception as e:
             logger.error(f"Erro ao emitir atualização de painel: {str(e)}")
 
-    # Rotas
-    @app.route('/api/institutions', methods=['GET'])
-    def list_institutions():
-        """Lista instituições com filtros e paginação."""
-        try:
-            query = request.args.get('query', '').strip()
-            institution_type_id = request.args.get('institution_type_id')
-            user_lat = request.args.get('latitude')
-            user_lon = request.args.get('longitude')
-            neighborhood = request.args.get('neighborhood')
-            sort_by = request.args.get('sort_by', 'name')
-            page = request.args.get('page', '1')
-            per_page = request.args.get('per_page', '20')
-
-            if query and not re.match(r'^[A-Za-zÀ-ÿ\s]{1,100}$', query):
-                logger.warning(f"Query inválida: {query}")
-                return jsonify({'error': 'Query inválida'}), 400
-            if institution_type_id and not InstitutionType.query.get(institution_type_id):
-                logger.warning(f"institution_type_id não encontrado: {institution_type_id}")
-                return jsonify({'error': 'Tipo de instituição não encontrado'}), 404
-            if user_lat:
-                try:
-                    user_lat = float(user_lat)
-                except (ValueError, TypeError):
-                    logger.warning(f"Latitude inválida: {user_lat}")
-                    return jsonify({'error': 'Latitude deve ser um número'}), 400
-            if user_lon:
-                try:
-                    user_lon = float(user_lon)
-                except (ValueError, TypeError):
-                    logger.warning(f"Longitude inválida: {user_lon}")
-                    return jsonify({'error': 'Longitude deve ser um número'}), 400
-            if neighborhood and not re.match(r'^[A-Za-zÀ-ÿ\s,]{1,100}$', neighborhood):
-                logger.warning(f"Bairro inválido: {neighborhood}")
-                return jsonify({'error': 'Bairro inválido'}), 400
-            if sort_by not in ['name', 'distance', 'quality_score']:
-                logger.warning(f"sort_by inválido: {sort_by}")
-                return jsonify({'error': 'sort_by deve ser name, distance ou quality_score'}), 400
-            try:
-                page = int(page)
-                per_page = int(per_page)
-                if page < 1 or per_page < 1:
-                    raise ValueError
-            except (ValueError, TypeError):
-                logger.warning(f"page ou per_page inválidos: page={page}, per_page={per_page}")
-                return jsonify({'error': 'page e per_page devem ser números positivos'}), 400
-
-            cache_key = f"cache:institutions:{query}:{institution_type_id}:{user_lat}:{user_lon}:{neighborhood}:{sort_by}:{page}:{per_page}"
-            if redis_client:
-                try:
-                    cached = redis_client.get(cache_key)
-                    if cached:
-                        logger.info(f"Cache hit para {cache_key}")
-                        return jsonify(json.loads(cached)), 200
-                except Exception as e:
-                    logger.warning(f"Erro ao acessar cache Redis: {e}")
-
-            query_obj = Institution.query
-            if query:
-                query_obj = query_obj.filter(Institution.name.ilike(f'%{query}%'))
-            if institution_type_id:
-                query_obj = query_obj.filter_by(institution_type_id=institution_type_id)
-
-            institutions = query_obj.all()
-            result = []
-
-            for inst in institutions:
-                branches = Branch.query.filter_by(institution_id=inst.id).all()
-                min_distance = None
-                if user_lat and user_lon:
-                    distances = [
-                        geodesic((user_lat, user_lon), (b.latitude, b.longitude)).km
-                        for b in branches if b.latitude and b.longitude
-                    ]
-                    min_distance = min(distances) if distances else None
-
-                branch_ids = [b.id for b in branches]
-                department_ids = [d.id for d in Department.query.filter(Department.branch_id.in_(branch_ids)).all()]
-                queues = Queue.query.filter(Queue.department_id.in_(department_ids)).all()
-                quality_scores = [
-                    service_recommendation_predictor.predict(q) for q in queues
-                ]
-                avg_quality_score = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
-
-                result.append({
-                    'id': inst.id,
-                    'name': inst.name or "Desconhecida",
-                    'description': inst.description or "Sem descrição",
-                    'type': {
-                        'id': inst.type.id if inst.type else None,
-                        'name': inst.type.name if inst.type else "Desconhecido"
-                    },
-                    'distance_km': float(min_distance) if min_distance is not None else 'Desconhecida',
-                    'quality_score': float(avg_quality_score),
-                    'branches': [
-                        {
-                            'id': b.id,
-                            'name': b.name or "Desconhecida",
-                            'neighborhood': b.neighborhood or "Desconhecido",
-                            'latitude': float(b.latitude) if b.latitude else None,
-                            'longitude': float(b.longitude) if b.longitude else None
-                        } for b in branches
-                    ]
-                })
-
-            if sort_by == 'distance' and user_lat and user_lon:
-                result = sorted(result, key=lambda x: float(x['distance_km']) if x['distance_km'] != 'Desconhecida' else float('inf'))
-            elif sort_by == 'quality_score':
-                result = sorted(result, key=lambda x: x['quality_score'], reverse=True)
-            else:
-                result = sorted(result, key=lambda x: x['name'].lower())
-
-            total_results = len(result)
-            start = (page - 1) * per_page
-            end = start + per_page
-            paginated_result = result[start:end]
-
-            response = {
-                'institutions': paginated_result,
-                'pagination': {
-                    'page': page,
-                    'per_page': per_page,
-                    'total_results': total_results,
-                    'total_pages': (total_results + per_page - 1) // per_page
-                }
-            }
-
-            if redis_client:
-                try:
-                    redis_client.setex(cache_key, 3600, json.dumps(response, default=str))
-                    logger.info(f"Cache armazenado para {cache_key}")
-                except Exception as e:
-                    logger.warning(f"Erro ao salvar cache Redis: {e}")
-
-            logger.info(f"Lista de instituições retornada: {len(paginated_result)} resultados")
-            return jsonify(response), 200
-        except Exception as e:
-            logger.error(f"Erro ao listar instituições: {str(e)}")
-            return jsonify({'error': 'Erro ao listar instituições'}), 500
 
     @app.route('/api/user/preferences', methods=['POST'])
     @require_auth
@@ -535,64 +401,6 @@ def init_queue_routes(app):
             logger.error(f"Erro ao obter serviços similares para service_id={service_id}: {str(e)}")
             return jsonify({'error': 'Erro ao obter serviços similares'}), 500
 
-    @app.route('/api/branches/<branch_id>/services', methods=['GET'])
-    def services_by_branch(branch_id):
-        """Lista serviços disponíveis em uma filial."""
-        branch = Branch.query.get(branch_id)
-        if not branch:
-            logger.warning(f"Filial não encontrada: branch_id={branch_id}")
-            return jsonify({'error': 'Filial não encontrada'}), 404
-
-        cache_key = f"cache:services_by_branch:{branch_id}"
-        if redis_client:
-            try:
-                cached = redis_client.get(cache_key)
-                if cached:
-                    logger.info(f"Cache hit para {cache_key}")
-                    return jsonify(json.loads(cached)), 200
-            except Exception as e:
-                logger.warning(f"Erro ao acessar cache Redis: {e}")
-
-        try:
-            department_ids = [d.id for d in Department.query.filter_by(branch_id=branch_id).all()]
-            queues = Queue.query.filter(Queue.department_id.in_(department_ids)).all()
-            service_ids = {q.service_id for q in queues}
-            services = InstitutionService.query.filter(InstitutionService.id.in_(service_ids)).all()
-
-            result = [
-                {
-                    'id': s.id,
-                    'name': s.name,
-                    'category': {
-                        'id': s.category.id,
-                        'name': s.category.name
-                    } if s.category else None,
-                    'description': s.description or "Sem descrição",
-                    'queues': [
-                        {
-                            'id': q.id,
-                            'prefix': q.prefix,
-                            'active_tickets': q.active_tickets,
-                            'estimated_wait_time': f"{int(q.estimated_wait_time)} minutos" if q.estimated_wait_time else "N/A"
-                        } for q in queues if q.service_id == s.id
-                    ]
-                } for s in services
-            ]
-
-            response = {'branch_id': branch_id, 'services': result}
-            if redis_client:
-                try:
-                    redis_client.setex(cache_key, 3600, json.dumps(response, default=str))
-                    logger.info(f"Cache armazenado para {cache_key}")
-                except Exception as e:
-                    logger.warning(f"Erro ao salvar cache Redis: {e}")
-
-            logger.info(f"Serviços retornados para branch_id={branch_id}: {len(result)} serviços")
-            return jsonify(response), 200
-        except Exception as e:
-            logger.error(f"Erro ao obter serviços para branch_id={branch_id}: {str(e)}")
-            return jsonify({'error': 'Erro ao obter serviços'}), 500
-
     @app.route('/api/search/structured', methods=['GET'])
     def search_structured():
         """Busca estruturada por serviços, instituições, filiais e filas."""
@@ -722,151 +530,6 @@ def init_queue_routes(app):
         except Exception as e:
             logger.error(f"Erro ao realizar busca estruturada: {str(e)}")
             return jsonify({'error': 'Erro ao realizar busca estruturada'}), 500
-
-    @app.route('/api/branches', methods=['GET'])
-    def list_branches():
-        """Lista filiais com filtros e paginação."""
-        institution_id = request.args.get('institution_id')
-        neighborhood = request.args.get('neighborhood')
-        user_lat = request.args.get('latitude')
-        user_lon = request.args.get('longitude')
-        page = request.args.get('page', '1')
-        per_page = request.args.get('per_page', '20')
-
-        if institution_id and not Institution.query.get(institution_id):
-            logger.warning(f"Instituição não encontrada: institution_id={institution_id}")
-            return jsonify({'error': 'Instituição não encontrada'}), 404
-        if neighborhood and not re.match(r'^[A-Za-zÀ-ÿ\s,]{1,100}$', neighborhood):
-            logger.warning(f"Bairro inválido: {neighborhood}")
-            return jsonify({'error': 'Bairro inválido'}), 400
-        if user_lat:
-            try:
-                user_lat = float(user_lat)
-            except (ValueError, TypeError):
-                logger.warning(f"Latitude inválida: {user_lat}")
-                return jsonify({'error': 'Latitude deve ser um número'}), 400
-        if user_lon:
-            try:
-                user_lon = float(user_lon)
-            except (ValueError, TypeError):
-                logger.warning(f"Longitude inválida: {user_lon}")
-                return jsonify({'error': 'Longitude deve ser um número'}), 400
-        try:
-            page = int(page)
-            per_page = int(per_page)
-            if page < 1 or per_page < 1:
-                raise ValueError
-        except (ValueError, TypeError):
-            logger.warning(f"page ou per_page inválidos: page={page}, per_page={per_page}")
-            return jsonify({'error': 'page e per_page devem ser números positivos'}), 400
-
-        cache_key = f"cache:branches:{institution_id}:{neighborhood}:{user_lat}:{user_lon}:{page}:{per_page}"
-        if redis_client:
-            try:
-                cached = redis_client.get(cache_key)
-                if cached:
-                    logger.info(f"Cache hit para {cache_key}")
-                    return jsonify(json.loads(cached)), 200
-            except Exception as e:
-                logger.warning(f"Erro ao acessar cache Redis: {e}")
-
-        try:
-            query = Branch.query
-            if institution_id:
-                query = query.filter_by(institution_id=institution_id)
-            if neighborhood:
-                query = query.filter_by(neighborhood=neighborhood)
-
-            branches = query.all()
-            result = []
-            for branch in branches:
-                distance = QueueService.calculate_distance(user_lat, user_lon, branch) if user_lat and user_lon else None
-                schedules = BranchSchedule.query.filter_by(branch_id=branch.id).all()
-                result.append({
-                    'id': branch.id,
-                    'name': branch.name,
-                    'institution': {
-                        'id': branch.institution.id,
-                        'name': branch.institution.name
-                    },
-                    'neighborhood': branch.neighborhood,
-                    'latitude': float(branch.latitude) if branch.latitude else None,
-                    'longitude': float(branch.longitude) if branch.longitude else None,
-                    'distance_km': float(distance) if distance is not None else 'Desconhecida',
-                    'schedules': [
-                        {
-                            'weekday': s.weekday.value,
-                            'open_time': s.open_time.strftime('%H:%M') if s.open_time else None,
-                            'end_time': s.end_time.strftime('%H:%M') if s.end_time else None,
-                            'is_closed': s.is_closed
-                        } for s in schedules
-                    ]
-                })
-
-            total_results = len(result)
-            start = (page - 1) * per_page
-            end = start + per_page
-            paginated_result = result[start:end]
-
-            response = {
-                'branches': paginated_result,
-                'pagination': {
-                    'page': page,
-                    'per_page': per_page,
-                    'total_results': total_results,
-                    'total_pages': (total_results + per_page - 1) // per_page
-                }
-            }
-
-            if redis_client:
-                try:
-                    redis_client.setex(cache_key, 3600, json.dumps(response, default=str))
-                    logger.info(f"Cache armazenado para {cache_key}")
-                except Exception as e:
-                    logger.warning(f"Erro ao salvar cache Redis: {e}")
-
-            logger.info(f"Filiais retornadas: {len(paginated_result)} resultados")
-            return jsonify(response), 200
-        except Exception as e:
-            logger.error(f"Erro ao listar filiais: {str(e)}")
-            return jsonify({'error': 'Erro ao listar filiais'}), 500
-
-    @app.route('/api/institution_types', methods=['GET'])
-    def list_institution_types():
-        """Lista tipos de instituições."""
-        cache_key = "cache:institution_types"
-        if redis_client:
-            try:
-                cached = redis_client.get(cache_key)
-                if cached:
-                    logger.info(f"Cache hit para {cache_key}")
-                    return jsonify(json.loads(cached)), 200
-            except Exception as e:
-                logger.warning(f"Erro ao acessar cache Redis: {e}")
-
-        try:
-            types = InstitutionType.query.all()
-            result = [
-                {
-                    'id': t.id,
-                    'name': t.name,
-                    'description': t.description or "Sem descrição"
-                } for t in types
-            ]
-
-            response = {'institution_types': result}
-            if redis_client:
-                try:
-                    redis_client.setex(cache_key, 86400, json.dumps(response, default=str))
-                    logger.info(f"Cache armazenado para {cache_key}")
-                except Exception as e:
-                    logger.warning(f"Erro ao salvar cache Redis: {e}")
-
-            logger.info(f"Tipos de instituições retornados: {len(result)} tipos")
-            return jsonify(response), 200
-        except Exception as e:
-            logger.error(f"Erro ao listar tipos de instituições: {str(e)}")
-            return jsonify({'error': 'Erro ao listar tipos de instituições'}), 500
 
     @app.route('/api/recommendations/featured', methods=['GET'])
     def featured_recommendations():
@@ -2212,3 +1875,708 @@ def init_queue_routes(app):
     @app.route("/api/ping")
     def ping():
         return "pong", 200
+
+
+
+    @app.route('/institutions', methods=['GET'])
+    def list_institutions():
+        """Lista instituições com filtros por tipo, favoritas e busca textual."""
+        try:
+            institution_type_id = request.args.get('institution_type_id')
+            user_id = request.args.get('user_id')
+            query = request.args.get('query', '').strip()
+            page = int(request.args.get('page', 1))
+            per_page = int(request.args.get('per_page', 10))
+            sort_by = request.args.get('sort_by', 'name')  # Opções: name, id
+
+            # Validar entrada
+            if page < 1 or per_page < 1:
+                logger.warning(f"Parâmetros inválidos: page={page}, per_page={per_page}")
+                return jsonify({'error': 'Página e itens por página devem ser positivos'}), 400
+            if sort_by not in ['name', 'id']:
+                logger.warning(f"Ordenação inválida: sort_by={sort_by}")
+                return jsonify({'error': 'Ordenação deve ser por "name" ou "id"'}), 400
+
+            # Verificar cache
+            cache_params = {
+                'institution_type_id': institution_type_id,
+                'user_id': user_id,
+                'query': query,
+                'page': page,
+                'per_page': per_page,
+                'sort_by': sort_by
+            }
+            cache_k = cache_key('list_institutions', **cache_params)
+            cached_result = redis_client.get(cache_k)
+            if cached_result:
+                logger.debug(f"Cache hit para list_institutions: {cache_k}")
+                return jsonify(json.loads(cached_result))
+
+            # Construir consulta
+            query_base = Institution.query
+            if institution_type_id:
+                query_base = query_base.filter(Institution.institution_type_id == institution_type_id)
+            if query:
+                search_terms = query.lower().replace(' ', ' & ')
+                query_base = query_base.filter(
+                    or_(
+                        Institution.name.ilike(f'%{query}%'),
+                        func.to_tsvector('portuguese', Institution.name).op('@@')(
+                            func.to_tsquery('portuguese', search_terms)
+                        )
+                    )
+                )
+            if user_id:
+                favorites = UserPreference.query.filter_by(
+                    user_id=user_id, institution_id != None
+                ).with_entities(UserPreference.institution_id).all()
+                favorite_ids = {f.institution_id for f in favorites}
+                if favorite_ids:
+                    query_base = query_base.filter(Institution.id.in_(favorite_ids))
+                else:
+                    query_base = query_base.filter(False)  # Nenhum favorito
+
+            # Contar total
+            total = query_base.count()
+            logger.debug(f"Total de instituições encontradas: {total}")
+
+            # Ordenação
+            if sort_by == 'name':
+                query_base = query_base.order_by(Institution.name.asc())
+            else:
+                query_base = query_base.order_by(Institution.id.asc())
+
+            # Paginação
+            institutions = query_base.offset((page - 1) * per_page).limit(per_page).all()
+
+            # Montar resposta
+            results = [{
+                'id': inst.id,
+                'name': inst.name or 'Desconhecida',
+                'type': {
+                    'id': inst.institution_type_id,
+                    'name': inst.type.name if inst.type else 'Desconhecido'
+                },
+                'is_favorite': inst.id in favorite_ids if user_id and favorite_ids else False
+            } for inst in institutions]
+
+            result = {
+                'institutions': results,
+                'total': total,
+                'page': page,
+                'per_page': per_page,
+                'total_pages': (total + per_page - 1) // per_page,
+                'message': 'Nenhuma instituição encontrada' if not results else 'Instituições listadas com sucesso'
+            }
+
+            # Cachear resultado
+            redis_client.setex(cache_k, 60, json.dumps(result, default=str))
+            logger.info(f"Lista de instituições retornada: {total} resultados, cache_key={cache_k}")
+
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"Erro ao listar instituições: {str(e)}")
+            return jsonify({'error': 'Erro interno do servidor'}), 500
+
+    @app.route('/branches', methods=['GET'])
+    def list_branches():
+        """Lista filiais com filtros por instituição, tipo de instituição e localização."""
+        try:
+            institution_id = request.args.get('institution_id')
+            institution_type_id = request.args.get('institution_type_id')
+            neighborhood = request.args.get('neighborhood')
+            user_lat = request.args.get('user_lat', type=float)
+            user_lon = request.args.get('user_lon', type=float)
+            max_distance_km = request.args.get('max_distance_km', 10.0, type=float)
+            page = int(request.args.get('page', 1))
+            per_page = int(request.args.get('per_page', 10))
+            sort_by = request.args.get('sort_by', 'name')  # Opções: name, distance
+
+            # Validar entrada
+            if page < 1 or per_page < 1:
+                logger.warning(f"Parâmetros inválidos: page={page}, per_page={per_page}")
+                return jsonify({'error': 'Página e itens por página devem ser positivos'}), 400
+            if sort_by not in ['name', 'distance']:
+                logger.warning(f"Ordenação inválida: sort_by={sort_by}")
+                return jsonify({'error': 'Ordenação deve ser por "name" ou "distance"'}), 400
+            if sort_by == 'distance' and (user_lat is None or user_lon is None):
+                logger.warning("Ordenação por distância requer user_lat e user_lon")
+                return jsonify({'error': 'Coordenadas do usuário necessárias para ordenar por distância'}), 400
+
+            # Verificar cache
+            cache_params = {
+                'institution_id': institution_id,
+                'institution_type_id': institution_type_id,
+                'neighborhood': neighborhood,
+                'user_lat': user_lat,
+                'user_lon': user_lon,
+                'max_distance_km': max_distance_km,
+                'page': page,
+                'per_page': per_page,
+                'sort_by': sort_by
+            }
+            cache_k = cache_key('list_branches', **cache_params)
+            cached_result = redis_client.get(cache_k)
+            if cached_result:
+                logger.debug(f"Cache hit para list_branches: {cache_k}")
+                return jsonify(json.loads(cached_result))
+
+            # Construir consulta
+            query_base = Branch.query.join(Institution)
+            if institution_id:
+                query_base = query_base.filter(Branch.institution_id == institution_id)
+            if institution_type_id:
+                query_base = query_base.filter(Institution.institution_type_id == institution_type_id)
+            if neighborhood:
+                query_base = query_base.filter(Branch.neighborhood.ilike(f'%{neighborhood}%'))
+
+            # Filtrar por distância
+            branches = query_base.all()
+            if user_lat is not None and user_lon is not None:
+                branches = [
+                    b for b in branches
+                    if b.latitude and b.longitude and
+                    RecommendationService.calculate_distance(user_lat, user_lon, b) <= max_distance_km
+                ]
+            else:
+                branches = branches
+
+            # Contar total
+            total = len(branches)
+            logger.debug(f"Total de filiais encontradas: {total}")
+
+            # Paginação
+            start = (page - 1) * per_page
+            end = start + per_page
+            paginated_branches = branches[start:end]
+
+            # Montar resposta
+            results = []
+            for branch in paginated_branches:
+                distance = RecommendationService.calculate_distance(user_lat, user_lon, branch) if user_lat is not None and user_lon is not None else None
+                results.append({
+                    'id': branch.id,
+                    'name': branch.name or 'Desconhecida',
+                    'institution': {
+                        'id': branch.institution_id,
+                        'name': branch.institution.name if branch.institution else 'Desconhecida'
+                    },
+                    'location': branch.location or 'Desconhecida',
+                    'neighborhood': branch.neighborhood or 'Desconhecido',
+                    'latitude': float(branch.latitude) if branch.latitude else None,
+                    'longitude': float(branch.longitude) if branch.longitude else None,
+                    'distance': float(distance) if distance is not None else 'Desconhecida'
+                })
+
+            # Ordenação
+            if sort_by == 'distance' and user_lat is not None and user_lon is not None:
+                results.sort(key=lambda x: x['distance'] if x['distance'] != 'Desconhecida' else float('inf'))
+            else:
+                results.sort(key=lambda x: x['name'])
+
+            result = {
+                'branches': results,
+                'total': total,
+                'page': page,
+                'per_page': per_page,
+                'total_pages': (total + per_page - 1) // per_page,
+                'message': 'Nenhuma filial encontrada' if not results else 'Filiais listadas com sucesso'
+            }
+
+            # Cachear resultado
+            redis_client.setex(cache_k, 60, json.dumps(result, default=str))
+            logger.info(f"Lista de filiais retornada: {total} resultados, cache_key={cache_k}")
+
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"Erro ao listar filiais: {str(e)}")
+            return jsonify({'error': 'Erro interno do servidor'}), 500
+
+    @app.route('/branches/<branch_id>/services', methods=['GET'])
+    def services_by_branch(branch_id):
+        """Lista serviços disponíveis em uma filial específica."""
+        try:
+            user_id = request.args.get('user_id')
+            page = int(request.args.get('page', 1))
+            per_page = int(request.args.get('per_page', 10))
+            sort_by = request.args.get('sort_by', 'name')  # Opções: name, wait_time
+            max_wait_time = request.args.get('max_wait_time', type=float)
+
+            # Validar entrada
+            if page < 1 or per_page < 1:
+                logger.warning(f"Parâmetros inválidos: page={page}, per_page={per_page}")
+                return jsonify({'error': 'Página e itens por página devem ser positivos'}), 400
+            if sort_by not in ['name', 'wait_time']:
+                logger.warning(f"Ordenação inválida: sort_by={sort_by}")
+                return jsonify({'error': 'Ordenação deve ser por "name" ou "wait_time"'}), 400
+
+            # Verificar cache
+            cache_params = {
+                'branch_id': branch_id,
+                'user_id': user_id,
+                'page': page,
+                'per_page': per_page,
+                'sort_by': sort_by,
+                'max_wait_time': max_wait_time
+            }
+            cache_k = cache_key('services_by_branch', **cache_params)
+            cached_result = redis_client.get(cache_k)
+            if cached_result:
+                logger.debug(f"Cache hit para services_by_branch: {cache_k}")
+                return jsonify(json.loads(cached_result))
+
+            # Verificar se a filial existe
+            branch = Branch.query.get(branch_id)
+            if not branch:
+                logger.warning(f"Filial não encontrada: branch_id={branch_id}")
+                return jsonify({'error': 'Filial não encontrada'}), 404
+
+            # Construir consulta
+            now = datetime.utcnow()
+            query_base = Queue.query.join(Department).join(InstitutionService).join(QueueSchedule).filter(
+                Department.branch_id == branch_id,
+                QueueSchedule.weekday == getattr(Weekday, now.strftime('%A').upper(), None),
+                QueueSchedule.is_closed == False,
+                QueueSchedule.open_time <= now.time(),
+                QueueSchedule.end_time >= now.time(),
+                Queue.active_tickets < Queue.daily_limit
+            )
+
+            # Contar total
+            total = query_base.count()
+            logger.debug(f"Total de serviços encontrados para branch_id={branch_id}: {total}")
+
+            # Ordenação inicial
+            if sort_by == 'name':
+                query_base = query_base.order_by(InstitutionService.name.asc())
+
+            # Paginação
+            queues = query_base.offset((page - 1) * per_page).limit(per_page).all()
+
+            # Montar resposta
+            results = []
+            for queue in queues:
+                service = queue.service
+                wait_time = RecommendationService.wait_time_predictor.predict(
+                    queue_id=queue.id,
+                    position=queue.active_tickets + 1,
+                    active_tickets=queue.active_tickets,
+                    priority=0,
+                    hour_of_day=now.hour,
+                    user_id=user_id
+                )
+                if max_wait_time and isinstance(wait_time, (int, float)) and wait_time > max_wait_time:
+                    continue
+
+                schedule = QueueSchedule.query.filter_by(
+                    queue_id=queue.id,
+                    weekday=getattr(Weekday, now.strftime('%A').upper(), None)
+                ).first()
+                results.append({
+                    'queue_id': queue.id,
+                    'service': {
+                        'id': service.id,
+                        'name': service.name or 'Desconhecido',
+                        'category_id': service.category_id
+                    },
+                    'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else 'Aguardando início',
+                    'active_tickets': queue.active_tickets or 0,
+                    'daily_limit': queue.daily_limit or 100,
+                    'open_time': schedule.open_time.strftime('%H:%M') if schedule and schedule.open_time else None,
+                    'end_time': schedule.end_time.strftime('%H:%M') if schedule and schedule.end_time else None
+                })
+
+            # Ordenação por wait_time
+            if sort_by == 'wait_time':
+                results.sort(key=lambda x: float(x['wait_time'].split()[0]) if x['wait_time'] != 'Aguardando início' else float('inf'))
+
+            result = {
+                'services': results,
+                'total': total,
+                'page': page,
+                'per_page': per_page,
+                'total_pages': (total + per_page - 1) // per_page,
+                'message': 'Nenhum serviço encontrado' if not results else 'Serviços listados com sucesso'
+            }
+
+            # Cachear resultado
+            redis_client.setex(cache_k, 60, json.dumps(result, default=str))
+            logger.info(f"Lista de serviços retornada para branch_id={branch_id}: {total} resultados, cache_key={cache_k}")
+
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"Erro ao listar serviços da filial {branch_id}: {str(e)}")
+            return jsonify({'error': 'Erro interno do servidor'}), 500
+
+    @app.route('/institution_types', methods=['GET'])
+    def list_institution_types():
+        """Lista tipos de instituições com busca textual."""
+        try:
+            query = request.args.get('query', '').strip()
+            page = int(request.args.get('page', 1))
+            per_page = int(request.args.get('per_page', 10))
+            sort_by = request.args.get('sort_by', 'name')  # Opções: name, id
+
+            # Validar entrada
+            if page < 1 or per_page < 1:
+                logger.warning(f"Parâmetros inválidos: page={page}, per_page={per_page}")
+                return jsonify({'error': 'Página e itens por página devem ser positivos'}), 400
+            if sort_by not in ['name', 'id']:
+                logger.warning(f"Ordenação inválida: sort_by={sort_by}")
+                return jsonify({'error': 'Ordenação deve ser por "name" ou "id"'}), 400
+
+            # Verificar cache
+            cache_params = {
+                'query': query,
+                'page': page,
+                'per_page': per_page,
+                'sort_by': sort_by
+            }
+            cache_k = cache_key('list_institution_types', **cache_params)
+            cached_result = redis_client.get(cache_k)
+            if cached_result:
+                logger.debug(f"Cache hit para list_institution_types: {cache_k}")
+                return jsonify(json.loads(cached_result))
+
+            # Construir consulta
+            query_base = InstitutionType.query
+            if query:
+                query_base = query_base.filter(InstitutionType.name.ilike(f'%{query}%'))
+
+            # Contar total
+            total = query_base.count()
+            logger.debug(f"Total de tipos de instituições encontrados: {total}")
+
+            # Ordenação
+            if sort_by == 'name':
+                query_base = query_base.order_by(InstitutionType.name.asc())
+            else:
+                query_base = query_base.order_by(InstitutionType.id.asc())
+
+            # Paginação
+            types = query_base.offset((page - 1) * per_page).limit(per_page).all()
+
+            # Montar resposta
+            results = [{
+                'id': t.id,
+                'name': t.name or 'Desconhecido'
+            } for t in types]
+
+            result = {
+                'institution_types': results,
+                'total': total,
+                'page': page,
+                'per_page': per_page,
+                'total_pages': (total + per_page - 1) // per_page,
+                'message': 'Nenhum tipo de instituição encontrado' if not results else 'Tipos de instituições listados com sucesso'
+            }
+
+            # Cachear resultado
+            redis_client.setex(cache_k, 60, json.dumps(result, default=str))
+            logger.info(f"Lista de tipos de instituições retornada: {total} resultados, cache_key={cache_k}")
+
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"Erro ao listar tipos de instituições: {str(e)}")
+            return jsonify({'error': 'Erro interno do servidor'}), 500
+
+    @app.route('/institutions/<institution_id>/services', methods=['GET'])
+    def services_by_institution(institution_id):
+        """Lista serviços disponíveis para uma instituição, com informações de disponibilidade e tempo de espera."""
+        try:
+            user_id = request.args.get('user_id')
+            category_id = request.args.get('category_id')
+            max_wait_time = request.args.get('max_wait_time', type=float)
+            page = int(request.args.get('page', 1))
+            per_page = int(request.args.get('per_page', 10))
+            sort_by = request.args.get('sort_by', 'name')  # Opções: name, wait_time
+
+            # Validar entrada
+            if page < 1 or per_page < 1:
+                logger.warning(f"Parâmetros inválidos: page={page}, per_page={per_page}")
+                return jsonify({'error': 'Página e itens por página devem ser positivos'}), 400
+            if sort_by not in ['name', 'wait_time']:
+                logger.warning(f"Ordenação inválida: sort_by={sort_by}")
+                return jsonify({'error': 'Ordenação deve ser por "name" ou "wait_time"'}), 400
+
+            # Verificar cache
+            cache_params = {
+                'institution_id': institution_id,
+                'user_id': user_id,
+                'category_id': category_id,
+                'max_wait_time': max_wait_time,
+                'page': page,
+                'per_page': per_page,
+                'sort_by': sort_by
+            }
+            cache_k = cache_key('services_by_institution', **cache_params)
+            cached_result = redis_client.get(cache_k)
+            if cached_result:
+                logger.debug(f"Cache hit para services_by_institution: {cache_k}")
+                return jsonify(json.loads(cached_result))
+
+            # Verificar se a instituição existe
+            institution = Institution.query.get(institution_id)
+            if not institution:
+                logger.warning(f"Instituição não encontrada: institution_id={institution_id}")
+                return jsonify({'error': 'Instituição não encontrada'}), 404
+
+            # Consultar serviços da instituição
+            services_query = InstitutionService.query.filter_by(institution_id=institution_id)
+            if category_id:
+                services_query = services_query.filter_by(category_id=category_id)
+
+            # Obter serviços
+            services = services_query.all()
+            total = len(services)
+            logger.debug(f"Total de serviços encontrados para institution_id={institution_id}: {total}")
+
+            # Consultar filas ativas para cada serviço
+            now = datetime.utcnow()
+            results = []
+            for service in services:
+                # Encontrar uma fila ativa para o serviço
+                queue = Queue.query.join(Department).join(Branch).join(QueueSchedule).filter(
+                    Queue.service_id == service.id,
+                    Branch.institution_id == institution_id,
+                    QueueSchedule.weekday == getattr(Weekday, now.strftime('%A').upper(), None),
+                    QueueSchedule.is_closed == False,
+                    QueueSchedule.open_time <= now.time(),
+                    QueueSchedule.end_time >= now.time(),
+                    Queue.active_tickets < Queue.daily_limit
+                ).first()
+
+                # Calcular tempo de espera (se houver fila ativa)
+                wait_time = None
+                queue_info = {}
+                if queue:
+                    wait_time = RecommendationService.wait_time_predictor.predict(
+                        queue_id=queue.id,
+                        position=queue.active_tickets + 1,
+                        active_tickets=queue.active_tickets,
+                        priority=0,
+                        hour_of_day=now.hour,
+                        user_id=user_id
+                    )
+                    if max_wait_time and isinstance(wait_time, (int, float)) and wait_time > max_wait_time:
+                        continue
+
+                    schedule = QueueSchedule.query.filter_by(
+                        queue_id=queue.id,
+                        weekday=getattr(Weekday, now.strftime('%A').upper(), None)
+                    ).first()
+                    queue_info = {
+                        'queue_id': queue.id,
+                        'branch': {
+                            'id': queue.department.branch.id,
+                            'name': queue.department.branch.name or 'Desconhecida'
+                        },
+                        'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else 'Aguardando início',
+                        'active_tickets': queue.active_tickets or 0,
+                        'daily_limit': queue.daily_limit or 100,
+                        'open_time': schedule.open_time.strftime('%H:%M') if schedule and schedule.open_time else None,
+                        'end_time': schedule.end_time.strftime('%H:%M') if schedule and schedule.end_time else None
+                    }
+
+                results.append({
+                    'service': {
+                        'id': service.id,
+                        'name': service.name or 'Desconhecido',
+                        'category_id': service.category_id,
+                        'description': service.description or 'Sem descrição'
+                    },
+                    'is_available': bool(queue),
+                    **queue_info
+                })
+
+            # Paginação
+            start = (page - 1) * per_page
+            end = start + per_page
+            paginated_results = results[start:end]
+
+            # Ordenação
+            if sort_by == 'wait_time':
+                paginated_results.sort(
+                    key=lambda x: float(x['wait_time'].split()[0]) if 'wait_time' in x and x['wait_time'] != 'Aguardando início' else float('inf')
+                )
+            else:
+                paginated_results.sort(key=lambda x: x['service']['name'])
+
+            result = {
+                'services': paginated_results,
+                'total': total,
+                'page': page,
+                'per_page': per_page,
+                'total_pages': (total + per_page - 1) // per_page,
+                'message': 'Nenhum serviço encontrado' if not results else 'Serviços listados com sucesso'
+            }
+
+            # Cachear resultado
+            redis_client.setex(cache_k, 60, json.dumps(result, default=str))
+            logger.info(f"Lista de serviços retornada para institution_id={institution_id}: {total} resultados, cache_key={cache_k}")
+
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"Erro ao listar serviços da instituição {institution_id}: {str(e)}")
+            return jsonify({'error': 'Erro interno do servidor'}), 500
+
+    @app.route('/institutions/<institution_id>/services/<service_id>/branches', methods=['GET'])
+    def branches_by_service(institution_id, service_id):
+        """Lista filiais de uma instituição que oferecem um serviço específico, ordenadas por distância ou tempo de espera."""
+        try:
+            user_id = request.args.get('user_id')
+            user_lat = request.args.get('user_lat', type=float)
+            user_lon = request.args.get('user_lon', type=float)
+            max_distance_km = request.args.get('max_distance_km', 10.0, type=float)
+            max_wait_time = request.args.get('max_wait_time', type=float)
+            page = int(request.args.get('page', 1))
+            per_page = int(request.args.get('per_page', 10))
+            sort_by = request.args.get('sort_by', 'distance')  # Opções: distance, wait_time
+
+            # Validar entrada
+            if page < 1 or per_page < 1:
+                logger.warning(f"Parâmetros inválidos: page={page}, per_page={per_page}")
+                return jsonify({'error': 'Página e itens por página devem ser positivos'}), 400
+            if sort_by not in ['distance', 'wait_time']:
+                logger.warning(f"Ordenação inválida: sort_by={sort_by}")
+                return jsonify({'error': 'Ordenação deve ser por "distance" ou "wait_time"'}), 400
+            if (user_lat is None or user_lon is None) and user_id is None:
+                logger.warning("Coordenadas ou user_id são necessários")
+                return jsonify({'error': 'Coordenadas do usuário ou user_id são necessários'}), 400
+
+            # Obter coordenadas do usuário
+            if user_id and (user_lat is None or user_lon is None):
+                user = User.query.get(user_id)
+                if user and user.last_known_lat and user.last_known_lon:
+                    user_lat, user_lon = user.last_known_lat, user.last_known_lon
+                else:
+                    logger.warning(f"Usuário {user_id} sem coordenadas válidas")
+                    return jsonify({'error': 'Coordenadas do usuário não disponíveis'}), 400
+
+            if sort_by == 'distance' and (user_lat is None or user_lon is None):
+                logger.warning("Ordenação por distância requer coordenadas")
+                return jsonify({'error': 'Coordenadas do usuário necessárias para ordenar por distância'}), 400
+
+            # Verificar cache
+            cache_params = {
+                'institution_id': institution_id,
+                'service_id': service_id,
+                'user_id': user_id,
+                'user_lat': user_lat,
+                'user_lon': user_lon,
+                'max_distance_km': max_distance_km,
+                'max_wait_time': max_wait_time,
+                'page': page,
+                'per_page': per_page,
+                'sort_by': sort_by
+            }
+            cache_k = cache_key('branches_by_service', **cache_params)
+            cached_result = redis_client.get(cache_k)
+            if cached_result:
+                logger.debug(f"Cache hit para branches_by_service: {cache_k}")
+                return jsonify(json.loads(cached_result))
+
+            # Verificar se a instituição e o serviço existem
+            institution = Institution.query.get(institution_id)
+            if not institution:
+                logger.warning(f"Instituição não encontrada: institution_id={institution_id}")
+                return jsonify({'error': 'Instituição não encontrada'}), 404
+
+            service = InstitutionService.query.get(service_id)
+            if not service or service.institution_id != institution_id:
+                logger.warning(f"Serviço não encontrado ou não pertence à instituição: service_id={service_id}")
+                return jsonify({'error': 'Serviço não encontrado ou não pertence à instituição'}), 404
+
+            # Construir consulta para filas ativas do serviço
+            now = datetime.utcnow()
+            queues = Queue.query.join(Department).join(Branch).join(QueueSchedule).filter(
+                Queue.service_id == service_id,
+                Branch.institution_id == institution_id,
+                QueueSchedule.weekday == getattr(Weekday, now.strftime('%A').upper(), None),
+                QueueSchedule.is_closed == False,
+                QueueSchedule.open_time <= now.time(),
+                QueueSchedule.end_time >= now.time(),
+                Queue.active_tickets < Queue.daily_limit
+            ).all()
+
+            # Filtrar por distância e tempo de espera
+            results = []
+            for queue in queues:
+                branch = queue.department.branch
+                if not branch.latitude or not branch.longitude:
+                    continue
+
+                distance = RecommendationService.calculate_distance(user_lat, user_lon, branch)
+                if distance > max_distance_km:
+                    continue
+
+                wait_time = RecommendationService.wait_time_predictor.predict(
+                    queue_id=queue.id,
+                    position=queue.active_tickets + 1,
+                    active_tickets=queue.active_tickets,
+                    priority=0,
+                    hour_of_day=now.hour,
+                    user_id=user_id
+                )
+                if max_wait_time and isinstance(wait_time, (int, float)) and wait_time > max_wait_time:
+                    continue
+
+                schedule = QueueSchedule.query.filter_by(
+                    queue_id=queue.id,
+                    weekday=getattr(Weekday, now.strftime('%A').upper(), None)
+                ).first()
+
+                results.append({
+                    'branch': {
+                        'id': branch.id,
+                        'name': branch.name or 'Desconhecida',
+                        'location': branch.location or 'Desconhecida',
+                        'neighborhood': branch.neighborhood or 'Desconhecido',
+                        'latitude': float(branch.latitude),
+                        'longitude': float(branch.longitude),
+                        'distance': float(distance)
+                    },
+                    'queue': {
+                        'id': queue.id,
+                        'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else 'Aguardando início',
+                        'active_tickets': queue.active_tickets or 0,
+                        'daily_limit': queue.daily_limit or 100,
+                        'open_time': schedule.open_time.strftime('%H:%M') if schedule and schedule.open_time else None,
+                        'end_time': schedule.end_time.strftime('%H:%M') if schedule and schedule.end_time else None
+                    }
+                })
+
+            # Contar total
+            total = len(results)
+            logger.debug(f"Total de filiais encontradas para institution_id={institution_id}, service_id={service_id}: {total}")
+
+            # Paginação
+            start = (page - 1) * per_page
+            end = start + per_page
+            paginated_results = results[start:end]
+
+            # Ordenação
+            if sort_by == 'wait_time':
+                paginated_results.sort(
+                    key=lambda x: float(x['queue']['wait_time'].split()[0]) if x['queue']['wait_time'] != 'Aguardando início' else float('inf')
+                )
+            else:
+                paginated_results.sort(key=lambda x: x['branch']['distance'])
+
+            result = {
+                'branches': paginated_results,
+                'total': total,
+                'page': page,
+                'per_page': per_page,
+                'total_pages': (total + per_page - 1) // per_page,
+                'message': 'Nenhuma filial encontrada' if not paginated_results else 'Filiais sugeridas com sucesso'
+            }
+
+            # Cachear resultado
+            redis_client.setex(cache_k, 60, json.dumps(result, default=str))
+            logger.info(f"Lista de filiais retornada para institution_id={institution_id}, service_id={service_id}: {total} resultados, cache_key={cache_k}")
+
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"Erro ao listar filiais para institution_id={institution_id}, service_id={service_id}: {str(e)}")
+            return jsonify({'error': 'Erro interno do servidor'}), 500
