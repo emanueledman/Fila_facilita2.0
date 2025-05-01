@@ -2089,3 +2089,7 @@ def init_queue_routes(app):
         except Exception as e:
             logger.error(f"Erro ao listar filas para branch_id={branch_id}: {str(e)}")
             return jsonify({'error': 'Erro ao listar filas'}), 500
+    
+    @app.route("/api/ping")
+    def ping():
+        return "pong", 200
