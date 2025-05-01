@@ -327,7 +327,7 @@ def init_admin_routes(app):
             }), 200
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Erro ao atualizar filial {branch_id}: {str(e)}")
+            logger.error(f"Erro: ao atualizar filial {branch_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao atualizar filial'}), 500
 
     @app.route('/api/admin/institutions/<institution_id>/branches', methods=['GET'])
