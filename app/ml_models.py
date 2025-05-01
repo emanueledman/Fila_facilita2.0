@@ -7,23 +7,30 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import TruncatedSVD
 from sklearn.cluster import KMeans
+from sklearn.metrics.pairwise import cosine_similarity
 try:
     from prophet import Prophet
 except ImportError as e:
-    logger.error(f"Erro ao importar Prophet: {e}")
+    logging.error(f"Prophet not available: {e}")
     Prophet = None
+try:
+    from sentence_transformers import SentenceTransformer
+except ImportError as e:
+    logging.error(f"sentence-transformers not available: {e}")
+    SentenceTransformer = None
 from sqlalchemy import and_, func
 from datetime import datetime, timedelta
 from app import db
-from app.models import Queue, Ticket, Department, ServiceTag, UserPreference, QueueSchedule, Branch, Weekday, Institution
+from app.models import Queue, Ticket, Department, ServiceTag, UserPreference, QueueSchedule, Branch, Weekday, Institution, InstitutionService, ServiceCategory, UserBehavior, UserLocationFallback
 from geopy.distance import geodesic
 import joblib
 import os
+from holidays import country_holidays
 
 logger = logging.getLogger(__name__)
 
 class WaitTimePredictor:
-    """Modelo para prever tempo de espera por fila."""
+    """Predictor for queue wait times with enhanced personalization."""
     MIN_SAMPLES = 5
     MAX_DAYS = 30
     MODEL_PATH = "wait_time_model_{queue_id}.joblib"
@@ -54,20 +61,35 @@ class WaitTimePredictor:
             self.next_category_id += 1
         return self.category_mapping[category_id]
 
+    def is_holiday(self, date):
+        holidays = country_holidays('AO')  # Angola holidays
+        return 1 if date in holidays else 0
+
     def calculate_distance(self, user_lat, user_lon, branch):
         try:
             if not all(isinstance(x, (int, float)) for x in [user_lat, user_lon, branch.latitude, branch.longitude]):
                 return 0
             return geodesic((user_lat, user_lon), (branch.latitude, branch.longitude)).kilometers
         except Exception as e:
-            logger.error(f"Erro ao calcular distância: {e}")
+            logger.error(f"Error calculating distance: {e}")
             return 0
+
+    def get_user_preferred_hour(self, user_id):
+        try:
+            behaviors = UserBehavior.query.filter_by(user_id=user_id).all()
+            if not behaviors:
+                return None
+            hours = [b.timestamp.hour for b in behaviors if b.timestamp]
+            return np.mean(hours) if hours else None
+        except Exception as e:
+            logger.error(f"Error getting preferred hour for user_id={user_id}: {e}")
+            return None
 
     def prepare_data(self, queue_id, days=MAX_DAYS, batch_size=1000):
         try:
             queue = Queue.query.get(queue_id)
             if not queue:
-                logger.error(f"Fila não encontrada: queue_id={queue_id}")
+                logger.error(f"Queue not found: queue_id={queue_id}")
                 return None, None
 
             start_date = datetime.utcnow() - timedelta(days=days)
@@ -89,8 +111,10 @@ class WaitTimePredictor:
                 for ticket in tickets:
                     position = max(0, ticket.ticket_number - queue.current_ticket)
                     hour_of_day = ticket.issued_at.hour
+                    is_holiday = self.is_holiday(ticket.issued_at.date())
                     sector_encoded = self.get_sector_id(queue.department.sector if queue.department else None)
-                    category_encoded = self.get_category_id(queue.category_id)
+                    category_encoded = self.get_category_id(queue.service.category_id if queue.service else None)
+                    user_preferred_hour = self.get_user_preferred_hour(ticket.user_id) if ticket.user_id else hour_of_day
                     data.append({
                         'position': position,
                         'active_tickets': queue.active_tickets,
@@ -100,15 +124,16 @@ class WaitTimePredictor:
                         'daily_limit': queue.daily_limit or 100,
                         'sector_encoded': sector_encoded,
                         'category_encoded': category_encoded,
+                        'is_holiday': is_holiday,
+                        'user_preferred_hour': user_preferred_hour or hour_of_day,
                         'service_time': ticket.service_time
                     })
 
                 offset += batch_size
 
-            # Transfer learning para filas com poucos dados
             if len(data) < self.MIN_SAMPLES:
                 similar_queues = Queue.query.filter(
-                    Queue.category_id == queue.category_id,
+                    Queue.service_id == queue.service_id,
                     Queue.id != queue_id
                 ).limit(10).all()
                 for similar_queue in similar_queues:
@@ -122,8 +147,10 @@ class WaitTimePredictor:
                     for ticket in tickets:
                         position = max(0, ticket.ticket_number - similar_queue.current_ticket)
                         hour_of_day = ticket.issued_at.hour
+                        is_holiday = self.is_holiday(ticket.issued_at.date())
                         sector_encoded = self.get_sector_id(similar_queue.department.sector if similar_queue.department else None)
-                        category_encoded = self.get_category_id(similar_queue.category_id)
+                        category_encoded = self.get_category_id(similar_queue.service.category_id if similar_queue.service else None)
+                        user_preferred_hour = self.get_user_preferred_hour(ticket.user_id) if ticket.user_id else hour_of_day
                         data.append({
                             'position': position,
                             'active_tickets': similar_queue.active_tickets,
@@ -133,20 +160,22 @@ class WaitTimePredictor:
                             'daily_limit': similar_queue.daily_limit or 100,
                             'sector_encoded': sector_encoded,
                             'category_encoded': category_encoded,
+                            'is_holiday': is_holiday,
+                            'user_preferred_hour': user_preferred_hour or hour_of_day,
                             'service_time': ticket.service_time
                         })
 
             if len(data) < self.MIN_SAMPLES:
-                logger.warning(f"Dados insuficientes para queue_id={queue_id}: {len(data)} amostras")
+                logger.warning(f"Insufficient data for queue_id={queue_id}: {len(data)} samples")
                 return None, None
 
             df = pd.DataFrame(data)
-            X = df[['position', 'active_tickets', 'priority', 'hour_of_day', 'num_counters', 'daily_limit', 'sector_encoded', 'category_encoded']]
+            X = df[['position', 'active_tickets', 'priority', 'hour_of_day', 'num_counters', 'daily_limit', 'sector_encoded', 'category_encoded', 'is_holiday', 'user_preferred_hour']]
             y = df['service_time']
-            logger.debug(f"Dados preparados para queue_id={queue_id}: {len(data)} amostras")
+            logger.debug(f"Data prepared for queue_id={queue_id}: {len(data)} samples")
             return X, y
         except Exception as e:
-            logger.error(f"Erro ao preparar dados para queue_id={queue_id}: {e}")
+            logger.error(f"Error preparing data for queue_id={queue_id}: {e}")
             return None, None
 
     def train(self, queue_id):
@@ -165,9 +194,9 @@ class WaitTimePredictor:
             self.scalers[queue_id] = scaler
             self.is_trained[queue_id] = True
             joblib.dump((model, scaler), self.MODEL_PATH.format(queue_id=queue_id))
-            logger.info(f"Modelo treinado para queue_id={queue_id}")
+            logger.info(f"Model trained for queue_id={queue_id}")
         except Exception as e:
-            logger.error(f"Erro ao treinar modelo para queue_id={queue_id}: {e}")
+            logger.error(f"Error training model for queue_id={queue_id}: {e}")
             self.is_trained[queue_id] = False
 
     def load_model(self, queue_id):
@@ -178,24 +207,26 @@ class WaitTimePredictor:
                 self.models[queue_id] = model
                 self.scalers[queue_id] = scaler
                 self.is_trained[queue_id] = True
-                logger.info(f"Modelo carregado para queue_id={queue_id}")
+                logger.info(f"Model loaded for queue_id={queue_id}")
         except Exception as e:
-            logger.error(f"Erro ao carregar modelo para queue_id={queue_id}: {e}")
+            logger.error(f"Error loading model for queue_id={queue_id}: {e}")
             self.is_trained[queue_id] = False
 
-    def predict(self, queue_id, position, active_tickets, priority, hour_of_day, user_lat=None, user_lon=None):
+    def predict(self, queue_id, position, active_tickets, priority, hour_of_day, user_id=None, user_lat=None, user_lon=None):
         try:
             if queue_id not in self.is_trained or not self.is_trained[queue_id]:
                 self.load_model(queue_id)
                 if not self.is_trained.get(queue_id, False):
-                    logger.warning(f"Modelo não treinado para queue_id={queue_id}, usando fallback")
+                    logger.warning(f"Model not trained for queue_id={queue_id}, using fallback")
                     return self.FALLBACK_TIME
 
             queue = Queue.query.get(queue_id)
             if not queue:
-                logger.error(f"Fila não encontrada: queue_id={queue_id}")
+                logger.error(f"Queue not found: queue_id={queue_id}")
                 return self.FALLBACK_TIME
 
+            user_preferred_hour = self.get_user_preferred_hour(user_id) if user_id else hour_of_day
+            is_holiday = self.is_holiday(datetime.utcnow().date())
             features = np.array([[
                 position,
                 active_tickets,
@@ -204,21 +235,24 @@ class WaitTimePredictor:
                 queue.num_counters or 1,
                 queue.daily_limit or 100,
                 self.get_sector_id(queue.department.sector if queue.department else None),
-                self.get_category_id(queue.category_id)
+                self.get_category_id(queue.service.category_id if queue.service else None),
+                is_holiday,
+                user_preferred_hour or hour_of_day
             ]])
-            logger.debug(f"Features para queue_id={queue_id}: {features.tolist()}")
+            logger.debug(f"Features for queue_id={queue_id}: {features.tolist()}")
             features_scaled = self.scalers[queue_id].transform(features)
             wait_time = self.models[queue_id].predict(features_scaled)[0]
             return max(0, round(wait_time, 1))
         except Exception as e:
-            logger.error(f"Erro ao prever wait_time para queue_id={queue_id}: {e}")
+            logger.error(f"Error predicting wait_time for queue_id={queue_id}: {e}")
             return self.FALLBACK_TIME
 
 class ServiceRecommendationPredictor:
-    """Modelo para prever pontuação de qualidade de filas."""
+    """Predictor for queue quality scores with service similarity focus."""
     MIN_SAMPLES = 5
     MODEL_PATH = "service_recommendation_model.joblib"
     DEFAULT_SCORE = 0.5
+    EMBEDDING_MODEL = 'paraphrase-MiniLM-L6-v2'
 
     def __init__(self):
         self.model = RandomForestRegressor(n_estimators=100, random_state=42)
@@ -230,6 +264,8 @@ class ServiceRecommendationPredictor:
         self.next_sector_id = 1
         self.next_category_id = 1
         self.next_institution_type_id = 1
+        self.embedding_model = SentenceTransformer(self.EMBEDDING_MODEL) if SentenceTransformer else None
+        self.service_embeddings = {}
 
     def get_sector_id(self, sector):
         if not sector:
@@ -255,28 +291,49 @@ class ServiceRecommendationPredictor:
             self.next_institution_type_id += 1
         return self.institution_type_mapping[institution_type_id]
 
-    def calculate_tag_similarity(self, queue_tags, user_id):
+    def calculate_service_similarity(self, target_service_id, queue_service_id):
         try:
-            if not user_id or not queue_tags:
-                return 0
-            user_prefs = UserPreference.query.filter_by(user_id=user_id).all()
-            preferred_tags = {pref.service_category_id for pref in user_prefs if pref.service_category_id}
-            queue_tag_ids = {tag.tag for tag in queue_tags}
-            intersection = len(queue_tag_ids.intersection(preferred_tags))
-            return intersection / max(1, len(queue_tag_ids))
-        except Exception as e:
-            logger.error(f"Erro ao calcular tag_similarity: {e}")
-            return 0
+            if not target_service_id or not queue_service_id or target_service_id == queue_service_id:
+                return 1.0
+            target_service = InstitutionService.query.get(target_service_id)
+            queue_service = InstitutionService.query.get(queue_service_id)
+            if not target_service or not queue_service:
+                return 0.0
 
-    def prepare_data(self, user_id=None, batch_size=1000):
+            if self.embedding_model:
+                if target_service_id not in self.service_embeddings:
+                    text = f"{target_service.name} {target_service.description or ''} {' '.join(t.tag for t in ServiceTag.query.filter_by(queue_id=target_service_id))}"
+                    self.service_embeddings[target_service_id] = self.embedding_model.encode(text)
+                if queue_service_id not in self.service_embeddings:
+                    text = f"{queue_service.name} {queue_service.description or ''} {' '.join(t.tag for t in ServiceTag.query.filter_by(queue_id=queue_service_id))}"
+                    self.service_embeddings[queue_service_id] = self.embedding_model.encode(text)
+                return cosine_similarity([self.service_embeddings[target_service_id]], [self.service_embeddings[queue_service_id]])[0][0]
+            else:
+                tags1 = set(t.tag for t in ServiceTag.query.filter_by(queue_id=target_service_id))
+                tags2 = set(t.tag for t in ServiceTag.query.filter_by(queue_id=queue_service_id))
+                intersection = len(tags1.intersection(tags2))
+                return intersection / max(1, len(tags1.union(tags2)))
+        except Exception as e:
+            logger.error(f"Error calculating service similarity: {e}")
+            return 0.0
+
+    def get_user_service_preference_score(self, user_id, service_id):
+        try:
+            behaviors = UserBehavior.query.filter_by(user_id=user_id, service_id=service_id).all()
+            return len(behaviors) / max(1, len(UserBehavior.query.filter_by(user_id=user_id).all())) if behaviors else 0.0
+        except Exception as e:
+            logger.error(f"Error calculating user service preference score for user_id={user_id}: {e}")
+            return 0.0
+
+    def prepare_data(self, user_id=None, target_service_id=None, batch_size=1000):
         try:
             data = []
-            queues = Queue.query.all()
+            queues = Queue.query.join(InstitutionService).filter(InstitutionService.category_id == InstitutionService.query.get(target_service_id).category_id if target_service_id else True).all()
             user_prefs = UserPreference.query.filter_by(user_id=user_id).all() if user_id else []
             preferred_institutions = {pref.institution_id for pref in user_prefs if pref.institution_id}
-            preferred_categories = {pref.service_category_id for pref in user_prefs if pref.service_category_id}
             preferred_neighborhoods = {pref.neighborhood for pref in user_prefs if pref.neighborhood}
             preferred_institution_types = {pref.institution_type_id for pref in user_prefs if pref.institution_type_id}
+            fallback = UserLocationFallback.query.filter_by(user_id=user_id).first() if user_id else None
 
             for queue in queues:
                 branch = Branch.query.join(Department).filter(Department.id == queue.department_id).first()
@@ -298,14 +355,17 @@ class ServiceRecommendationPredictor:
                         for s in queue.schedules
                     ) else 0
                 )
-                tag_similarity = self.calculate_tag_similarity(queue.tags, user_id)
+                service_similarity = self.calculate_service_similarity(target_service_id, queue.service_id) if target_service_id else 1.0
                 predicted_demand = DemandForecastingModel().predict(queue.id, hours_ahead=1)
+                user_service_preference = self.get_user_service_preference_score(user_id, queue.service_id) if user_id else 0.0
+                is_preferred_neighborhood = 1 if (branch and branch.neighborhood in preferred_neighborhoods) or (fallback and branch and branch.neighborhood == fallback.neighborhood) else 0
 
                 quality_score = (
                     0.3 * (availability / max(1, queue.daily_limit))
                     + 0.25 * (1 / (1 + avg_service_time / 30))
                     + 0.15 * (1 / (1 + predicted_demand / 10))
-                    + 0.1 * tag_similarity
+                    + 0.2 * service_similarity
+                    + 0.1 * user_service_preference
                 )
                 quality_score = max(0, min(1, quality_score))
 
@@ -313,36 +373,37 @@ class ServiceRecommendationPredictor:
                     'avg_service_time': avg_service_time,
                     'availability': availability,
                     'sector_encoded': self.get_sector_id(queue.department.sector if queue.department else None),
-                    'category_encoded': self.get_category_id(queue.category_id),
+                    'category_encoded': self.get_category_id(queue.service.category_id if queue.service else None),
                     'institution_type_encoded': self.get_institution_type_id(institution.institution_type_id if institution else None),
                     'is_open': is_open,
-                    'tag_similarity': tag_similarity,
+                    'service_similarity': service_similarity,
                     'predicted_demand': predicted_demand,
+                    'user_service_preference': user_service_preference,
                     'is_preferred_institution': 1 if branch and branch.institution_id in preferred_institutions else 0,
-                    'is_preferred_neighborhood': 1 if branch and branch.neighborhood in preferred_neighborhoods else 0,
+                    'is_preferred_neighborhood': is_preferred_neighborhood,
                     'is_preferred_institution_type': 1 if institution and institution.institution_type_id in preferred_institution_types else 0,
                     'quality_score': quality_score
                 })
 
             if len(data) < self.MIN_SAMPLES:
-                logger.warning(f"Dados insuficientes: {len(data)} amostras")
+                logger.warning(f"Insufficient data: {len(data)} samples")
                 return None, None
 
             df = pd.DataFrame(data)
             X = df[[
                 'avg_service_time', 'availability', 'sector_encoded', 'category_encoded', 'institution_type_encoded',
-                'is_open', 'tag_similarity', 'predicted_demand',
+                'is_open', 'service_similarity', 'predicted_demand', 'user_service_preference',
                 'is_preferred_institution', 'is_preferred_neighborhood', 'is_preferred_institution_type'
             ]]
             y = df['quality_score']
             return X, y
         except Exception as e:
-            logger.error(f"Erro ao preparar dados: {e}")
+            logger.error(f"Error preparing data: {e}")
             return None, None
 
-    def train(self, user_id=None):
+    def train(self, user_id=None, target_service_id=None):
         try:
-            X, y = self.prepare_data(user_id)
+            X, y = self.prepare_data(user_id, target_service_id)
             if X is None or y is None:
                 self.is_trained = False
                 return
@@ -351,9 +412,9 @@ class ServiceRecommendationPredictor:
             self.model.fit(X_scaled, y)
             self.is_trained = True
             joblib.dump((self.model, self.scaler), self.MODEL_PATH)
-            logger.info("Modelo de recomendação treinado")
+            logger.info("Recommendation model trained")
         except Exception as e:
-            logger.error(f"Erro ao treinar modelo de recomendação: {e}")
+            logger.error(f"Error training recommendation model: {e}")
             self.is_trained = False
 
     def load_model(self):
@@ -361,17 +422,17 @@ class ServiceRecommendationPredictor:
             if os.path.exists(self.MODEL_PATH):
                 self.model, self.scaler = joblib.load(self.MODEL_PATH)
                 self.is_trained = True
-                logger.info("Modelo de recomendação carregado")
+                logger.info("Recommendation model loaded")
         except Exception as e:
-            logger.error(f"Erro ao carregar modelo de recomendação: {e}")
+            logger.error(f"Error loading recommendation model: {e}")
             self.is_trained = False
 
-    def predict(self, queue, user_id=None, user_lat=None, user_lon=None):
+    def predict(self, queue, user_id=None, user_lat=None, user_lon=None, target_service_id=None):
         try:
             if not self.is_trained:
                 self.load_model()
                 if not self.is_trained:
-                    logger.warning("Modelo de recomendação não treinado, usando default")
+                    logger.warning("Recommendation model not trained, using default")
                     return self.DEFAULT_SCORE
 
             branch = Branch.query.join(Department).filter(Department.id == queue.department_id).first()
@@ -391,40 +452,44 @@ class ServiceRecommendationPredictor:
                     for s in queue.schedules
                 ) else 0
             )
-            tag_similarity = self.calculate_tag_similarity(queue.tags, user_id)
+            service_similarity = self.calculate_service_similarity(target_service_id, queue.service_id) if target_service_id else 1.0
             predicted_demand = DemandForecastingModel().predict(queue.id, hours_ahead=1)
+            user_service_preference = self.get_user_service_preference_score(user_id, queue.service_id) if user_id else 0.0
             user_prefs = UserPreference.query.filter_by(user_id=user_id).all() if user_id else []
             preferred_institutions = {pref.institution_id for pref in user_prefs if pref.institution_id}
             preferred_neighborhoods = {pref.neighborhood for pref in user_prefs if pref.neighborhood}
             preferred_institution_types = {pref.institution_type_id for pref in user_prefs if pref.institution_type_id}
+            fallback = UserLocationFallback.query.filter_by(user_id=user_id).first() if user_id else None
+            is_preferred_neighborhood = 1 if (branch and branch.neighborhood in preferred_neighborhoods) or (fallback and branch and branch.neighborhood == fallback.neighborhood) else 0
 
             features = np.array([[
                 avg_service_time,
                 availability,
                 self.get_sector_id(queue.department.sector if queue.department else None),
-                self.get_category_id(queue.category_id),
+                self.get_category_id(queue.service.category_id if queue.service else None),
                 self.get_institution_type_id(institution.institution_type_id if institution else None),
                 is_open,
-                tag_similarity,
+                service_similarity,
                 predicted_demand,
+                user_service_preference,
                 1 if branch and branch.institution_id in preferred_institutions else 0,
-                1 if branch and branch.neighborhood in preferred_neighborhoods else 0,
+                is_preferred_neighborhood,
                 1 if institution and institution.institution_type_id in preferred_institution_types else 0
             ]])
             features_scaled = self.scaler.transform(features)
             score = self.model.predict(features_scaled)[0]
             return max(0, min(1, round(score, 2)))
         except Exception as e:
-            logger.error(f"Erro ao prever quality_score para queue_id={queue.id}: {e}")
+            logger.error(f"Error predicting quality_score for queue_id={queue.id}: {e}")
             return self.DEFAULT_SCORE
 
 class CollaborativeFilteringModel:
-    """Modelo de filtragem colaborativa para recomendações baseadas em padrões de usuários."""
+    """Collaborative filtering model for service-based recommendations."""
     MODEL_PATH = "collaborative_model.joblib"
     MIN_INTERACTIONS = 3
 
     def __init__(self):
-        self.svd = None  # Inicializar depois de calcular n_features
+        self.svd = None
         self.user_mapping = {}
         self.queue_mapping = {}
         self.is_trained = False
@@ -434,27 +499,34 @@ class CollaborativeFilteringModel:
             if os.path.exists(self.MODEL_PATH):
                 self.svd, self.user_mapping, self.queue_mapping = joblib.load(self.MODEL_PATH)
                 self.is_trained = True
-                logger.info("Modelo colaborativo carregado")
+                logger.info("Collaborative model loaded")
         except Exception as e:
-            logger.error(f"Erro ao carregar modelo colaborativo: {e}")
+            logger.error(f"Error loading collaborative model: {e}")
 
     def save_model(self):
         try:
             joblib.dump((self.svd, self.user_mapping, self.queue_mapping), self.MODEL_PATH)
-            logger.info("Modelo colaborativo salvo")
+            logger.info("Collaborative model saved")
         except Exception as e:
-            logger.error(f"Erro ao salvar modelo colaborativo: {e}")
+            logger.error(f"Error saving collaborative model: {e}")
 
-    def prepare_data(self):
+    def prepare_data(self, target_service_id=None):
         try:
-            tickets = Ticket.query.filter(Ticket.user_id.isnot(None)).all()
+            target_service = InstitutionService.query.get(target_service_id) if target_service_id else None
+            target_category = target_service.category_id if target_service else None
+            tickets = Ticket.query.join(Queue).filter(
+                Ticket.user_id.isnot(None),
+                Queue.service_id.in_(
+                    db.session.query(InstitutionService.id).filter(InstitutionService.category_id == target_category)
+                ) if target_category else True
+            ).all()
             user_queue_counts = {}
             for ticket in tickets:
                 key = (ticket.user_id, ticket.queue_id)
                 user_queue_counts[key] = user_queue_counts.get(key, 0) + 1
 
             if len(user_queue_counts) < self.MIN_INTERACTIONS:
-                logger.warning(f"Interações insuficientes: {len(user_queue_counts)}")
+                logger.warning(f"Insufficient interactions: {len(user_queue_counts)}")
                 return None
 
             users = sorted(set(k[0] for k in user_queue_counts.keys()))
@@ -476,12 +548,12 @@ class CollaborativeFilteringModel:
             interaction_matrix = csr_matrix((data, (rows, cols)), shape=(len(users), n_features))
             return interaction_matrix
         except Exception as e:
-            logger.error(f"Erro ao preparar dados colaborativos: {e}")
+            logger.error(f"Error preparing collaborative data: {e}")
             return None
 
-    def train(self):
+    def train(self, target_service_id=None):
         try:
-            interaction_matrix = self.prepare_data()
+            interaction_matrix = self.prepare_data(target_service_id)
             if interaction_matrix is None:
                 self.is_trained = False
                 return
@@ -489,15 +561,17 @@ class CollaborativeFilteringModel:
             self.svd.fit(interaction_matrix)
             self.is_trained = True
             self.save_model()
-            logger.info("Modelo colaborativo treinado")
+            logger.info("Collaborative model trained")
         except Exception as e:
-            logger.error(f"Erro ao treinar modelo colaborativo: {e}")
+            logger.error(f"Error training collaborative model: {e}")
             self.is_trained = False
 
-    def predict(self, user_id, queue_ids):
+    def predict(self, user_id, queue_ids, target_service_id=None):
         try:
             if not self.is_trained or user_id not in self.user_mapping:
-                return {q: 0.5 for q in queue_ids}
+                prefs = UserPreference.query.filter_by(user_id=user_id).all() if user_id else []
+                default_score = max([pref.preference_score / 100 for pref in prefs if pref.preference_score] or [0.5])
+                return {q: default_score for q in queue_ids}
 
             user_idx = self.user_mapping[user_id]
             user_vector = self.svd.transform(np.zeros((1, len(self.queue_mapping))))
@@ -511,13 +585,14 @@ class CollaborativeFilteringModel:
                     scores[queue_id] = 0.5
             return scores
         except Exception as e:
-            logger.error(f"Erro ao prever colaborativamente para user_id={user_id}: {e}")
+            logger.error(f"Error predicting collaboratively for user_id={user_id}: {e}")
             return {q: 0.5 for q in queue_ids}
 
 class DemandForecastingModel:
-    """Modelo para prever demanda futura de filas."""
+    """Model for predicting future queue demand with lightweight fallback."""
     MODEL_PATH = "demand_model_{queue_id}.joblib"
     MIN_DAYS = 3
+    FALLBACK_DEMAND = 10
 
     def __init__(self):
         self.models = {}
@@ -545,33 +620,31 @@ class DemandForecastingModel:
             df = df.groupby(pd.Grouper(key='ds', freq='h')).sum().reset_index()
             return df
         except Exception as e:
-            logger.error(f"Erro ao preparar dados de demanda para queue_id={queue_id}: {e}")
+            logger.error(f"Error preparing demand data for queue_id={queue_id}: {e}")
             return None
 
     def train(self, queue_id):
-        if not self.use_prophet:
-            logger.warning(f"Prophet não disponível, pulando treinamento para queue_id={queue_id}")
-            self.is_trained[queue_id] = False
-            return
-        try:
-            df = self.prepare_data(queue_id)
-            if df is None or len(df) < 24:
-                self.is_trained[queue_id] = False
-                return
+        if self.use_prophet:
+            try:
+                df = self.prepare_data(queue_id)
+                if df is None or len(df) < 24:
+                    self.is_trained[queue_id] = False
+                    return
 
-            model = Prophet(daily_seasonality=True, weekly_seasonality=True)
-            model.fit(df)
-            self.models[queue_id] = model
-            self.is_trained[queue_id] = True
-            joblib.dump(model, self.get_model_path(queue_id))
-            logger.info(f"Modelo de demanda treinado para queue_id={queue_id}")
-        except Exception as e:
-            logger.error(f"Erro ao treinar modelo de demanda para queue_id={queue_id}: {e}")
+                model = Prophet(daily_seasonality=True, weekly_seasonality=True)
+                model.fit(df)
+                self.models[queue_id] = model
+                self.is_trained[queue_id] = True
+                joblib.dump(model, self.get_model_path(queue_id))
+                logger.info(f"Demand model trained for queue_id={queue_id}")
+            except Exception as e:
+                logger.error(f"Error training demand model for queue_id={queue_id}: {e}")
+                self.is_trained[queue_id] = False
+        else:
             self.is_trained[queue_id] = False
 
     def load_model(self, queue_id):
         if not self.use_prophet:
-            logger.warning(f"Prophet não disponível, pulando carregamento para queue_id={queue_id}")
             self.is_trained[queue_id] = False
             return
         try:
@@ -579,57 +652,52 @@ class DemandForecastingModel:
             if os.path.exists(path):
                 self.models[queue_id] = joblib.load(path)
                 self.is_trained[queue_id] = True
-                logger.info(f"Modelo de demanda carregado para queue_id={queue_id}")
+                logger.info(f"Demand model loaded for queue_id={queue_id}")
         except Exception as e:
-            logger.error(f"Erro ao carregar modelo de demanda para queue_id={queue_id}: {e}")
+            logger.error(f"Error loading demand model for queue_id={queue_id}: {e}")
             self.is_trained[queue_id] = False
 
     def predict(self, queue_id, hours_ahead=1):
-        if not self.use_prophet:
-            logger.warning(f"Prophet não disponível, usando fallback para queue_id={queue_id}")
-            return self._fallback_demand(queue_id)
-        
-        if queue_id not in self.is_trained or not self.is_trained[queue_id]:
-            self.load_model(queue_id)
-            if not self.is_trained.get(queue_id, False):
-                logger.warning(f"Modelo de demanda não disponível para queue_id={queue_id}, usando fallback")
-                return self._fallback_demand(queue_id)
-        
-        try:
-            model = self.models[queue_id]
-            future = model.make_future_dataframe(periods=hours_ahead, freq='h')
-            forecast = model.predict(future)
-            predicted_demand = forecast.tail(1)['yhat'].iloc[0]
-            logger.debug(f"Demanda prevista para queue_id={queue_id}: {predicted_demand}")
-            return max(0, round(predicted_demand, 1))
-        except Exception as e:
-            logger.error(f"Erro ao prever demanda para queue_id={queue_id}: {e}")
-            return self._fallback_demand(queue_id)
+        if self.use_prophet and queue_id in self.is_trained and self.is_trained[queue_id]:
+            try:
+                model = self.models[queue_id]
+                future = model.make_future_dataframe(periods=hours_ahead, freq='h')
+                forecast = model.predict(future)
+                predicted_demand = forecast.tail(1)['yhat'].iloc[0]
+                logger.debug(f"Demand predicted for queue_id={queue_id}: {predicted_demand}")
+                return max(0, round(predicted_demand, 1))
+            except Exception as e:
+                logger.error(f"Error predicting demand for queue_id={queue_id}: {e}")
+        return self._fallback_demand(queue_id)
 
     def _fallback_demand(self, queue_id):
-        """Retorna a média de demanda de filas semelhantes como fallback."""
         try:
             queue = Queue.query.get(queue_id)
-            if not queue or not queue.department or not queue.department.branch:
-                logger.debug(f"Fila {queue_id} sem dados suficientes, retornando demanda padrão")
-                return 10  # Valor padrão global
-            
-            institution_id = queue.department.branch.institution_id
-            avg_demand = db.session.query(func.avg(Queue.active_tickets)).join(Department).join(Branch).filter(
-                Branch.institution_id == institution_id,
-                Queue.id != queue_id,
-                Queue.active_tickets.isnot(None)
-            ).scalar() or 10
-            logger.debug(f"Fallback para queue_id={queue_id}: demanda média={avg_demand}")
-            return round(avg_demand, 1)
+            if not queue or not queue.service:
+                return self.FALLBACK_DEMAND
+
+            start_date = datetime.utcnow() - timedelta(days=self.MIN_DAYS)
+            similar_queues = Queue.query.filter(
+                Queue.service_id == queue.service_id,
+                Queue.id != queue_id
+            ).all()
+            ticket_counts = []
+            for sim_queue in similar_queues:
+                tickets = Ticket.query.filter(
+                    Ticket.queue_id == sim_queue.id,
+                    Ticket.issued_at >= start_date
+                ).count()
+                ticket_counts.append(tickets / self.MIN_DAYS)
+            return round(np.mean(ticket_counts) if ticket_counts else self.FALLBACK_DEMAND, 1)
         except Exception as e:
-            logger.error(f"Erro no fallback de demanda para queue_id={queue_id}: {e}")
-            return 10
+            logger.error(f"Error in demand fallback for queue_id={queue_id}: {e}")
+            return self.FALLBACK_DEMAND
 
 class ServiceClusteringModel:
-    """Modelo para agrupar filas semelhantes e sugerir alternativas."""
+    """Model for clustering similar services and suggesting alternatives."""
     MODEL_PATH = "clustering_model.joblib"
     MIN_QUEUES = 5
+    EMBEDDING_MODEL = 'paraphrase-MiniLM-L6-v2'
 
     def __init__(self):
         self.kmeans = KMeans(n_clusters=10, random_state=42)
@@ -638,6 +706,8 @@ class ServiceClusteringModel:
         self.tag_set = set()
         self.institution_type_mapping = {}
         self.next_institution_type_id = 1
+        self.embedding_model = SentenceTransformer(self.EMBEDDING_MODEL) if SentenceTransformer else None
+        self.service_embeddings = {}
 
     def get_category_id(self, category_id):
         return category_id if category_id else 0
@@ -653,41 +723,57 @@ class ServiceClusteringModel:
             self.next_institution_type_id += 1
         return self.institution_type_mapping[institution_type_id]
 
-    def prepare_data(self):
+    def get_service_embedding(self, service_id):
         try:
-            queues = Queue.query.all()
+            if service_id not in self.service_embeddings:
+                service = InstitutionService.query.get(service_id)
+                if not service:
+                    return np.zeros(384)  # Default for paraphrase-MiniLM-L6-v2
+                text = f"{service.name} {service.description or ''} {' '.join(t.tag for t in ServiceTag.query.filter_by(queue_id=service_id))}"
+                self.service_embeddings[service_id] = self.embedding_model.encode(text) if self.embedding_model else np.zeros(384)
+            return self.service_embeddings[service_id]
+        except Exception as e:
+            logger.error(f"Error getting service embedding for service_id={service_id}: {e}")
+            return np.zeros(384)
+
+    def prepare_data(self, target_service_id=None):
+        try:
+            target_service = InstitutionService.query.get(target_service_id) if target_service_id else None
+            target_category = target_service.category_id if target_service else None
+            queues = Queue.query.join(InstitutionService).filter(
+                InstitutionService.category_id == target_category if target_category else True
+            ).all()
             if len(queues) < self.MIN_QUEUES:
-                logger.warning(f"Filas insuficientes: {len(queues)}")
+                logger.warning(f"Insufficient queues: {len(queues)}")
                 return None
 
             self.tag_set = set(t.tag for q in queues for t in q.tags)
             data = []
             for queue in queues:
-                tags = [t.tag for t in queue.tags]
-                tag_vector = [1 if tag in tags else 0 for tag in self.tag_set]
                 branch = Branch.query.join(Department).filter(Department.id == queue.department_id).first()
                 institution = Institution.query.get(branch.institution_id) if branch else None
+                service_embedding = self.get_service_embedding(queue.service_id)
                 data.append({
                     'queue_id': queue.id,
-                    'category_encoded': float(self.get_category_id(queue.category_id)),
+                    'category_encoded': float(self.get_category_id(queue.service.category_id if queue.service else None)),
                     'sector_encoded': float(self.get_sector_id(queue.department.sector if queue.department else None)),
                     'institution_type_encoded': float(self.get_institution_type_id(institution.institution_type_id if institution else None)),
-                    'tag_vector': tag_vector
+                    'service_embedding': service_embedding
                 })
 
             X = np.array([
-                [d['category_encoded'], d['sector_encoded'], d['institution_type_encoded']] + d['tag_vector']
+                [d['category_encoded'], d['sector_encoded'], d['institution_type_encoded']] + d['service_embedding'].tolist()
                 for d in data
             ], dtype=float)
             self.queue_mapping = {d['queue_id']: i for i, d in enumerate(data)}
             return X
         except Exception as e:
-            logger.error(f"Erro ao preparar dados de clustering: {e}")
+            logger.error(f"Error preparing clustering data: {e}")
             return None
 
-    def train(self):
+    def train(self, target_service_id=None):
         try:
-            X = self.prepare_data()
+            X = self.prepare_data(target_service_id)
             if X is None:
                 self.is_trained = False
                 return
@@ -697,9 +783,9 @@ class ServiceClusteringModel:
             self.kmeans.fit(X)
             self.is_trained = True
             joblib.dump((self.kmeans, self.queue_mapping, self.tag_set), self.MODEL_PATH)
-            logger.info("Modelo de clustering treinado")
+            logger.info("Clustering model trained")
         except Exception as e:
-            logger.error(f"Erro ao treinar modelo de clustering: {e}")
+            logger.error(f"Error training clustering model: {e}")
             self.is_trained = False
 
     def load_model(self):
@@ -707,12 +793,12 @@ class ServiceClusteringModel:
             if os.path.exists(self.MODEL_PATH):
                 self.kmeans, self.queue_mapping, self.tag_set = joblib.load(self.MODEL_PATH)
                 self.is_trained = True
-                logger.info("Modelo de clustering carregado")
+                logger.info("Clustering model loaded")
         except Exception as e:
-            logger.error(f"Erro ao carregar modelo de clustering: {e}")
+            logger.error(f"Error loading clustering model: {e}")
             self.is_trained = False
 
-    def get_alternatives(self, queue_id, n=3):
+    def get_alternatives(self, queue_id, user_id=None, n=3):
         try:
             if not self.is_trained or queue_id not in self.queue_mapping:
                 self.load_model()
@@ -725,12 +811,20 @@ class ServiceClusteringModel:
                 qid for qid, idx in self.queue_mapping.items()
                 if self.kmeans.labels_[idx] == cluster and qid != queue_id
             ]
+            if user_id:
+                fallback = UserLocationFallback.query.filter_by(user_id=user_id).first()
+                if fallback:
+                    similar_queues = sorted(
+                        similar_queues,
+                        key=lambda qid: 1 if Branch.query.join(Department).join(Queue).filter(Queue.id == qid, Branch.neighborhood == fallback.neighborhood).first() else 0,
+                        reverse=True
+                    )
             return similar_queues[:n]
         except Exception as e:
-            logger.error(f"Erro ao obter alternativas para queue_id={queue_id}: {e}")
+            logger.error(f"Error getting alternatives for queue_id={queue_id}: {e}")
             return []
 
-# Instâncias globais dos modelos
+# Global model instances
 wait_time_predictor = WaitTimePredictor()
 service_recommendation_predictor = ServiceRecommendationPredictor()
 collaborative_model = CollaborativeFilteringModel()
