@@ -1346,7 +1346,7 @@ def populate_initial_data(app):
                                     id=str(uuid.uuid4()),
                                     user_id=user.id,
                                     message=message,
-                                    channel="email",
+                                    #channel="email",
                                     sent_at=now - timedelta(days=i % 7),
                                     status="sent"
                                 )
