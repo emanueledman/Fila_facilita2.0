@@ -1928,7 +1928,7 @@ def init_queue_routes(app):
                 )
             if user_id:
                 favorites = UserPreference.query.filter_by(
-                    user_id=user_id, institution_id != None
+                    user_id=user_id, institution_id = None
                 ).with_entities(UserPreference.institution_id).all()
                 favorite_ids = {f.institution_id for f in favorites}
                 if favorite_ids:
