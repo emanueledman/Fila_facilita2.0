@@ -1721,6 +1721,7 @@ def init_queue_routes(app):
             return jsonify({'error': 'Erro interno do servidor'}), 500
 
 
+
     @app.route('/api/recommendation/featured', methods=['GET'])
     @require_auth
     def get_featured_recommendations():
@@ -1732,8 +1733,8 @@ def init_queue_routes(app):
         include_alternatives = request.args.get('include_alternatives', default='true') == 'true'
         max_demand = request.args.get('max_demand', default=20, type=int)
 
-        if not user_id:
-            return jsonify({'error': 'user_id is required'}), 400
+        if not user_id or user_id != request.user_id:
+            return jsonify({'error': 'user_id inválido ou não autorizado'}), 403
 
         recommendation_service = RecommendationService()
         queue_service = QueueService()
@@ -1744,19 +1745,24 @@ def init_queue_routes(app):
         category_ids = [p.service_category_id for p in preferences if p.service_category_id]
         neighborhoods = [p.neighborhood for p in preferences if p.neighborhood]
 
-        # Consultar filas ativas com baixa demanda
+        # Query corrigida usando Queue.department_id -> Department -> Branch
         query = db.session.query(
             Queue,
+            Department,
             Branch,
             InstitutionService,
+            Institution,
             func.coalesce(Queue.estimated_wait_time, 15).label('wait_time')
         ).join(
-            Branch, Queue.branch_id == Branch.id
+            Department, Queue.department_id == Department.id
+        ).join(
+            Branch, Department.branch_id == Branch.id
         ).join(
             InstitutionService, Queue.service_id == InstitutionService.id
+        ).join(
+            Institution, Branch.institution_id == Institution.id
         ).filter(
-            Queue.is_active == True,
-            Queue.current_demand <= max_demand
+            Queue.active_tickets <= max_demand
         )
 
         if institution_ids:
@@ -1769,14 +1775,14 @@ def init_queue_routes(app):
         queues = query.limit(limit).all()
         services = []
 
-        for queue, branch, service, wait_time in queues:
+        for queue, department, branch, service, institution, wait_time in queues:
             service_data = {
                 'queue': {
                     'id': queue.id,
-                    'institution_name': branch.institution.name,
+                    'institution_name': institution.name if institution else 'Desconhecido',
                     'branch_name': branch.name,
                     'wait_time': f'{int(wait_time)} min',
-                    'demand': queue.current_demand
+                    'demand': queue.active_tickets or 0
                 },
                 'service': {
                     'id': service.id,
@@ -1836,8 +1842,8 @@ def init_queue_routes(app):
         user_id = request.args.get('user_id')
         limit = request.args.get('limit', default=1, type=int)
 
-        if not user_id:
-            return jsonify({'error': 'user_id is required'}), 400
+        if not user_id or user_id != request.user_id:
+            return jsonify({'error': 'user_id inválido ou não autorizado'}), 403
 
         recommendation_service = RecommendationService()
         queue_service = QueueService()
@@ -1859,19 +1865,24 @@ def init_queue_routes(app):
         services = []
         for service, _ in popular_services:
             # Buscar uma fila ativa para o serviço
-            queue = db.session.query(
+            queue_data = db.session.query(
                 Queue,
+                Department,
                 Branch,
+                Institution,
                 func.coalesce(Queue.estimated_wait_time, 15).label('wait_time')
             ).join(
-                Branch, Queue.branch_id == Branch.id
+                Department, Queue.department_id == Department.id
+            ).join(
+                Branch, Department.branch_id == Branch.id
+            ).join(
+                Institution, Branch.institution_id == Institution.id
             ).filter(
-                Queue.service_id == service.id,
-                Queue.is_active == True
+                Queue.service_id == service.id
             ).first()
 
-            if queue:
-                queue, branch, wait_time = queue
+            if queue_data:
+                queue, department, branch, institution, wait_time = queue_data
                 service_data = {
                     'service': {
                         'id': service.id,
@@ -1879,11 +1890,11 @@ def init_queue_routes(app):
                     },
                     'institution': {
                         'id': branch.institution_id,
-                        'name': branch.institution.name
+                        'name': institution.name if institution else 'Desconhecido'
                     },
                     'queue': {
                         'id': queue.id,
-                        'institution_name': branch.institution.name,
+                        'institution_name': institution.name if institution else 'Desconhecido',
                         'branch_name': branch.name,
                         'wait_time': f'{int(wait_time)} min'
                     },
