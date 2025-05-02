@@ -1152,23 +1152,30 @@ def init_queue_routes(app):
             institution_type_id = request.args.get('institution_type_id')
             user_id = request.args.get('user_id')
             query = request.args.get('query', '').strip()
-            page = int(request.args.get('page', 1))
-            per_page = int(request.args.get('per_page', 10))
-            sort_by = request.args.get('sort_by', 'name')  # Opções: name, id
+            latitude = request.args.get('latitude', type=float)
+            longitude = request.args.get('longitude', type=float)
+            page = request.args.get('page', 1, type=int)
+            per_page = request.args.get('per_page', 10, type=int)
+            sort_by = request.args.get('sort_by', 'name')  # Opções: name, distance, quality
 
             # Validar entrada
             if page < 1 or per_page < 1:
                 logger.warning(f"Parâmetros inválidos: page={page}, per_page={per_page}")
                 return jsonify({'error': 'Página e itens por página devem ser positivos'}), 400
-            if sort_by not in ['name', 'id']:
+            if sort_by not in ['name', 'distance', 'quality']:
                 logger.warning(f"Ordenação inválida: sort_by={sort_by}")
-                return jsonify({'error': 'Ordenação deve ser por "name" ou "id"'}), 400
+                return jsonify({'error': 'Ordenação deve ser por "name", "distance" ou "quality"'}), 400
+            if sort_by == 'distance' and (latitude is None or longitude is None):
+                logger.warning("Ordenação por distância requer latitude e longitude")
+                return jsonify({'error': 'Coordenadas do usuário necessárias para ordenar por distância'}), 400
 
             # Verificar cache
             cache_params = {
                 'institution_type_id': institution_type_id,
                 'user_id': user_id,
                 'query': query,
+                'latitude': latitude,
+                'longitude': longitude,
                 'page': page,
                 'per_page': per_page,
                 'sort_by': sort_by
@@ -1193,39 +1200,78 @@ def init_queue_routes(app):
                         )
                     )
                 )
+
+            # Filtrar instituições favoritas se user_id for fornecido
+            favorite_ids = set()
             if user_id:
                 favorites = UserPreference.query.filter_by(
-                    user_id=user_id, institution_id = None
+                    user_id=user_id,
+                    is_favorite=True
                 ).with_entities(UserPreference.institution_id).all()
-                favorite_ids = {f.institution_id for f in favorites}
-                if favorite_ids:
-                    query_base = query_base.filter(Institution.id.in_(favorite_ids))
-                else:
-                    query_base = query_base.filter(False)  # Nenhum favorito
+                favorite_ids = {f.institution_id for f in favorites if f.institution_id}
 
-            # Contar total
+            # Contar total antes da paginação
             total = query_base.count()
             logger.debug(f"Total de instituições encontradas: {total}")
 
             # Ordenação
             if sort_by == 'name':
                 query_base = query_base.order_by(Institution.name.asc())
-            else:
-                query_base = query_base.order_by(Institution.id.asc())
+            elif sort_by == 'distance' and latitude is not None and longitude is not None:
+                # Adicionar cálculo de distância na consulta
+                query_base = query_base.join(Branch).filter(
+                    Branch.latitude.is_not(None),
+                    Branch.longitude.is_not(None)
+                ).order_by(
+                    func.sqrt(
+                        func.pow(Branch.latitude - latitude, 2) +
+                        func.pow(Branch.longitude - longitude, 2)
+                    ).asc()
+                )
+            elif sort_by == 'quality':
+                # Ordenar por pontuação de qualidade (baseada em ML ou preferências)
+                query_base = query_base.order_by(Institution.quality_score.desc())
 
             # Paginação
             institutions = query_base.offset((page - 1) * per_page).limit(per_page).all()
 
             # Montar resposta
-            results = [{
-                'id': inst.id,
-                'name': inst.name or 'Desconhecida',
-                'type': {
-                    'id': inst.institution_type_id,
-                    'name': inst.type.name if inst.type else 'Desconhecido'
-                },
-                'is_favorite': inst.id in favorite_ids if user_id and favorite_ids else False
-            } for inst in institutions]
+            results = []
+            for inst in institutions:
+                # Obter a filial mais próxima para cálculo de distância
+                distance = None
+                if latitude is not None and longitude is not None:
+                    
+                    # Opção 1: Usando filter() (recomendado)
+                    nearest_branch = Branch.query.filter(
+                        Branch.institution_id == inst.id,
+                        Branch.latitude.is_not(None),
+                        Branch.longitude.is_not(None)
+                    ).order_by(
+                        func.sqrt(
+                            func.pow(Branch.latitude - latitude, 2) +
+                            func.pow(Branch.longitude - longitude, 2)
+                        )
+                    ).first()
+                    
+                    
+                    if nearest_branch:
+                        distance = geodesic(
+                            (latitude, longitude),
+                            (nearest_branch.latitude, nearest_branch.longitude)
+                        ).kilometers
+
+                results.append({
+                    'id': inst.id,
+                    'name': inst.name or 'Desconhecida',
+                    'type': {
+                        'id': inst.institution_type_id,
+                        'name': inst.type.name if inst.type else 'Desconhecido'
+                    },
+                    'is_favorite': inst.id in favorite_ids,
+                    'distance': float(distance) if distance is not None else None,
+                    'quality_score': float(inst.quality_score) if inst.quality_score else None
+                })
 
             result = {
                 'institutions': results,
@@ -1241,6 +1287,9 @@ def init_queue_routes(app):
             logger.info(f"Lista de instituições retornada: {total} resultados, cache_key={cache_k}")
 
             return jsonify(result)
+        except SQLAlchemyError as e:
+            logger.error(f"Erro no banco de dados ao listar instituições: {str(e)}")
+            return jsonify({'error': 'Erro no banco de dados'}), 500
         except Exception as e:
             logger.error(f"Erro ao listar instituições: {str(e)}")
             return jsonify({'error': 'Erro interno do servidor'}), 500
