@@ -1145,9 +1145,10 @@ def init_queue_routes(app):
     def ping():
         return "pong", 200
 
+
+
     @app.route('/institutions', methods=['GET'])
     def list_institutions():
-        """Lista instituições com filtros por tipo, favoritas e busca textual."""
         try:
             institution_type_id = request.args.get('institution_type_id')
             user_id = request.args.get('user_id')
@@ -1156,40 +1157,23 @@ def init_queue_routes(app):
             longitude = request.args.get('longitude', type=float)
             page = request.args.get('page', 1, type=int)
             per_page = request.args.get('per_page', 10, type=int)
-            sort_by = request.args.get('sort_by', 'name')  # Opções: name, distance
+            sort_by = request.args.get('sort_by', 'name')
 
-            # Validar entrada
             if page < 1 or per_page < 1:
-                logger.warning(f"Parâmetros inválidos: page={page}, per_page={per_page}")
                 return jsonify({'error': 'Página e itens por página devem ser positivos'}), 400
             if sort_by not in ['name', 'distance']:
-                logger.warning(f"Ordenação inválida: sort_by={sort_by}")
                 return jsonify({'error': 'Ordenação deve ser por "name" ou "distance"'}), 400
             if sort_by == 'distance' and (latitude is None or longitude is None):
-                logger.warning("Ordenação por distância requer latitude e longitude")
                 return jsonify({'error': 'Coordenadas do usuário necessárias para ordenar por distância'}), 400
 
-            # Verificar cache
-            cache_params = {
-                'institution_type_id': institution_type_id,
-                'user_id': user_id,
-                'query': query,
-                'latitude': latitude,
-                'longitude': longitude,
-                'page': page,
-                'per_page': per_page,
-                'sort_by': sort_by
-            }
-            cache_k = cache_key('list_institutions', **cache_params)
+            cache_k = cache_key('list_institutions', **request.args.to_dict())
             try:
                 cached_result = redis_client.get(cache_k)
                 if cached_result:
-                    logger.debug(f"Cache hit para list_institutions: {cache_k}")
                     return jsonify(json.loads(cached_result))
             except Exception as e:
                 logger.warning(f"Erro ao acessar cache Redis: {e}")
 
-            # Construir consulta
             query_base = Institution.query.filter(Institution.name.is_not(None))
             if institution_type_id:
                 query_base = query_base.filter(Institution.institution_type_id == institution_type_id)
@@ -1204,7 +1188,6 @@ def init_queue_routes(app):
                     )
                 )
 
-            # Filtrar instituições favoritas
             favorite_ids = set()
             if user_id:
                 favorites = UserPreference.query.filter_by(
@@ -1213,32 +1196,34 @@ def init_queue_routes(app):
                 ).with_entities(UserPreference.institution_id).all()
                 favorite_ids = {f.institution_id for f in favorites if f.institution_id}
 
-            # Contar total
             total = query_base.count()
-            logger.debug(f"Total de instituições encontradas: {total}")
 
-            # Ordenação
             if sort_by == 'name':
                 query_base = query_base.order_by(Institution.name.asc())
-            elif sort_by == 'distance':
-                query_base = query_base.join(Branch, Institution.id == Branch.institution_id, isouter=True).filter(
-                    or_(
-                        Branch.latitude.is_not(None),
-                        Branch.id.is_(None)
-                    )
-                ).order_by(
+                institutions = query_base.offset((page - 1) * per_page).limit(per_page).all()
+            else:  # sort_by == 'distance'
+                # Subconsulta para calcular a distância mínima por instituição
+                subquery = db.session.query(
+                    Branch.institution_id,
                     func.min(
                         func.sqrt(
                             func.pow(Branch.latitude - latitude, 2) +
                             func.pow(Branch.longitude - longitude, 2)
                         )
-                    ).asc().nullslast()
+                    ).label('min_distance')
+                ).filter(
+                    Branch.latitude.is_not(None),
+                    Branch.longitude.is_not(None)
+                ).group_by(Branch.institution_id).subquery()
+
+                query_base = query_base.outerjoin(
+                    subquery,
+                    Institution.id == subquery.c.institution_id
+                ).order_by(
+                    subquery.c.min_distance.asc().nullslast()
                 )
+                institutions = query_base.offset((page - 1) * per_page).limit(per_page).all()
 
-            # Paginação
-            institutions = query_base.offset((page - 1) * per_page).limit(per_page).all()
-
-            # Montar resposta
             results = []
             for inst in institutions:
                 distance = None
@@ -1282,19 +1267,17 @@ def init_queue_routes(app):
 
             try:
                 redis_client.setex(cache_k, 60, json.dumps(result, default=str))
-                logger.info(f"Cache armazenado para {cache_k}")
             except Exception as e:
                 logger.warning(f"Erro ao salvar cache Redis: {e}")
 
-            logger.info(f"Lista de instituições retornada: {total} resultados, cache_key={cache_k}")
             return jsonify(result)
         except SQLAlchemyError as e:
-            logger.error(f"Erro no banco de dados ao listar instituições: {str(e)}", exc_info=True)
+            logger.error(f"Erro no banco de dados: {str(e)}", exc_info=True)
             return jsonify({'error': 'Erro no banco de dados'}), 500
         except Exception as e:
             logger.error(f"Erro ao listar instituições: {str(e)}", exc_info=True)
             return jsonify({'error': 'Erro interno do servidor'}), 500
-    
+
     @app.route('/branches', methods=['GET'])
     def list_branches():
         """Lista filiais com filtros por instituição, tipo de instituição e localização."""
