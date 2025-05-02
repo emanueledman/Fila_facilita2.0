@@ -1457,7 +1457,7 @@ def init_queue_routes(app):
             results = []
             for queue in queues:
                 service = queue.service
-                wait_time = QueueService.wait_time_predictor.predict(
+                wait_time = wait_time_predictor.predict(
                     queue_id=queue.id,
                     position=queue.active_tickets + 1,
                     active_tickets=queue.active_tickets,
@@ -1650,7 +1650,7 @@ def init_queue_routes(app):
                 wait_time = None
                 queue_info = {}
                 if queue:
-                    wait_time = QueueService.wait_time_predictor.predict(
+                    wait_time = wait_time_predictor.predict(
                         queue_id=queue.id,
                         position=queue.active_tickets + 1,
                         active_tickets=queue.active_tickets,
@@ -2157,7 +2157,7 @@ def init_queue_routes(app):
                 if distance > max_distance_km:
                     continue
 
-                wait_time = QueueService.wait_time_predictor.predict(
+                wait_time = wait_time_predictor.predict(
                     queue_id=queue.id,
                     position=queue.active_tickets + 1,
                     active_tickets=queue.active_tickets,
