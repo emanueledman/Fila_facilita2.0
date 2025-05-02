@@ -1721,6 +1721,178 @@ def init_queue_routes(app):
             return jsonify({'error': 'Erro interno do servidor'}), 500
 
 
+    @app.route('/api/recommendation/featured', methods=['GET'])
+    @require_auth
+    def get_featured_recommendations():
+        user_id = request.args.get('user_id')
+        latitude = request.args.get('latitude', type=float)
+        longitude = request.args.get('longitude', type=float)
+        limit = request.args.get('limit', default=5, type=int)
+        sort_by = request.args.get('sort_by', default='preference_score')
+        include_alternatives = request.args.get('include_alternatives', default='true') == 'true'
+        max_demand = request.args.get('max_demand', default=20, type=int)
+
+        if not user_id:
+            return jsonify({'error': 'user_id is required'}), 400
+
+        recommendation_service = RecommendationService()
+        queue_service = QueueService()
+
+        # Buscar preferências do usuário
+        preferences = db.session.query(UserPreference).filter_by(user_id=user_id, is_favorite=True).all()
+        institution_ids = [p.institution_id for p in preferences if p.institution_id]
+        category_ids = [p.service_category_id for p in preferences if p.service_category_id]
+        neighborhoods = [p.neighborhood for p in preferences if p.neighborhood]
+
+        # Consultar filas ativas com baixa demanda
+        query = db.session.query(
+            Queue,
+            Branch,
+            InstitutionService,
+            func.coalesce(Queue.estimated_wait_time, 15).label('wait_time')
+        ).join(
+            Branch, Queue.branch_id == Branch.id
+        ).join(
+            InstitutionService, Queue.service_id == InstitutionService.id
+        ).filter(
+            Queue.is_active == True,
+            Queue.current_demand <= max_demand
+        )
+
+        if institution_ids:
+            query = query.filter(Branch.institution_id.in_(institution_ids))
+        if category_ids:
+            query = query.filter(InstitutionService.category_id.in_(category_ids))
+        if neighborhoods:
+            query = query.filter(Branch.neighborhood.in_(neighborhoods))
+
+        queues = query.limit(limit).all()
+        services = []
+
+        for queue, branch, service, wait_time in queues:
+            service_data = {
+                'queue': {
+                    'id': queue.id,
+                    'institution_name': branch.institution.name,
+                    'branch_name': branch.name,
+                    'wait_time': f'{int(wait_time)} min',
+                    'demand': queue.current_demand
+                },
+                'service': {
+                    'id': service.id,
+                    'name': service.name
+                },
+                'institution_id': branch.institution_id,
+                'reason': 'Próximo a você com baixa espera' if latitude and longitude else 'Baseado nas suas preferências'
+            }
+
+            # Adicionar filiais recomendadas
+            if include_alternatives:
+                try:
+                    branches_data = recommendation_service.get_recommendations(
+                        user_id=user_id,
+                        institution_id=branch.institution_id,
+                        service_id=service.id,
+                        user_lat=latitude,
+                        user_lon=longitude,
+                        max_distance_km=10,
+                        max_wait_time=30,
+                        sort_by='distance'
+                    )
+                    service_data['recommended_branches'] = [
+                        {
+                            'branch': {'name': b['branch_name']},
+                            'distance': b['distance'],
+                            'wait_time': b['wait_time']
+                        } for b in branches_data.get('branches', [])
+                    ]
+                except Exception as e:
+                    service_data['recommended_branches'] = []
+
+            # Adicionar filas alternativas
+            if include_alternatives:
+                alternatives = queue_service.suggest_alternative_queues(
+                    queue_id=queue.id,
+                    user_id=user_id,
+                    user_lat=latitude,
+                    user_lon=longitude,
+                    max_distance_km=10
+                )
+                service_data['alternatives'] = [
+                    {
+                        'institution_name': alt['institution_name'],
+                        'branch_name': alt['branch_name'],
+                        'wait_time': alt['wait_time']
+                    } for alt in alternatives
+                ]
+
+            services.append(service_data)
+
+        return jsonify({'services': services}), 200
+
+    @app.route('/api/recommendation/popular', methods=['GET'])
+    @require_auth
+    def get_popular_recommendations():
+        user_id = request.args.get('user_id')
+        limit = request.args.get('limit', default=1, type=int)
+
+        if not user_id:
+            return jsonify({'error': 'user_id is required'}), 400
+
+        recommendation_service = RecommendationService()
+        queue_service = QueueService()
+
+        # Buscar serviços populares com base em tickets emitidos
+        popular_services = db.session.query(
+            InstitutionService,
+            func.count(Ticket.id).label('ticket_count')
+        ).join(
+            Queue, InstitutionService.id == Queue.service_id
+        ).join(
+            Ticket, Queue.id == Ticket.queue_id
+        ).group_by(
+            InstitutionService.id
+        ).order_by(
+            func.count(Ticket.id).desc()
+        ).limit(limit).all()
+
+        services = []
+        for service, _ in popular_services:
+            # Buscar uma fila ativa para o serviço
+            queue = db.session.query(
+                Queue,
+                Branch,
+                func.coalesce(Queue.estimated_wait_time, 15).label('wait_time')
+            ).join(
+                Branch, Queue.branch_id == Branch.id
+            ).filter(
+                Queue.service_id == service.id,
+                Queue.is_active == True
+            ).first()
+
+            if queue:
+                queue, branch, wait_time = queue
+                service_data = {
+                    'service': {
+                        'id': service.id,
+                        'name': service.name
+                    },
+                    'institution': {
+                        'id': branch.institution_id,
+                        'name': branch.institution.name
+                    },
+                    'queue': {
+                        'id': queue.id,
+                        'institution_name': branch.institution.name,
+                        'branch_name': branch.name,
+                        'wait_time': f'{int(wait_time)} min'
+                    },
+                    'reason': 'Serviço popular entre os usuários'
+                }
+                services.append(service_data)
+
+        return jsonify({'services': services}), 200
+
     @app.route('/api/user/favorites', methods=['GET'])
     @require_auth
     def get_user_favorites():
