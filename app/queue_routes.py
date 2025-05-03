@@ -1650,7 +1650,7 @@ def init_queue_routes(app):
                 wait_time = None
                 queue_info = {}
                 if queue:
-                    wait_time = RecommendationService.wait_time_predictor.predict(
+                    wait_time = wait_time_predictor.predict(
                         queue_id=queue.id,
                         position=queue.active_tickets + 1,
                         active_tickets=queue.active_tickets,
@@ -1719,8 +1719,6 @@ def init_queue_routes(app):
         except Exception as e:
             logger.error(f"Erro ao listar serviços da instituição {institution_id}: {str(e)}")
             return jsonify({'error': 'Erro interno do servidor'}), 500
-
-
 
     @app.route('/api/recommendation/featured', methods=['GET'])
     @require_auth
