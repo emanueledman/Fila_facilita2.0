@@ -1814,8 +1814,18 @@ def populate_initial_data(app):
                 # Criar Comportamentos de Usuário
                 # --------------------------------------
                 def create_user_behaviors():
+                    """
+                    Cria comportamentos de usuário para o usuário de teste e outros usuários, respeitando o modelo UserBehavior
+                    que usa service_id em vez de queue_id. Garante compatibilidade com o esquema do banco de dados e
+                    mantém idempotência.
+                    """
                     now = datetime.utcnow()
                     test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
+
+                    # Função auxiliar para verificar existência
+                    def exists(model, **kwargs):
+                        return model.query.filter_by(**kwargs).first() is not None
+
                     # Comportamentos para o usuário de teste
                     if test_user:
                         test_behaviors = [
@@ -1838,56 +1848,57 @@ def populate_initial_data(app):
                             if not service:
                                 app.logger.warning(f"Serviço {beh['service']} não encontrado para instituição {inst.name}")
                                 continue
-                            queue = Queue.query.join(Department).join(Branch).filter(
-                                Branch.id == branch.id, Queue.service_id == service.id
-                            ).first()
-                            if not queue:
-                                app.logger.warning(f"Fila para serviço {beh['service']} na filial {beh['branch']} não encontrada")
-                                continue
-                            if not exists(UserBehavior, user_id=test_user.id, queue_id=queue.id, action=beh["action"]):
+                            
+                            # Verificar existência usando service_id
+                            if not exists(UserBehavior, user_id=test_user.id, service_id=service.id, action=beh["action"]):
                                 ub = UserBehavior(
                                     id=str(uuid.uuid4()),
                                     user_id=test_user.id,
                                     institution_id=inst.id,
                                     branch_id=branch.id,
-                                    queue_id=queue.id,
+                                    service_id=service.id,
                                     action=beh["action"],
-                                    timestamp=now - timedelta(days=beh["days_ago"]),
-                                    created_at=now
+                                    timestamp=now - timedelta(days=beh["days_ago"])
                                 )
                                 db.session.add(ub)
-                                app.logger.debug(f"Comportamento de teste criado: {beh['action']} para usuário {test_user.id} na fila {queue.id}")
+                                app.logger.debug(f"Comportamento de teste criado: {beh['action']} para usuário {test_user.id} no serviço {service.id}")
 
                     # Comportamentos para outros usuários
-                    user_list = User.query.filter_by(user_role=UserRole.USER).limit(20).all()
-                    queues = Queue.query.all()
+                    user_list = User.query.filter_by(user_role="user").limit(20).all()
+                    services = InstitutionService.query.all()
+                    if not services:
+                        app.logger.warning("Nenhum serviço encontrado para criar comportamentos de usuários regulares")
+                        return
+                    
                     for i, user in enumerate(user_list):
                         if user.id == "nMSnRc8jpYQbnrxujg5JZcHzFKP2":
                             continue
                         for j in range(3):
-                            queue = queues[(i + j) % len(queues)]
-                            branch = Branch.query.join(Department).filter(Department.id == queue.department_id).first()
+                            service = services[(i + j) % len(services)]
+                            branch = Branch.query.filter_by(institution_id=service.institution_id).first()
                             if not branch:
-                                app.logger.warning(f"Filial não encontrada para departamento {queue.department_id}")
+                                app.logger.warning(f"Filial não encontrada para instituição {service.institution_id}")
                                 continue
-                            inst = Institution.query.get(branch.institution_id)
+                            inst = Institution.query.get(service.institution_id)
                             if not inst:
-                                app.logger.warning(f"Instituição não encontrada para filial {branch.id}")
+                                app.logger.warning(f"Instituição não encontrada para serviço {service.id}")
                                 continue
                             action = "issued_ticket" if j % 2 == 0 else "viewed_queue"
-                            if not exists(UserBehavior, user_id=user.id, queue_id=queue.id, action=action):
+                            
+                            # Verificar existência usando service_id
+                            if not exists(UserBehavior, user_id=user.id, service_id=service.id, action=action):
                                 ub = UserBehavior(
                                     id=str(uuid.uuid4()),
                                     user_id=user.id,
                                     institution_id=inst.id,
                                     branch_id=branch.id,
-                                    queue_id=queue.id,
+                                    service_id=service.id,
                                     action=action,
-                                    timestamp=now - timedelta(days=(i + j) % 7),
-                                    created_at=now
+                                    timestamp=now - timedelta(days=(i + j) % 7)
                                 )
                                 db.session.add(ub)
-                                app.logger.debug(f"Comportamento criado: {action} para usuário {user.id} na fila {queue.id}")
+                                app.logger.debug(f"Comportamento criado: {action} para usuário {user.id} no serviço {service.id}")
+                    
                     db.session.flush()
                     app.logger.info("Comportamentos de usuário criados com sucesso.")
 
