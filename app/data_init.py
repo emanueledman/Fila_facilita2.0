@@ -956,7 +956,7 @@ def populate_initial_data(app):
                                                 "prefix": "BI",
                                                 "daily_limit": 120,
                                                 "num_counters": 6,
-                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                                "tags": ["Bis", "Documentos", "24h"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
@@ -1520,6 +1520,9 @@ def populate_initial_data(app):
                     # Branch Admins
                     for branch in Branch.query.all():
                         institution = Institution.query.get(branch.institution_id)
+                        if not institution:
+                            app.logger.warning(f"Instituição não encontrada para filial {branch.name}")
+                            continue
                         email = f"branch_admin_{normalize_string(institution.name)}_{normalize_string(branch.name)}@queue.com"
                         if not exists(User, email=email):
                             admin = User(
@@ -1540,7 +1543,13 @@ def populate_initial_data(app):
                     # Attendants
                     for dept in Department.query.all():
                         branch = Branch.query.get(dept.branch_id)
+                        if not branch:
+                            app.logger.warning(f"Filial não encontrada para departamento {dept.name}")
+                            continue
                         institution = Institution.query.get(branch.institution_id)
+                        if not institution:
+                            app.logger.warning(f"Instituição não encontrada para filial {branch.name}")
+                            continue
                         email = f"attendant_{normalize_string(dept.name)}_{normalize_string(branch.name)}_{normalize_string(institution.name)}@queue.com"
                         if not exists(User, email=email):
                             attendant = User(
@@ -1618,7 +1627,10 @@ def populate_initial_data(app):
                         ]
                         for pref in test_prefs:
                             inst = Institution.query.filter_by(name=pref["institution_name"]).first()
-                            if inst and not exists(UserPreference, user_id=test_user.id, institution_id=inst.id):
+                            if not inst:
+                                app.logger.warning(f"Instituição {pref['institution_name']} não encontrada para preferência do usuário {test_user.id}")
+                                continue
+                            if not exists(UserPreference, user_id=test_user.id, institution_id=inst.id):
                                 up = UserPreference(
                                     id=str(uuid.uuid4()),
                                     user_id=test_user.id,
@@ -1672,6 +1684,9 @@ def populate_initial_data(app):
                 # --------------------------------------
                 # Criar Tickets
                 # --------------------------------------
+                # --------------------------------------
+                # Criar Tickets
+                # --------------------------------------
                 def create_tickets():
                     now = datetime.utcnow()
                     test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
@@ -1684,81 +1699,93 @@ def populate_initial_data(app):
                         ]
                         for tq in test_queues:
                             inst = Institution.query.filter_by(name=tq["institution"]).first()
+                            if not inst:
+                                app.logger.warning(f"Instituição {tq['institution']} não encontrada para tickets do usuário {test_user.id}")
+                                continue
                             branch = Branch.query.filter_by(institution_id=inst.id, name=tq["branch"]).first()
+                            if not branch:
+                                app.logger.warning(f"Filial {tq['branch']} não encontrada para instituição {inst.name}")
+                                continue
                             service = InstitutionService.query.filter_by(institution_id=inst.id, name=tq["service"]).first()
+                            if not service:
+                                app.logger.warning(f"Serviço {tq['service']} não encontrado para instituição {inst.name}")
+                                continue
                             queue = Queue.query.join(Department).join(Branch).filter(
                                 Branch.id == branch.id, Queue.service_id == service.id
                             ).first()
-                            if queue:
-                                existing_tickets = Ticket.query.filter_by(queue_id=queue.id, user_id=test_user.id).count()
-                                for i in range(tq["count"] - existing_tickets):
-                                    ticket_number = Ticket.query.filter_by(queue_id=queue.id).count() + i + 1
-                                    branch_code = branch.id[-4:]
-                                    qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
-                                    if Ticket.query.filter_by(qr_code=qr_code).first():
-                                        qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}-{int(now.timestamp())}"
-                                    status = "Atendido" if i % 2 == 0 else "Pendente"
-                                    issued_at = now - timedelta(days=i % 30, hours=i % 24)
-                                    ticket = Ticket(
-                                        id=str(uuid.uuid4()),
-                                        queue_id=queue.id,
-                                        user_id=test_user.id,
-                                        ticket_number=ticket_number,
-                                        qr_code=qr_code,
-                                        priority=1 if i % 2 == 0 else 0,  # 50% alta prioridade
-                                        is_physical=False,
-                                        status=status,
-                                        issued_at=issued_at,
-                                        expires_at=issued_at + timedelta(days=1),
-                                        attended_at=issued_at + timedelta(minutes=10) if status == "Atendido" else None,
-                                        counter=(i % queue.num_counters) + 1 if status == "Atendido" else None,
-                                        service_time=300.0 + (i % 26) * 60 if status == "Atendido" else None,
-                                        trade_available=False
-                                    )
-                                    db.session.add(ticket)
-                                    app.logger.debug(f"Ticket de teste criado: {qr_code} para usuário {test_user.id}")
+                            if not queue:
+                                app.logger.warning(f"Fila para serviço {tq['service']} na filial {tq['branch']} não encontrada")
+                                continue
+                            existing_tickets = Ticket.query.filter_by(queue_id=queue.id, user_id=test_user.id).count()
+                            for i in range(tq["count"] - existing_tickets):
+                                ticket_number = Ticket.query.filter_by(queue_id=queue.id).count() + i + 1
+                                branch_code = branch.id[-4:]
+                                qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
+                                if Ticket.query.filter_by(qr_code=qr_code).first():
+                                    qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}-{int(now.timestamp())}"
+                                status = "Atendido" if i % 2 == 0 else "Pendente"
+                                issued_at = now - timedelta(days=i % 30, hours=i % 24)
+                                ticket = Ticket(
+                                    id=str(uuid.uuid4()),
+                                    queue_id=queue.id,
+                                    user_id=test_user.id,
+                                    ticket_number=ticket_number,
+                                    qr_code=qr_code,
+                                    priority=1 if i % 2 == 0 else 0,  # 50% alta prioridade
+                                    is_physical=False,
+                                    status=status,
+                                    issued_at=issued_at,
+                                    expires_at=issued_at + timedelta(days=1),
+                                    attended_at=issued_at + timedelta(minutes=10) if status == "Atendido" else None,
+                                    counter=(i % queue.num_counters) + 1 if status == "Atendido" else None,
+                                    service_time=300.0 + (i % 26) * 60 if status == "Atendido" else None,
+                                    trade_available=False
+                                )
+                                db.session.add(ticket)
+                                app.logger.debug(f"Ticket de teste criado: {qr_code} para usuário {test_user.id}")
 
                     # Tickets para outras filas
+                    user_list = User.query.filter_by(user_role=UserRole.USER).limit(20).all()
                     for queue in Queue.query.all():
                         existing_tickets = Ticket.query.filter_by(queue_id=queue.id).count()
                         if existing_tickets >= 50:
                             continue
                         branch = Branch.query.join(Department).filter(Department.id == queue.department_id).first()
+                        if not branch:
+                            app.logger.warning(f"Filial não encontrada para departamento {queue.department_id}")
+                            continue
                         branch_code = branch.id[-4:]
                         for i in range(50 - existing_tickets):
-                            ticket_number = (Ticket.query.filter_by(queue_id=queue.id).count() or 0) + i + 1
+                            user = user_list[i % len(user_list)] if i % 2 == 0 else None  # 50% dos tickets associados a usuários
+                            ticket_number = existing_tickets + i + 1
                             qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
                             if Ticket.query.filter_by(qr_code=qr_code).first():
                                 qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}-{int(now.timestamp())}"
-                            status = "Atendido" if i % 2 == 0 else "Pendente"
-                            issued_at = now - timedelta(days=i % 14, hours=i % 24)
+                            status = "Atendido" if i % 3 == 0 else "Pendente"
+                            issued_at = now - timedelta(days=i % 30, hours=i % 24)
                             ticket = Ticket(
                                 id=str(uuid.uuid4()),
                                 queue_id=queue.id,
-                                user_id=User.query.filter_by(user_role=UserRole.USER).offset(i % 20).first().id,
+                                user_id=user.id if user else None,
                                 ticket_number=ticket_number,
                                 qr_code=qr_code,
-                                priority=1 if i % 5 == 0 else 0,  # 20% alta prioridade
-                                is_physical=False,
+                                priority=1 if i % 4 == 0 else 0,  # 25% alta prioridade
+                                is_physical=i % 5 == 0,  # 20% tickets físicos
                                 status=status,
                                 issued_at=issued_at,
                                 expires_at=issued_at + timedelta(days=1),
-                                attended_at=issued_at + timedelta(minutes=10) if status == "Atendido" else None,
+                                attended_at=issued_at + timedelta(minutes=15) if status == "Atendido" else None,
                                 counter=(i % queue.num_counters) + 1 if status == "Atendido" else None,
-                                service_time=300.0 + (i % 26) * 60 if status == "Atendido" else None,
-                                trade_available=False
+                                service_time=300.0 + (i % 20) * 60 if status == "Atendido" else None,
+                                trade_available=i % 10 == 0  # 10% disponíveis para troca
                             )
                             db.session.add(ticket)
                             app.logger.debug(f"Ticket criado: {qr_code} para fila {queue.id}")
-                        queue.active_tickets = Ticket.query.filter_by(queue_id=queue.id, status="Pendente").count()
                     db.session.flush()
-                    app.logger.info("Tickets criados com sucesso para todas as filas.")
+                    app.logger.info("Tickets criados com sucesso.")
 
                 create_tickets()
 
-                # --------------------------------------
-                # Criar Comportamentos de Usuário
-                # --------------------------------------
                 # --------------------------------------
                 # Criar Comportamentos de Usuário
                 # --------------------------------------
@@ -1776,12 +1803,24 @@ def populate_initial_data(app):
                         ]
                         for beh in test_behaviors:
                             inst = Institution.query.filter_by(name=beh["institution"]).first()
+                            if not inst:
+                                app.logger.warning(f"Instituição {beh['institution']} não encontrada para comportamento do usuário {test_user.id}")
+                                continue
                             branch = Branch.query.filter_by(institution_id=inst.id, name=beh["branch"]).first()
+                            if not branch:
+                                app.logger.warning(f"Filial {beh['branch']} não encontrada para instituição {inst.name}")
+                                continue
                             service = InstitutionService.query.filter_by(institution_id=inst.id, name=beh["service"]).first()
+                            if not service:
+                                app.logger.warning(f"Serviço {beh['service']} não encontrado para instituição {inst.name}")
+                                continue
                             queue = Queue.query.join(Department).join(Branch).filter(
                                 Branch.id == branch.id, Queue.service_id == service.id
                             ).first()
-                            if queue and not exists(UserBehavior, user_id=test_user.id, queue_id=queue.id, action=beh["action"]):
+                            if not queue:
+                                app.logger.warning(f"Fila para serviço {beh['service']} na filial {beh['branch']} não encontrada")
+                                continue
+                            if not exists(UserBehavior, user_id=test_user.id, queue_id=queue.id, action=beh["action"]):
                                 ub = UserBehavior(
                                     id=str(uuid.uuid4()),
                                     user_id=test_user.id,
@@ -1804,7 +1843,13 @@ def populate_initial_data(app):
                         for j in range(3):
                             queue = queues[(i + j) % len(queues)]
                             branch = Branch.query.join(Department).filter(Department.id == queue.department_id).first()
+                            if not branch:
+                                app.logger.warning(f"Filial não encontrada para departamento {queue.department_id}")
+                                continue
                             inst = Institution.query.get(branch.institution_id)
+                            if not inst:
+                                app.logger.warning(f"Instituição não encontrada para filial {branch.id}")
+                                continue
                             action = "issued_ticket" if j % 2 == 0 else "viewed_queue"
                             if not exists(UserBehavior, user_id=user.id, queue_id=queue.id, action=action):
                                 ub = UserBehavior(
