@@ -109,8 +109,9 @@ def create_app():
                 # Desativar verificações de chave estrangeira durante a operação DROP
                 if 'postgresql' in app.config['SQLALCHEMY_DATABASE_URI']:
                     # Para PostgreSQL
-                    db.session.execute('SET CONSTRAINTS ALL DEFERRED')
-                    db.session.execute('SET session_replication_role = replica')
+                    from sqlalchemy import text
+                    db.session.execute(text('SET CONSTRAINTS ALL DEFERRED'))
+                    db.session.execute(text('SET session_replication_role = replica'))
                     db.session.commit()
 
                 # Criar tabelas, limpando a base
@@ -119,7 +120,8 @@ def create_app():
                 
                 # Reativar verificações de chave estrangeira
                 if 'postgresql' in app.config['SQLALCHEMY_DATABASE_URI']:
-                    db.session.execute('SET session_replication_role = DEFAULT')
+                    from sqlalchemy import text
+                    db.session.execute(text('SET session_replication_role = DEFAULT'))
                     db.session.commit()
                     
                 app.logger.info("Tabelas criadas ou verificadas no banco de dados")
