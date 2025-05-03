@@ -95,7 +95,7 @@ def create_app():
     init_routes(app)
     init_queue_routes(app)
     init_user_routes(app)
-    init_admin_routes(app)
+    #init_admin_routes(app)
 
     # Rota para inicializar o banco de dados
     @app.route('/init-db', methods=['POST'])
