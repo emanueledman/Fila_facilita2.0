@@ -1907,8 +1907,8 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_audit_logs():
                     """
-                    Cria logs de auditoria para o usuário de teste e outros usuários, usando UserRole.USER
-                    para filtrar usuários corretamente.
+                    Cria logs de auditoria para o usuário de teste e outros usuários, usando o campo 'details'
+                    em vez de 'description' para alinhar com o modelo AuditLog.
                     """
                     now = datetime.utcnow()
                     test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
@@ -1920,24 +1920,24 @@ def populate_initial_data(app):
                     # Logs de auditoria para o usuário de teste
                     if test_user:
                         test_audit_logs = [
-                            {"action": "USER_LOGIN", "description": "Usuário autenticado via Firebase", "days_ago": 0},
-                            {"action": "TICKET_CREATED", "description": "Ticket emitido para Registo Civil", "days_ago": 5},
-                            {"action": "TICKET_CREATED", "description": "Ticket emitido para Consulta Geral", "days_ago": 10},
-                            {"action": "TICKET_CREATED", "description": "Ticket emitido para Atendimento Bancário", "days_ago": 15},
-                            {"action": "QUEUE_VIEWED", "description": "Fila Registo Civil visualizada", "days_ago": 4},
-                            {"action": "QUEUE_VIEWED", "description": "Fila Consulta Geral visualizada", "days_ago": 9},
-                            {"action": "USER_LOGIN", "description": "Usuário autenticado via Firebase", "days_ago": 7},
-                            {"action": "TICKET_CREATED", "description": "Ticket emitido para Registo Civil", "days_ago": 3},
-                            {"action": "USER_PROFILE_UPDATED", "description": "Perfil do usuário atualizado", "days_ago": 2},
-                            {"action": "NOTIFICATION_SENT", "description": "Notificação de ticket enviada", "days_ago": 5}
+                            {"action": "USER_LOGIN", "details": "Usuário autenticado via Firebase", "days_ago": 0},
+                            {"action": "TICKET_CREATED", "details": "Ticket emitido para Registo Civil", "days_ago": 5},
+                            {"action": "TICKET_CREATED", "details": "Ticket emitido para Consulta Geral", "days_ago": 10},
+                            {"action": "TICKET_CREATED", "details": "Ticket emitido para Atendimento Bancário", "days_ago": 15},
+                            {"action": "QUEUE_VIEWED", "details": "Fila Registo Civil visualizada", "days_ago": 4},
+                            {"action": "QUEUE_VIEWED", "details": "Fila Consulta Geral visualizada", "days_ago": 9},
+                            {"action": "USER_LOGIN", "details": "Usuário autenticado via Firebase", "days_ago": 7},
+                            {"action": "TICKET_CREATED", "details": "Ticket emitido para Registo Civil", "days_ago": 3},
+                            {"action": "USER_PROFILE_UPDATED", "details": "Perfil do usuário atualizado", "days_ago": 2},
+                            {"action": "NOTIFICATION_SENT", "details": "Notificação de ticket enviada", "days_ago": 5}
                         ]
                         for log in test_audit_logs:
-                            if not exists(AuditLog, user_id=test_user.id, action=log["action"], description=log["description"]):
+                            if not exists(AuditLog, user_id=test_user.id, action=log["action"], details=log["details"]):
                                 al = AuditLog(
                                     id=str(uuid.uuid4()),
                                     user_id=test_user.id,
                                     action=log["action"],
-                                    description=log["description"],
+                                    details=log["details"],
                                     timestamp=now - timedelta(days=log["days_ago"]),
                                     resource_type="user_action",
                                     resource_id=str(uuid.uuid4())
@@ -1953,13 +1953,13 @@ def populate_initial_data(app):
                             continue
                         for j in range(5):
                             action = actions[j % len(actions)]
-                            description = f"{action.replace('_', ' ').title()} - Usuário {user.email}"
-                            if not exists(AuditLog, user_id=user.id, action=action, description=description):
+                            details = f"{action.replace('_', ' ').title()} - Usuário {user.email}"
+                            if not exists(AuditLog, user_id=user.id, action=action, details=details):
                                 al = AuditLog(
                                     id=str(uuid.uuid4()),
                                     user_id=user.id,
                                     action=action,
-                                    description=description,
+                                    details=details,
                                     timestamp=now - timedelta(days=(i + j) % 7),
                                     resource_type="user_action",
                                     resource_id=str(uuid.uuid4())
@@ -1969,6 +1969,7 @@ def populate_initial_data(app):
                     
                     db.session.flush()
                     app.logger.info("Logs de auditoria criados com sucesso.")
+                
                 create_audit_logs()
 
                 # --------------------------------------
