@@ -21,7 +21,7 @@ except ImportError as e:
 from sqlalchemy import and_, func
 from datetime import datetime, timedelta
 from app import db
-from app.models import Queue, Ticket, Department, ServiceTag, UserPreference, QueueSchedule, Branch, Weekday, Institution, InstitutionService, ServiceCategory, UserBehavior, UserLocationFallback
+from app.models import Queue, Ticket, Department, ServiceTag, UserPreference, Branch, Weekday, Institution, InstitutionService, ServiceCategory, UserBehavior, UserLocationFallback
 from geopy.distance import geodesic
 import joblib
 import os
