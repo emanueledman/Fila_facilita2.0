@@ -1,6 +1,6 @@
 from flask import jsonify, request, send_file
 from . import db, socketio, redis_client
-from .models import User, Queue, Ticket, Department, Institution, UserRole, QueueSchedule, Branch, ServiceCategory, ServiceTag, UserPreference
+from .models import User, Queue, Ticket, Department, Institution, UserRole, Branch, ServiceCategory, ServiceTag, UserPreference
 from .auth import require_auth
 from .services import QueueService
 from .ml_models import wait_time_predictor
@@ -820,7 +820,7 @@ def init_admin_routes(app):
 
             response = []
             for q in queues:
-                schedule = QueueSchedule.query.filter_by(queue_id=q.id, weekday=current_weekday).first()
+                schedule = None #QueueSchedule.query.filter_by(queue_id=q.id, weekday=current_weekday).first()
                 is_open = False
                 if schedule and not schedule.is_closed:
                     is_open = (
@@ -952,7 +952,7 @@ def init_admin_routes(app):
             weekday = report_date.strftime('%A').upper()
             report = []
             for queue in queues:
-                schedule = QueueSchedule.query.filter_by(queue_id=queue.id, weekday=weekday).first()
+                schedule = None #QueueSchedule.query.filter_by(queue_id=queue.id, weekday=weekday).first()
                 if schedule and schedule.is_closed:
                     continue
 
