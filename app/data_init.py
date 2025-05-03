@@ -2040,8 +2040,9 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_user_location_fallbacks():
                     """
-                    Cria localizações alternativas para o usuário de teste e outros usuários, usando UserRole.USER
-                    para filtrar usuários corretamente.
+                    Cria localizações alternativas para o usuário de teste e outros usuários, usando apenas
+                    o campo 'neighborhood' para alinhar com o modelo UserLocationFallback, removendo
+                    'latitude' e 'longitude'.
                     """
                     now = datetime.utcnow()
                     test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
@@ -2050,19 +2051,19 @@ def populate_initial_data(app):
                     def exists(model, **kwargs):
                         return model.query.filter_by(**kwargs).first() is not None
 
-                    # Lista de bairros (mantida do contexto anterior)
+                    # Lista de bairros
                     neighborhoods = [
-                        {"name": "Ingombota", "latitude": -8.8167, "longitude": 13.2332},
-                        {"name": "Talatona", "latitude": -8.9167, "longitude": 13.1833},
-                        {"name": "Maianga", "latitude": -8.8267, "longitude": 13.2233},
-                        {"name": "Rangel", "latitude": -8.8367, "longitude": 13.2433}
+                        {"name": "Ingombota"},
+                        {"name": "Talatona"},
+                        {"name": "Maianga"},
+                        {"name": "Rangel"}
                     ]
 
                     # Localizações alternativas para o usuário de teste
                     if test_user:
                         test_locations = [
-                            {"neighborhood": "Ingombota", "latitude": -8.8167, "longitude": 13.2332},
-                            {"neighborhood": "Talatona", "latitude": -8.9167, "longitude": 13.1833}
+                            {"neighborhood": "Ingombota"},
+                            {"neighborhood": "Talatona"}
                         ]
                         for loc in test_locations:
                             if not exists(UserLocationFallback, user_id=test_user.id, neighborhood=loc["neighborhood"]):
@@ -2070,8 +2071,6 @@ def populate_initial_data(app):
                                     id=str(uuid.uuid4()),
                                     user_id=test_user.id,
                                     neighborhood=loc["neighborhood"],
-                                    latitude=loc["latitude"],
-                                    longitude=loc["longitude"],
                                     updated_at=now
                                 )
                                 db.session.add(ulf)
@@ -2089,8 +2088,6 @@ def populate_initial_data(app):
                                     id=str(uuid.uuid4()),
                                     user_id=user.id,
                                     neighborhood=loc["name"],
-                                    latitude=loc["latitude"],
-                                    longitude=loc["longitude"],
                                     updated_at=now
                                 )
                                 db.session.add(ulf)
