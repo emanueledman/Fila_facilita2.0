@@ -10,12 +10,13 @@ from app.models import (
 
 def populate_initial_data(app):
     """
-    Popula o banco de dados com dados iniciais para testes, incluindo 8 instituições (Banco BAI, Banco BFA, Banco BIC,
-    Banco Keve, Hospital Josina Machel, Clínica Sagrada Esperança, SIAC, Conservatória dos Registos), cada uma com 3 filiais
-    em Luanda. Cada filial tem departamentos com 3 filas (1 24/7, 1 horário comercial, 1 horário intermediário). Cada fila
-    tem 50 tickets. Inclui usuários, preferências, comportamentos, localizações alternativas, logs de auditoria e notificações.
-    Mantém idempotência, logs em português, e compatibilidade com models.py atualizado (incluindo is_client e is_favorite).
-    Suporta modelos de ML com dados suficientes para treinamento.
+    Popula o banco de dados com dados iniciais para testes, com foco na Conservatória dos Registos e no ramo de Saúde.
+    Inclui 8 instituições (4 bancos: BAI, BFA, BIC, Keve; 2 saúde: Hospital Josina Machel, Clínica Sagrada Esperança;
+    2 administrativos: SIAC, Conservatória dos Registos), cada uma com 3 filiais em Luanda. Cada filial tem departamentos
+    com 3 filas (1 24/7, 1 horário comercial, 1 horário intermediário). Saúde tem 10 serviços distintos (5 por instituição).
+    Conservatória tem 8 serviços. Cada fila tem 50 tickets. Inclui usuários, preferências, comportamentos, localizações
+    alternativas, logs de auditoria e notificações. Mantém idempotência, logs em português, e compatibilidade com models.py
+    (incluindo is_client e is_favorite). Suporta testes e modelos de ML.
     """
     with app.app_context():
         try:
@@ -81,10 +82,16 @@ def populate_initial_data(app):
                         {"name": "Consulta Médica", "description": "Consultas gerais e especializadas", "parent_id": None},
                         {"name": "Exames", "description": "Exames laboratoriais e diagnósticos", "parent_id": None},
                         {"name": "Triagem", "description": "Triagem e atendimento inicial", "parent_id": None},
+                        {"name": "Internamento", "description": "Serviços de internamento hospitalar", "parent_id": None},
+                        {"name": "Cirurgia", "description": "Procedimentos cirúrgicos", "parent_id": None},
+                        {"name": "Fisioterapia", "description": "Serviços de reabilitação física", "parent_id": None},
+                        {"name": "Vacinação", "description": "Serviços de imunização", "parent_id": None},
+                        {"name": "Odontologia", "description": "Serviços odontológicos", "parent_id": None},
                         {"name": "Administrativo", "description": "Serviços administrativos e atendimento ao cidadão", "parent_id": None},
                         {"name": "Documentos", "description": "Emissão e renovação de documentos", "parent_id": None},
                         {"name": "Registros", "description": "Registros civis e comerciais", "parent_id": None},
-                        {"name": "Licenças", "description": "Renovação e emissão de licenças", "parent_id": None}
+                        {"name": "Licenças", "description": "Renovação e emissão de licenças", "parent_id": None},
+                        {"name": "Autenticação", "description": "Autenticação de documentos", "parent_id": None}
                     ]
                     category_map = {}
                     for cat in categories:
@@ -103,7 +110,10 @@ def populate_initial_data(app):
                     for cat_name, parent_name in [
                         ("Conta", "Bancário"), ("Empréstimo", "Bancário"), ("Investimento", "Bancário"),
                         ("Consulta Médica", "Saúde"), ("Exames", "Saúde"), ("Triagem", "Saúde"),
-                        ("Documentos", "Administrativo"), ("Registros", "Administrativo"), ("Licenças", "Administrativo")
+                        ("Internamento", "Saúde"), ("Cirurgia", "Saúde"), ("Fisioterapia", "Saúde"),
+                        ("Vacinação", "Saúde"), ("Odontologia", "Saúde"),
+                        ("Documentos", "Administrativo"), ("Registros", "Administrativo"),
+                        ("Licenças", "Administrativo"), ("Autenticação", "Administrativo")
                     ]:
                         cat = ServiceCategory.query.filter_by(name=cat_name).first()
                         if cat and not cat.parent_id:
@@ -654,12 +664,14 @@ def populate_initial_data(app):
                     {
                         "id": str(uuid.uuid4()),
                         "name": "Hospital Josina Machel",
-                        "description": "Serviços de saúde em Luanda",
+                        "description": "Serviços de saúde públicos em Luanda",
                         "institution_type_id": institution_type_map["Saúde"],
                         "services": [
                             {"name": "Consulta Geral", "category_id": category_map["Consulta Médica"], "description": "Consultas médicas gerais"},
                             {"name": "Exames Laboratoriais", "category_id": category_map["Exames"], "description": "Exames de diagnóstico"},
-                            {"name": "Triagem", "category_id": category_map["Triagem"], "description": "Atendimento inicial e triagem"}
+                            {"name": "Triagem", "category_id": category_map["Triagem"], "description": "Atendimento inicial e triagem"},
+                            {"name": "Internamento", "category_id": category_map["Internamento"], "description": "Serviços de internamento hospitalar"},
+                            {"name": "Cirurgia de Urgência", "category_id": category_map["Cirurgia"], "description": "Cirurgias de emergência"}
                         ],
                         "branches": [
                             {
@@ -691,11 +703,11 @@ def populate_initial_data(app):
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Triagem",
-                                                "prefix": "TR",
-                                                "daily_limit": 100,
-                                                "num_counters": 3,
-                                                "tags": ["Saúde", "Triagem"]
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
                                             }
                                         ]
                                     }
@@ -730,11 +742,11 @@ def populate_initial_data(app):
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Triagem",
-                                                "prefix": "TR",
-                                                "daily_limit": 100,
-                                                "num_counters": 3,
-                                                "tags": ["Saúde", "Triagem"]
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
                                             }
                                         ]
                                     }
@@ -769,11 +781,11 @@ def populate_initial_data(app):
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Triagem",
-                                                "prefix": "TR",
-                                                "daily_limit": 100,
-                                                "num_counters": 3,
-                                                "tags": ["Saúde", "Triagem"]
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
                                             }
                                         ]
                                     }
@@ -789,7 +801,9 @@ def populate_initial_data(app):
                         "services": [
                             {"name": "Consulta Especializada", "category_id": category_map["Consulta Médica"], "description": "Consultas com especialistas"},
                             {"name": "Exames Diagnósticos", "category_id": category_map["Exames"], "description": "Exames avançados"},
-                            {"name": "Triagem", "category_id": category_map["Triagem"], "description": "Triagem inicial"}
+                            {"name": "Fisioterapia", "category_id": category_map["Fisioterapia"], "description": "Serviços de reabilitação física"},
+                            {"name": "Vacinação", "category_id": category_map["Vacinação"], "description": "Serviços de imunização"},
+                            {"name": "Odontologia", "category_id": category_map["Odontologia"], "description": "Atendimento odontológico"}
                         ],
                         "branches": [
                             {
@@ -821,11 +835,11 @@ def populate_initial_data(app):
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Triagem",
-                                                "prefix": "TR",
-                                                "daily_limit": 100,
-                                                "num_counters": 3,
-                                                "tags": ["Saúde", "Triagem"]
+                                                "service_name": "Fisioterapia",
+                                                "prefix": "FT",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Fisioterapia"]
                                             }
                                         ]
                                     }
@@ -860,11 +874,11 @@ def populate_initial_data(app):
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Triagem",
-                                                "prefix": "TR",
-                                                "daily_limit": 100,
-                                                "num_counters": 3,
-                                                "tags": ["Saúde", "Triagem"]
+                                                "service_name": "Fisioterapia",
+                                                "prefix": "FT",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Fisioterapia"]
                                             }
                                         ]
                                     }
@@ -899,11 +913,11 @@ def populate_initial_data(app):
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Triagem",
-                                                "prefix": "TR",
-                                                "daily_limit": 100,
-                                                "num_counters": 3,
-                                                "tags": ["Saúde", "Triagem"]
+                                                "service_name": "Fisioterapia",
+                                                "prefix": "FT",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Fisioterapia"]
                                             }
                                         ]
                                     }
@@ -1049,7 +1063,12 @@ def populate_initial_data(app):
                         "services": [
                             {"name": "Registo Comercial", "category_id": category_map["Registros"], "description": "Registo de empresas"},
                             {"name": "Registo Civil", "category_id": category_map["Registros"], "description": "Registos de nascimento e casamento"},
-                            {"name": "Renovação de Licenças", "category_id": category_map["Licenças"], "description": "Renovação de licenças comerciais"}
+                            {"name": "Renovação de Licenças", "category_id": category_map["Licenças"], "description": "Renovação de licenças comerciais"},
+                            {"name": "Autenticação de Documentos", "category_id": category_map["Autenticação"], "description": "Autenticação de documentos oficiais"},
+                            {"name": "Registo Predial", "category_id": category_map["Registros"], "description": "Registo de propriedades"},
+                            {"name": "Certidão de Nascimento", "category_id": category_map["Documentos"], "description": "Emissão de certidões de nascimento"},
+                            {"name": "Certidão de Casamento", "category_id": category_map["Documentos"], "description": "Emissão de certidões de casamento"},
+                            {"name": "Registo de Óbito", "category_id": category_map["Registros"], "description": "Registo de falecimentos"}
                         ],
                         "branches": [
                             {
@@ -1081,11 +1100,11 @@ def populate_initial_data(app):
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Renovação de Licenças",
-                                                "prefix": "RL",
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
                                                 "daily_limit": 90,
                                                 "num_counters": 3,
-                                                "tags": ["Administrativo", "Licenças"]
+                                                "tags": ["Administrativo", "Autenticação"]
                                             }
                                         ]
                                     }
@@ -1120,11 +1139,11 @@ def populate_initial_data(app):
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Renovação de Licenças",
-                                                "prefix": "RL",
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
                                                 "daily_limit": 90,
                                                 "num_counters": 3,
-                                                "tags": ["Administrativo", "Licenças"]
+                                                "tags": ["Administrativo", "Autenticação"]
                                             }
                                         ]
                                     }
@@ -1159,11 +1178,11 @@ def populate_initial_data(app):
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Renovação de Licenças",
-                                                "prefix": "RL",
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
                                                 "daily_limit": 90,
                                                 "num_counters": 3,
-                                                "tags": ["Administrativo", "Licenças"]
+                                                "tags": ["Administrativo", "Autenticação"]
                                             }
                                         ]
                                     }
@@ -1190,12 +1209,19 @@ def populate_initial_data(app):
                             app.logger.debug(f"Serviço criado: {srv['name']} para instituição {institution_id}")
                     db.session.flush()
 
-                def create_branch_schedules(branch_id, is_24h=False):
+                def create_branch_schedules(branch_id, institution_type, is_24h=False):
                     weekdays = [Weekday.MONDAY, Weekday.TUESDAY, Weekday.WEDNESDAY, Weekday.THURSDAY, Weekday.FRIDAY, Weekday.SATURDAY, Weekday.SUNDAY]
                     for day in weekdays:
                         if not exists(BranchSchedule, branch_id=branch_id, weekday=day):
-                            open_time = time(0, 0) if is_24h else time(8, 0)
-                            end_time = time(23, 59) if is_24h else time(16, 0)
+                            if institution_type == "Saúde":
+                                open_time = time(0, 0) if is_24h else time(7, 0)
+                                end_time = time(23, 59) if is_24h else time(17, 0)
+                            elif institution_type == "Administrativo":
+                                open_time = time(0, 0) if is_24h else time(8, 0)
+                                end_time = time(23, 59) if is_24h else time(16, 0)
+                            else:  # Bancário
+                                open_time = time(0, 0) if is_24h else time(8, 30)
+                                end_time = time(23, 59) if is_24h else time(15, 30)
                             bs = BranchSchedule(
                                 id=str(uuid.uuid4()),
                                 branch_id=branch_id,
@@ -1265,7 +1291,7 @@ def populate_initial_data(app):
                             app.logger.warning(f"Serviço {queue_data['service_name']} não encontrado para filial {branch_id}")
                     return d
 
-                def create_branch(institution_id, branch_data):
+                def create_branch(institution_id, branch_data, institution_type):
                     if not exists(Branch, institution_id=institution_id, name=branch_data["name"]):
                         b = Branch(
                             id=str(uuid.uuid4()),
@@ -1280,7 +1306,7 @@ def populate_initial_data(app):
                         db.session.flush()
                         app.logger.debug(f"Filial criada: {branch_data['name']} para instituição {institution_id}")
                         is_24h = any("24h" in queue_data["tags"] for dept in branch_data["departments"] for queue_data in dept["queues"])
-                        create_branch_schedules(b.id, is_24h)
+                        create_branch_schedules(b.id, institution_type, is_24h)
                         for dept_data in branch_data["departments"]:
                             create_department(b.id, dept_data)
                         return b
@@ -1290,6 +1316,7 @@ def populate_initial_data(app):
                     return b
 
                 def create_institution(inst_data):
+                    institution_type = InstitutionType.query.get(inst_data["institution_type_id"]).name
                     if not exists(Institution, name=inst_data["name"]):
                         i = Institution(
                             id=inst_data["id"],
@@ -1302,12 +1329,12 @@ def populate_initial_data(app):
                         app.logger.debug(f"Instituição criada: {inst_data['name']}")
                         create_institution_services(i.id, inst_data["services"])
                         for branch_data in inst_data["branches"]:
-                            create_branch(i.id, branch_data)
+                            create_branch(i.id, branch_data, institution_type)
                         return i
                     i = Institution.query.filter_by(name=inst_data["name"]).first()
                     create_institution_services(i.id, inst_data["services"])
                     for branch_data in inst_data["branches"]:
-                        create_branch(i.id, branch_data)
+                        create_branch(i.id, branch_data, institution_type)
                     return i
 
                 # Criar instituições
@@ -1502,7 +1529,7 @@ def populate_initial_data(app):
                     now = datetime.utcnow()
                     user_list = User.query.filter_by(user_role=UserRole.USER).limit(20).all()
                     for user in user_list:
-                        for inst in Institution.query.limit(3).all():
+                        for inst in Institution.query.limit(4).all():  # Aumentado para 4 instituições
                             service = InstitutionService.query.filter_by(institution_id=inst.id).first()
                             branch = Branch.query.filter_by(institution_id=inst.id).first()
                             if not exists(UserBehavior, user_id=user.id, institution_id=inst.id, action="issued_ticket", timestamp=now - timedelta(days=1)):
@@ -1551,7 +1578,7 @@ def populate_initial_data(app):
                     now = datetime.utcnow()
                     users = User.query.limit(30).all()
                     actions = ["USER_LOGIN", "TICKET_CREATED", "TICKET_UPDATED", "QUEUE_MODIFIED", "USER_PROFILE_UPDATED"]
-                    for i in range(150):
+                    for i in range(200):  # Aumentado para 200 logs
                         user = users[i % len(users)]
                         action = actions[i % len(actions)]
                         timestamp = now - timedelta(days=i % 30, hours=i % 24)
