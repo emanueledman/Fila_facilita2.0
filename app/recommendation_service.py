@@ -5,12 +5,13 @@ import uuid
 import numpy as np
 from sqlalchemy import and_, func, or_
 from datetime import datetime
-from .models import Queue, QueueSchedule, Ticket, Department, Institution, User, Weekday, Branch, ServiceCategory, ServiceTag, UserPreference, InstitutionType, InstitutionService, UserBehavior, UserLocationFallback, NotificationLog
+from .models import Queue, Ticket, Department, Institution, User, Weekday, Branch, ServiceCategory, ServiceTag, UserPreference, InstitutionType,BranchSchedule, InstitutionService, UserBehavior, UserLocationFallback, NotificationLog
 from .ml_models import wait_time_predictor, service_recommendation_predictor, collaborative_model, demand_model, clustering_model
 from . import db, redis_client
 from geopy.distance import geodesic
 
 logger = logging.getLogger(__name__)
+ 
 
 class RecommendationService:
     """Serviço para recomendações personalizadas de filas e serviços, com foco em serviços semelhantes."""
@@ -139,7 +140,7 @@ class RecommendationService:
         per_page=10,
         sort_by='score'
     ):
-        """Busca serviços com filtros estruturados, priorizando serviços semelhantes."""
+        """Busca serviços com filtros estruturados, priorizando serviços semelhantes e verificando horários via BranchSchedule."""
         try:
             now = datetime.utcnow()
             results = []
@@ -214,13 +215,19 @@ class RecommendationService:
                         )
                     )
 
-            # Filtrar por filas abertas
-            query_base = query_base.join(QueueSchedule).filter(
+            # Filtrar por filas abertas com base em BranchSchedule
+            weekday_str = now.strftime('%A').upper()
+            try:
+                weekday_enum = Weekday[weekday_str]
+            except KeyError:
+                logger.error(f"Dia da semana inválido: {weekday_str}")
+                raise ValueError("Dia da semana inválido")
+            query_base = query_base.join(BranchSchedule, BranchSchedule.branch_id == Branch.id).filter(
                 and_(
-                    QueueSchedule.weekday == getattr(Weekday, now.strftime('%A').upper(), None),
-                    QueueSchedule.is_closed == False,
-                    QueueSchedule.open_time <= now.time(),
-                    QueueSchedule.end_time >= now.time(),
+                    BranchSchedule.weekday == weekday_enum,
+                    BranchSchedule.is_closed == False,
+                    BranchSchedule.open_time <= now.time(),
+                    BranchSchedule.end_time >= now.time(),
                     Queue.active_tickets < Queue.daily_limit
                 )
             )
@@ -375,10 +382,15 @@ class RecommendationService:
                     })
                 logger.debug(f"Alternativas para queue_id={queue.id}: {len(alternatives_data)} filas")
 
-                # Horário de funcionamento
-                schedule = QueueSchedule.query.filter_by(queue_id=queue.id, weekday=getattr(Weekday, now.strftime('%A').upper(), None)).first()
+                # Horário de funcionamento via BranchSchedule
+                schedule = BranchSchedule.query.filter_by(
+                    branch_id=branch.id,
+                    weekday=weekday_enum
+                ).first()
                 open_time = schedule.open_time.strftime('%H:%M') if schedule and schedule.open_time else None
                 end_time = schedule.end_time.strftime('%H:%M') if schedule and schedule.end_time else None
+                if not schedule:
+                    logger.warning(f"Filial {branch.id} sem horário definido para {weekday_str}")
 
                 # Pontuação composta
                 composite_score = 0.0
@@ -537,7 +549,7 @@ class RecommendationService:
             logger.error(f"Erro ao buscar serviços estruturados: {str(e)}")
             db.session.rollback()
             raise
-
+    
     @staticmethod
     def search_services(
         query,
@@ -560,7 +572,7 @@ class RecommendationService:
         per_page=10,
         offset=None
     ):
-        """Busca serviços com filtros flexíveis, priorizando serviços semelhantes."""
+        """Busca serviços com filtros flexíveis, priorizando serviços semelhantes e verificando horários via BranchSchedule."""
         try:
             now = datetime.utcnow()
             results = []
@@ -646,13 +658,19 @@ class RecommendationService:
                         )
                     )
 
-            # Filtrar por filas abertas
-            query_base = query_base.join(QueueSchedule).filter(
+            # Filtrar por filas abertas com base em BranchSchedule
+            weekday_str = now.strftime('%A').upper()
+            try:
+                weekday_enum = Weekday[weekday_str]
+            except KeyError:
+                logger.error(f"Dia da semana inválido: {weekday_str}")
+                raise ValueError("Dia da semana inválido")
+            query_base = query_base.join(BranchSchedule, BranchSchedule.branch_id == Branch.id).filter(
                 and_(
-                    QueueSchedule.weekday == getattr(Weekday, now.strftime('%A').upper(), None),
-                    QueueSchedule.is_closed == False,
-                    QueueSchedule.open_time <= now.time(),
-                    QueueSchedule.end_time >= now.time(),
+                    BranchSchedule.weekday == weekday_enum,
+                    BranchSchedule.is_closed == False,
+                    BranchSchedule.open_time <= now.time(),
+                    BranchSchedule.end_time >= now.time(),
                     Queue.active_tickets < Queue.daily_limit
                 )
             )
@@ -814,10 +832,15 @@ class RecommendationService:
                     })
                 logger.debug(f"Alternativas para queue_id={queue.id}: {len(alternatives_data)} filas")
 
-                # Horário de funcionamento
-                schedule = QueueSchedule.query.filter_by(queue_id=queue.id, weekday=getattr(Weekday, now.strftime('%A').upper(), None)).first()
+                # Horário de funcionamento via BranchSchedule
+                schedule = BranchSchedule.query.filter_by(
+                    branch_id=branch.id,
+                    weekday=weekday_enum
+                ).first()
                 open_time = schedule.open_time.strftime('%H:%M') if schedule and schedule.open_time else None
                 end_time = schedule.end_time.strftime('%H:%M') if schedule and schedule.end_time else None
+                if not schedule:
+                    logger.warning(f"Filial {branch.id} sem horário definido para {weekday_str}")
 
                 # Pontuação composta
                 composite_score = 0.0
@@ -975,7 +998,7 @@ class RecommendationService:
                 'suggestions': suggestions,
                 'filter_options': filter_options,
                 'message': (f"Nenhuma fila encontrada para {institution_name or 'sua instituição preferida'}" if not results and institution_id
-                           else "Recomendações personalizadas para você!")
+                        else "Recomendações personalizadas para você!")
             }
 
             # Cachear resultados apenas se houver resultados

@@ -1,3 +1,4 @@
+
 from sqlalchemy import Column, Integer, String, Float, Time, Boolean, DateTime, ForeignKey, Enum, Index, Text, JSON
 from sqlalchemy.orm import relationship
 from app import db
@@ -8,11 +9,11 @@ import enum
 
 # Enums
 class UserRole(enum.Enum):
-    USER = "user"              # Cliente comum
-    ATTENDANT = "attendant"    # Atendente de filas
-    BRANCH_ADMIN = "branch_admin"  # Gerente de filial
-    INSTITUTION_ADMIN = "inst_admin"  # Administrador da instituição
-    SYSTEM_ADMIN = "sys_admin"  # Administrador do sistema
+    USER = "user"
+    ATTENDANT = "attendant"
+    BRANCH_ADMIN = "branch_admin"
+    INSTITUTION_ADMIN = "inst_admin"
+    SYSTEM_ADMIN = "sys_admin"
 
 class Weekday(enum.Enum):
     MONDAY = "Monday"
@@ -27,9 +28,8 @@ class Weekday(enum.Enum):
 class InstitutionType(db.Model):
     __tablename__ = 'institution_type'
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
-    name = Column(String(100), nullable=False, unique=True)  # Ex.: Bancário, Saúde
+    name = Column(String(100), nullable=False, unique=True)
     description = Column(Text, nullable=True)
-    
     institutions = relationship('Institution', backref='type', lazy='dynamic')
     
     def __repr__(self):
@@ -40,10 +40,9 @@ class InstitutionService(db.Model):
     __tablename__ = 'institution_service'
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     institution_id = Column(String(36), ForeignKey('institution.id'), nullable=False, index=True)
-    name = Column(String(100), nullable=False)  # Ex.: Atendimento Bancário
+    name = Column(String(100), nullable=False)
     category_id = Column(String(36), ForeignKey('service_category.id'), nullable=True, index=True)
-    description = Column(Text, nullable=True)  # Ex.: "Consultas, saques, depósitos"
-    
+    description = Column(Text, nullable=True)
     institution = relationship('Institution', backref=db.backref('services', lazy='dynamic'))
     category = relationship('ServiceCategory', backref=db.backref('services', lazy='dynamic'))
     
@@ -57,7 +56,6 @@ class ServiceCategory(db.Model):
     name = Column(String(100), nullable=False)
     parent_id = Column(String(36), ForeignKey('service_category.id'), nullable=True, index=True)
     description = Column(Text, nullable=True)
-    
     parent = relationship('ServiceCategory', remote_side=[id], backref='subcategories')
     
     def __repr__(self):
@@ -69,7 +67,6 @@ class ServiceTag(db.Model):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     tag = Column(String(50), nullable=False, index=True)
     queue_id = Column(String(36), ForeignKey('queue.id'), nullable=False, index=True)
-    
     queue = relationship('Queue', backref=db.backref('tags', lazy='dynamic'))
     
     def __repr__(self):
@@ -79,7 +76,7 @@ class ServiceTag(db.Model):
 class Institution(db.Model):
     __tablename__ = 'institution'
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
-    name = Column(String(100), nullable=False)  # Ex.: Banco BAI
+    name = Column(String(100), nullable=False)
     institution_type_id = Column(String(36), ForeignKey('institution_type.id'), nullable=False, index=True)
     description = Column(Text, nullable=True)
     
@@ -96,7 +93,6 @@ class Branch(db.Model):
     neighborhood = Column(String(100), nullable=True)
     latitude = Column(Float)
     longitude = Column(Float)
-    
     institution = relationship('Institution', backref=db.backref('branches', lazy='dynamic'))
     schedules = relationship('BranchSchedule', back_populates='branch', cascade='all, delete-orphan')
     
@@ -112,7 +108,6 @@ class BranchSchedule(db.Model):
     open_time = Column(Time, nullable=True)
     end_time = Column(Time, nullable=True)
     is_closed = Column(Boolean, default=False)
-    
     branch = relationship('Branch', back_populates='schedules')
     
     def __repr__(self):
@@ -125,7 +120,6 @@ class Department(db.Model):
     branch_id = Column(String(36), ForeignKey('branch.id'), nullable=False, index=True)
     name = Column(String(50), nullable=False, index=True)
     sector = Column(String(50))
-    
     branch = relationship('Branch', backref=db.backref('departments', lazy='dynamic'))
     
     def __repr__(self):
@@ -146,12 +140,10 @@ class Queue(db.Model):
     num_counters = Column(Integer, default=1)
     last_counter = Column(Integer, default=0)
     default_attendant_id = Column(String(36), ForeignKey('user.id'), nullable=True, index=True)
-    estimated_wait_time = Column(Float, nullable=True)  # Tempo de espera estimado
-    
+    estimated_wait_time = Column(Float, nullable=True)
     department = relationship('Department', backref=db.backref('queues', lazy='dynamic'))
     service = relationship('InstitutionService', backref=db.backref('queues', lazy='dynamic'))
     default_attendant = relationship('User', backref=db.backref('default_queues', lazy='dynamic'))
-    schedules = relationship('QueueSchedule', back_populates='queue', cascade='all, delete-orphan')
     
     def update_estimated_wait_time(self):
         from app import wait_time_predictor
@@ -185,7 +177,6 @@ class Ticket(db.Model):
     service_time = Column(Float)
     receipt_data = Column(Text)
     trade_available = Column(Boolean, default=False)
-    
     queue = relationship('Queue', backref=db.backref('tickets', lazy='dynamic'))
     user = relationship('User', backref=db.backref('tickets', lazy='dynamic'))
     
@@ -208,9 +199,8 @@ class User(db.Model):
     last_location_update = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     active = Column(Boolean, default=True)
-    notification_enabled = Column(Boolean, default=False)  # Preferência de notificações
-    notification_preferences = Column(JSON, nullable=True)  # Ex.: {"max_wait_time": 10, "preferred_hours": ["08:00-12:00"]}
-    
+    notification_enabled = Column(Boolean, default=False)
+    notification_preferences = Column(JSON, nullable=True)
     branch = relationship('Branch', backref=db.backref('users', lazy='dynamic'))
     institution = relationship('Institution', backref=db.backref('admins', lazy='dynamic'))
     
@@ -225,21 +215,6 @@ class User(db.Model):
     
     def __repr__(self):
         return f'<User {self.email} ({self.user_role.value})>'
-
-# Tabela para horários das filas
-class QueueSchedule(db.Model):
-    __tablename__ = 'queue_schedules'
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    queue_id = Column(String(36), ForeignKey('queue.id'), nullable=False, index=True)
-    weekday = Column(Enum(Weekday), nullable=False)
-    open_time = Column(Time, nullable=True)
-    end_time = Column(Time, nullable=True)
-    is_closed = Column(Boolean, default=False)
-    
-    queue = relationship('Queue', back_populates='schedules')
-    
-    def __repr__(self):
-        return f'<QueueSchedule {self.weekday} for Queue {self.queue_id}>'
 
 # Tabela para logs de auditoria
 class AuditLog(db.Model):
@@ -283,7 +258,6 @@ class UserPreference(db.Model):
     last_visited = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
     user = relationship('User', backref=db.backref('preferences', lazy='dynamic'))
     institution_type = relationship('InstitutionType', backref=db.backref('preferred_by', lazy='dynamic'))
     institution = relationship('Institution', backref=db.backref('preferred_by', lazy='dynamic'))
@@ -299,10 +273,9 @@ class NotificationLog(db.Model):
     user_id = Column(String(36), ForeignKey('user.id'), nullable=False, index=True)
     branch_id = Column(String(36), ForeignKey('branch.id'), nullable=True, index=True)
     queue_id = Column(String(36), ForeignKey('queue.id'), nullable=True, index=True)
-    message = Column(String(200), nullable=False)  # Ex.: "BAI Kilamba: 5 min de espera"
+    message = Column(String(200), nullable=False)
     sent_at = Column(DateTime, default=datetime.utcnow)
-    status = Column(String(20), default='Sent')  # Sent, Delivered, Failed
-    
+    status = Column(String(20), default='Sent')
     user = relationship('User', backref=db.backref('notifications', lazy='dynamic'))
     branch = relationship('Branch', backref=db.backref('notifications', lazy='dynamic'))
     queue = relationship('Queue', backref=db.backref('notifications', lazy='dynamic'))
@@ -318,9 +291,8 @@ class UserBehavior(db.Model):
     institution_id = Column(String(36), ForeignKey('institution.id'), nullable=True, index=True)
     service_id = Column(String(36), ForeignKey('institution_service.id'), nullable=True, index=True)
     branch_id = Column(String(36), ForeignKey('branch.id'), nullable=True, index=True)
-    action = Column(String(50), nullable=False)  # Ex.: "accessed_service", "issued_ticket"
+    action = Column(String(50), nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
-    
     user = relationship('User', backref=db.backref('behaviors', lazy='dynamic'))
     institution = relationship('Institution', backref=db.backref('behaviors', lazy='dynamic'))
     service = relationship('InstitutionService', backref=db.backref('behaviors', lazy='dynamic'))
@@ -334,10 +306,9 @@ class UserLocationFallback(db.Model):
     __tablename__ = 'user_location_fallback'
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     user_id = Column(String(36), ForeignKey('user.id'), nullable=False, index=True)
-    neighborhood = Column(String(100), nullable=True)  # Ex.: "Talatona"
-    address = Column(String(200), nullable=True)  # Ex.: "Rua Principal, Talatona"
+    neighborhood = Column(String(100), nullable=True)
+    address = Column(String(200), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow)
-    
     user = relationship('User', backref=db.backref('location_fallbacks', lazy='dynamic'))
     
     def __repr__(self):
@@ -346,7 +317,6 @@ class UserLocationFallback(db.Model):
 # Índices otimizados
 Index('idx_institution_type_id', Institution.institution_type_id)
 Index('idx_queue_department_id_service_id', Queue.department_id, Queue.service_id)
-Index('idx_queue_schedule_queue_id', QueueSchedule.queue_id)
 Index('idx_audit_log_timestamp', AuditLog.timestamp)
 Index('idx_service_tag_queue_id', ServiceTag.queue_id)
 Index('idx_branch_institution_id', Branch.institution_id)
@@ -363,3 +333,4 @@ Index('idx_notification_log_sent_at', NotificationLog.sent_at)
 Index('idx_user_behavior_user_id', UserBehavior.user_id)
 Index('idx_user_behavior_timestamp', UserBehavior.timestamp)
 Index('idx_user_location_fallback_user_id', UserLocationFallback.user_id)
+
