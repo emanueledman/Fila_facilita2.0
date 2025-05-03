@@ -16,8 +16,10 @@ def populate_initial_data(app):
     (Ingombota, Cazenga, Talatona, Kilamba, Viana, Rangel) com 8 serviços cada para testes de serviços semelhantes e
     sugestões. Saúde tem 10 serviços (5 por instituição). Bancos e SIAC têm 3 filiais cada. Cada filial tem departamentos
     com 3 filas (1 24/7, 1 horário comercial, 1 horário intermediário). Cada fila tem 50 tickets. Inclui usuários,
-    preferências, comportamentos, localizações alternativas, logs de auditoria e notificações. Mantém idempotência,
-    logs em português, e compatibilidade com models.py (incluindo is_client e is_favorite). Suporta testes e modelos de ML.
+    preferências, comportamentos, localizações alternativas, logs de auditoria e notificações. Adiciona um usuário de teste
+    com UID nMSnRc8jpYQbnrxujg5JZcHzFKP2 e email edmannews5@gmail.com com histórico robusto para testes.
+    Mantém idempotência, logs em português, e compatibilidade com models.py (incluindo is_client e is_favorite).
+    Suporta testes e modelos de ML.
     """
     with app.app_context():
         try:
@@ -1465,6 +1467,23 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_users():
                     users = []
+                    # Usuário de teste
+                    test_user_id = "nMSnRc8jpYQbnrxujg5JZcHzFKP2"
+                    test_user_email = "edmannews5@gmail.com"
+                    if not exists(User, id=test_user_id) and not exists(User, email=test_user_email):
+                        test_user = User(
+                            id=test_user_id,
+                            email=test_user_email,
+                            name="Edman Teste",
+                            password_hash=hash_password("test123"),
+                            user_role=UserRole.USER,
+                            created_at=datetime.utcnow(),
+                            active=True
+                        )
+                        db.session.add(test_user)
+                        users.append(test_user)
+                        app.logger.debug(f"Usuário de teste criado: {test_user_email}")
+
                     # System Admin
                     if not exists(User, email="sysadmin@queue.com"):
                         admin = User(
@@ -1482,7 +1501,7 @@ def populate_initial_data(app):
 
                     # Institution Admins
                     for inst in Institution.query.all():
-                        email = f"admin_{normalize_string( inst.name)}@queue.com"
+                        email = f"admin_{normalize_string(inst.name)}@queue.com"
                         if not exists(User, email=email):
                             admin = User(
                                 id=str(uuid.uuid4()),
@@ -1568,9 +1587,61 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_user_preferences():
                     now = datetime.utcnow()
+                    # Preferências para o usuário de teste
+                    test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
+                    if test_user:
+                        test_prefs = [
+                            {
+                                "institution_name": "Conservatória dos Registos",
+                                "neighborhood": "Ingombota",
+                                "is_client": True,
+                                "is_favorite": True,
+                                "visit_count": 15,
+                                "preference_score": 80
+                            },
+                            {
+                                "institution_name": "Hospital Josina Machel",
+                                "neighborhood": "Maianga",
+                                "is_client": True,
+                                "is_favorite": False,
+                                "visit_count": 10,
+                                "preference_score": 60
+                            },
+                            {
+                                "institution_name": "Banco BAI",
+                                "neighborhood": "Talatona",
+                                "is_client": True,
+                                "is_favorite": False,
+                                "visit_count": 5,
+                                "preference_score": 50
+                            }
+                        ]
+                        for pref in test_prefs:
+                            inst = Institution.query.filter_by(name=pref["institution_name"]).first()
+                            if inst and not exists(UserPreference, user_id=test_user.id, institution_id=inst.id):
+                                up = UserPreference(
+                                    id=str(uuid.uuid4()),
+                                    user_id=test_user.id,
+                                    institution_id=inst.id,
+                                    institution_type_id=inst.institution_type_id,
+                                    neighborhood=pref["neighborhood"],
+                                    preference_score=pref["preference_score"],
+                                    is_client=pref["is_client"],
+                                    is_favorite=pref["is_favorite"],
+                                    visit_count=pref["visit_count"],
+                                    last_visited=now - timedelta(days=pref["visit_count"] % 5),
+                                    created_at=now,
+                                    updated_at=now
+                                )
+                                db.session.add(up)
+                                app.logger.debug(f"Preferência criada para usuário de teste {test_user.id} e instituição {inst.id}")
+
+                    # Preferências para outros usuários
                     user_list = User.query.filter_by(user_role=UserRole.USER).limit(20).all()
                     institutions = Institution.query.all()
                     for i, user in enumerate(user_list):
+                        if user.id == "nMSnRc8jpYQbnrxujg5JZcHzFKP2":
+                            continue
                         for j in range(3):
                             inst = institutions[(i + j) % len(institutions)]
                             neighborhood = neighborhoods[(i + j) % len(neighborhoods)]["name"]
@@ -1603,6 +1674,51 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_tickets():
                     now = datetime.utcnow()
+                    test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
+                    # Tickets para o usuário de teste
+                    if test_user:
+                        test_queues = [
+                            {"institution": "Conservatória dos Registos", "service": "Registo Civil", "branch": "Conservatória Ingombota", "count": 4},
+                            {"institution": "Hospital Josina Machel", "service": "Consulta Geral", "branch": "Unidade Central", "count": 3},
+                            {"institution": "Banco BAI", "service": "Atendimento Bancário", "branch": "Agência Central", "count": 3}
+                        ]
+                        for tq in test_queues:
+                            inst = Institution.query.filter_by(name=tq["institution"]).first()
+                            branch = Branch.query.filter_by(institution_id=inst.id, name=tq["branch"]).first()
+                            service = InstitutionService.query.filter_by(institution_id=inst.id, name=tq["service"]).first()
+                            queue = Queue.query.join(Department).join(Branch).filter(
+                                Branch.id == branch.id, Queue.service_id == service.id
+                            ).first()
+                            if queue:
+                                existing_tickets = Ticket.query.filter_by(queue_id=queue.id, user_id=test_user.id).count()
+                                for i in range(tq["count"] - existing_tickets):
+                                    ticket_number = Ticket.query.filter_by(queue_id=queue.id).count() + i + 1
+                                    branch_code = branch.id[-4:]
+                                    qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
+                                    if Ticket.query.filter_by(qr_code=qr_code).first():
+                                        qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}-{int(now.timestamp())}"
+                                    status = "Atendido" if i % 2 == 0 else "Pendente"
+                                    issued_at = now - timedelta(days=i % 30, hours=i % 24)
+                                    ticket = Ticket(
+                                        id=str(uuid.uuid4()),
+                                        queue_id=queue.id,
+                                        user_id=test_user.id,
+                                        ticket_number=ticket_number,
+                                        qr_code=qr_code,
+                                        priority=1 if i % 2 == 0 else 0,  # 50% alta prioridade
+                                        is_physical=False,
+                                        status=status,
+                                        issued_at=issued_at,
+                                        expires_at=issued_at + timedelta(days=1),
+                                        attended_at=issued_at + timedelta(minutes=10) if status == "Atendido" else None,
+                                        counter=(i % queue.num_counters) + 1 if status == "Atendido" else None,
+                                        service_time=300.0 + (i % 26) * 60 if status == "Atendido" else None,
+                                        trade_available=False
+                                    )
+                                    db.session.add(ticket)
+                                    app.logger.debug(f"Ticket de teste criado: {qr_code} para usuário {test_user.id}")
+
+                    # Tickets para outras filas
                     for queue in Queue.query.all():
                         existing_tickets = Ticket.query.filter_by(queue_id=queue.id).count()
                         if existing_tickets >= 50:
@@ -1616,7 +1732,6 @@ def populate_initial_data(app):
                                 qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}-{int(now.timestamp())}"
                             status = "Atendido" if i % 2 == 0 else "Pendente"
                             issued_at = now - timedelta(days=i % 14, hours=i % 24)
-                            service_time = 300.0 + (i % 26) * 60 if status == "Atendido" else None  # 5 a 30 minutos
                             ticket = Ticket(
                                 id=str(uuid.uuid4()),
                                 queue_id=queue.id,
@@ -1630,7 +1745,7 @@ def populate_initial_data(app):
                                 expires_at=issued_at + timedelta(days=1),
                                 attended_at=issued_at + timedelta(minutes=10) if status == "Atendido" else None,
                                 counter=(i % queue.num_counters) + 1 if status == "Atendido" else None,
-                                service_time=service_time,
+                                service_time=300.0 + (i % 26) * 60 if status == "Atendido" else None,
                                 trade_available=False
                             )
                             db.session.add(ticket)
@@ -1644,81 +1759,124 @@ def populate_initial_data(app):
                 # --------------------------------------
                 # Criar Comportamentos de Usuário
                 # --------------------------------------
+                # --------------------------------------
+                # Criar Comportamentos de Usuário
+                # --------------------------------------
                 def create_user_behaviors():
                     now = datetime.utcnow()
+                    test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
+                    # Comportamentos para o usuário de teste
+                    if test_user:
+                        test_behaviors = [
+                            {"institution": "Conservatória dos Registos", "service": "Registo Civil", "branch": "Conservatória Ingombota", "action": "issued_ticket", "days_ago": 5},
+                            {"institution": "Conservatória dos Registos", "service": "Registo Civil", "branch": "Conservatória Ingombota", "action": "viewed_queue", "days_ago": 4},
+                            {"institution": "Hospital Josina Machel", "service": "Consulta Geral", "branch": "Unidade Central", "action": "issued_ticket", "days_ago": 10},
+                            {"institution": "Hospital Josina Machel", "service": "Consulta Geral", "branch": "Unidade Central", "action": "viewed_queue", "days_ago": 9},
+                            {"institution": "Banco BAI", "service": "Atendimento Bancário", "branch": "Agência Central", "action": "issued_ticket", "days_ago": 15}
+                        ]
+                        for beh in test_behaviors:
+                            inst = Institution.query.filter_by(name=beh["institution"]).first()
+                            branch = Branch.query.filter_by(institution_id=inst.id, name=beh["branch"]).first()
+                            service = InstitutionService.query.filter_by(institution_id=inst.id, name=beh["service"]).first()
+                            queue = Queue.query.join(Department).join(Branch).filter(
+                                Branch.id == branch.id, Queue.service_id == service.id
+                            ).first()
+                            if queue and not exists(UserBehavior, user_id=test_user.id, queue_id=queue.id, action=beh["action"]):
+                                ub = UserBehavior(
+                                    id=str(uuid.uuid4()),
+                                    user_id=test_user.id,
+                                    institution_id=inst.id,
+                                    branch_id=branch.id,
+                                    queue_id=queue.id,
+                                    action=beh["action"],
+                                    timestamp=now - timedelta(days=beh["days_ago"]),
+                                    created_at=now
+                                )
+                                db.session.add(ub)
+                                app.logger.debug(f"Comportamento de teste criado: {beh['action']} para usuário {test_user.id} na fila {queue.id}")
+
+                    # Comportamentos para outros usuários
                     user_list = User.query.filter_by(user_role=UserRole.USER).limit(20).all()
-                    for user in user_list:
-                        for inst in Institution.query.limit(5).all():  # Aumentado para 5 instituições
-                            service = InstitutionService.query.filter_by(institution_id=inst.id).first()
-                            branch = Branch.query.filter_by(institution_id=inst.id).first()
-                            if not exists(UserBehavior, user_id=user.id, institution_id=inst.id, action="issued_ticket", timestamp=now - timedelta(days=1)):
+                    queues = Queue.query.all()
+                    for i, user in enumerate(user_list):
+                        if user.id == "nMSnRc8jpYQbnrxujg5JZcHzFKP2":
+                            continue
+                        for j in range(3):
+                            queue = queues[(i + j) % len(queues)]
+                            branch = Branch.query.join(Department).filter(Department.id == queue.department_id).first()
+                            inst = Institution.query.get(branch.institution_id)
+                            action = "issued_ticket" if j % 2 == 0 else "viewed_queue"
+                            if not exists(UserBehavior, user_id=user.id, queue_id=queue.id, action=action):
                                 ub = UserBehavior(
                                     id=str(uuid.uuid4()),
                                     user_id=user.id,
                                     institution_id=inst.id,
-                                    service_id=service.id if service else None,
                                     branch_id=branch.id,
-                                    action="issued_ticket",
-                                    timestamp=now - timedelta(days=1)
+                                    queue_id=queue.id,
+                                    action=action,
+                                    timestamp=now - timedelta(days=(i + j) % 7),
+                                    created_at=now
                                 )
                                 db.session.add(ub)
-                                app.logger.debug(f"Comportamento criado para usuário {user.id} e instituição {inst.id}")
+                                app.logger.debug(f"Comportamento criado: {action} para usuário {user.id} na fila {queue.id}")
                     db.session.flush()
                     app.logger.info("Comportamentos de usuário criados com sucesso.")
 
                 create_user_behaviors()
 
                 # --------------------------------------
-                # Criar Localizações Alternativas
-                # --------------------------------------
-                def create_user_location_fallbacks():
-                    user_list = User.query.filter_by(user_role=UserRole.USER).limit(20).all()
-                    for i, user in enumerate(user_list):
-                        neighborhood = neighborhoods[i % len(neighborhoods)]["name"]
-                        if not exists(UserLocationFallback, user_id=user.id):
-                            ulf = UserLocationFallback(
-                                id=str(uuid.uuid4()),
-                                user_id=user.id,
-                                neighborhood=neighborhood,
-                                address=f"Rua Principal, {neighborhood}",
-                                updated_at=datetime.utcnow()
-                            )
-                            db.session.add(ulf)
-                            app.logger.debug(f"Localização alternativa criada para usuário {user.id}")
-                    db.session.flush()
-                    app.logger.info("Localizações alternativas criadas com sucesso.")
-
-                create_user_location_fallbacks()
-
-                # --------------------------------------
                 # Criar Logs de Auditoria
                 # --------------------------------------
                 def create_audit_logs():
                     now = datetime.utcnow()
-                    users = User.query.limit(30).all()
-                    actions = ["USER_LOGIN", "TICKET_CREATED", "TICKET_UPDATED", "QUEUE_MODIFIED", "USER_PROFILE_UPDATED"]
-                    action_details = {
-                        "USER_LOGIN": "Usuário realizou login no sistema",
-                        "TICKET_CREATED": "Usuário criou um novo ticket",
-                        "TICKET_UPDATED": "Status do ticket foi atualizado",
-                        "QUEUE_MODIFIED": "Configuração da fila foi alterada",
-                        "USER_PROFILE_UPDATED": "Perfil do usuário foi atualizado"
-                    }
-                    existing_logs = AuditLog.query.count()
-                    for i in range(existing_logs, 200):
-                        user = users[i % len(users)]
-                        action = actions[i % len(actions)]
-                        timestamp = now - timedelta(days=i % 30, hours=i % 24)
-                        if not exists(AuditLog, user_id=user.id, action=action, timestamp=timestamp):
-                            al = AuditLog(
-                                id=str(uuid.uuid4()),
-                                user_id=user.id,
-                                action=action,
-                                details=action_details[action],
-                                timestamp=timestamp
-                            )
-                            db.session.add(al)
-                            app.logger.debug(f"Log de auditoria criado: {action} para usuário {user.id}")
+                    test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
+                    # Logs de auditoria para o usuário de teste
+                    if test_user:
+                        test_audit_logs = [
+                            {"action": "USER_LOGIN", "description": "Usuário autenticado via Firebase", "days_ago": 0},
+                            {"action": "TICKET_CREATED", "description": "Ticket emitido para Registo Civil", "days_ago": 5},
+                            {"action": "TICKET_CREATED", "description": "Ticket emitido para Consulta Geral", "days_ago": 10},
+                            {"action": "TICKET_CREATED", "description": "Ticket emitido para Atendimento Bancário", "days_ago": 15},
+                            {"action": "QUEUE_VIEWED", "description": "Fila Registo Civil visualizada", "days_ago": 4},
+                            {"action": "QUEUE_VIEWED", "description": "Fila Consulta Geral visualizada", "days_ago": 9},
+                            {"action": "USER_LOGIN", "description": "Usuário autenticado via Firebase", "days_ago": 7},
+                            {"action": "TICKET_CREATED", "description": "Ticket emitido para Registo Civil", "days_ago": 3},
+                            {"action": "USER_PROFILE_UPDATED", "description": "Perfil do usuário atualizado", "days_ago": 2},
+                            {"action": "NOTIFICATION_SENT", "description": "Notificação de ticket enviada", "days_ago": 5}
+                        ]
+                        for log in test_audit_logs:
+                            if not exists(AuditLog, user_id=test_user.id, action=log["action"], description=log["description"]):
+                                al = AuditLog(
+                                    id=str(uuid.uuid4()),
+                                    user_id=test_user.id,
+                                    action=log["action"],
+                                    description=log["description"],
+                                    timestamp=now - timedelta(days=log["days_ago"]),
+                                    created_at=now
+                                )
+                                db.session.add(al)
+                                app.logger.debug(f"Log de auditoria de teste criado: {log['action']} para usuário {test_user.id}")
+
+                    # Logs de auditoria para outros usuários
+                    user_list = User.query.filter_by(user_role=UserRole.USER).limit(20).all()
+                    actions = ["USER_LOGIN", "TICKET_CREATED", "QUEUE_VIEWED", "USER_PROFILE_UPDATED", "NOTIFICATION_SENT"]
+                    for i, user in enumerate(user_list):
+                        if user.id == "nMSnRc8jpYQbnrxujg5JZcHzFKP2":
+                            continue
+                        for j in range(5):
+                            action = actions[j % len(actions)]
+                            description = f"{action.replace('_', ' ').title()} - Usuário {user.email}"
+                            if not exists(AuditLog, user_id=user.id, action=action, description=description):
+                                al = AuditLog(
+                                    id=str(uuid.uuid4()),
+                                    user_id=user.id,
+                                    action=action,
+                                    description=description,
+                                    timestamp=now - timedelta(days=(i + j) % 7),
+                                    created_at=now
+                                )
+                                db.session.add(al)
+                                app.logger.debug(f"Log de auditoria criado: {action} para usuário {user.id}")
                     db.session.flush()
                     app.logger.info("Logs de auditoria criados com sucesso.")
 
@@ -1729,38 +1887,111 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_notification_logs():
                     now = datetime.utcnow()
-                    users = User.query.filter_by(user_role=UserRole.USER).limit(20).all()
+                    test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
+                    # Logs de notificação para o usuário de teste
+                    if test_user:
+                        test_notifications = [
+                            {"message": "Ticket emitido para Registo Civil", "days_ago": 5},
+                            {"message": "Fila Registo Civil atualizada", "days_ago": 4},
+                            {"message": "Ticket emitido para Consulta Geral", "days_ago": 10},
+                            {"message": "Fila Consulta Geral atualizada", "days_ago": 9},
+                            {"message": "Ticket emitido para Atendimento Bancário", "days_ago": 15}
+                        ]
+                        for notif in test_notifications:
+                            if not exists(NotificationLog, user_id=test_user.id, message=notif["message"]):
+                                nl = NotificationLog(
+                                    id=str(uuid.uuid4()),
+                                    user_id=test_user.id,
+                                    message=notif["message"],
+                                    notification_type="PUSH",
+                                    status="SENT",
+                                    sent_at=now - timedelta(days=notif["days_ago"]),
+                                    created_at=now
+                                )
+                                db.session.add(nl)
+                                app.logger.debug(f"Log de notificação de teste criado: {notif['message']} para usuário {test_user.id}")
+
+                    # Logs de notificação para outros usuários
+                    user_list = User.query.filter_by(user_role=UserRole.USER).limit(20).all()
                     messages = [
                         "Ticket emitido com sucesso",
-                        "Fila atualizada, aguarde sua vez",
-                        "Serviço concluído, avalie sua experiência",
-                        "Nova fila disponível na sua instituição favorita"
+                        "Fila atualizada",
+                        "Sua vez está próxima"
                     ]
-                    channels = ["PUSH", "EMAIL", "SMS"]
-                    existing_notifications = NotificationLog.query.count()
-                    for i in range(existing_notifications, 100):
-                        user = users[i % len(users)]
-                        message = messages[i % len(messages)]
-                        channel = channels[i % len(channels)]
-                        timestamp = now - timedelta(days=i % 14, hours=i % 24)
-                        if not exists(NotificationLog, user_id=user.id, message=message, timestamp=timestamp):
-                            nl = NotificationLog(
-                                id=str(uuid.uuid4()),
-                                user_id=user.id,
-                                message=message,
-                                channel=channel,
-                                status="SENT" if i % 5 != 0 else "FAILED",  # 80% enviados com sucesso
-                                timestamp=timestamp
-                            )
-                            db.session.add(nl)
-                            app.logger.debug(f"Log de notificação criado: {message} para usuário {user.id}")
+                    for i, user in enumerate(user_list):
+                        if user.id == "nMSnRc8jpYQbnrxujg5JZcHzFKP2":
+                            continue
+                        for j in range(3):
+                            message = messages[j % len(messages)]
+                            if not exists(NotificationLog, user_id=user.id, message=message):
+                                nl = NotificationLog(
+                                    id=str(uuid.uuid4()),
+                                    user_id=user.id,
+                                    message=message,
+                                    notification_type="PUSH",
+                                    status="SENT",
+                                    sent_at=now - timedelta(days=(i + j) % 7),
+                                    created_at=now
+                                )
+                                db.session.add(nl)
+                                app.logger.debug(f"Log de notificação criado: {message} para usuário {user.id}")
                     db.session.flush()
                     app.logger.info("Logs de notificação criados com sucesso.")
 
                 create_notification_logs()
 
                 # --------------------------------------
-                # Finalizar
+                # Criar Localizações Alternativas de Usuário
+                # --------------------------------------
+                def create_user_location_fallbacks():
+                    now = datetime.utcnow()
+                    test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
+                    # Localizações alternativas para o usuário de teste
+                    if test_user:
+                        test_locations = [
+                            {"neighborhood": "Ingombota", "latitude": -8.8167, "longitude": 13.2332},
+                            {"neighborhood": "Talatona", "latitude": -8.9167, "longitude": 13.1833}
+                        ]
+                        for loc in test_locations:
+                            if not exists(UserLocationFallback, user_id=test_user.id, neighborhood=loc["neighborhood"]):
+                                ulf = UserLocationFallback(
+                                    id=str(uuid.uuid4()),
+                                    user_id=test_user.id,
+                                    neighborhood=loc["neighborhood"],
+                                    latitude=loc["latitude"],
+                                    longitude=loc["longitude"],
+                                    created_at=now,
+                                    updated_at=now
+                                )
+                                db.session.add(ulf)
+                                app.logger.debug(f"Localização alternativa de teste criada: {loc['neighborhood']} para usuário {test_user.id}")
+
+                    # Localizações alternativas para outros usuários
+                    user_list = User.query.filter_by(user_role=UserRole.USER).limit(20).all()
+                    for i, user in enumerate(user_list):
+                        if user.id == "nMSnRc8jpYQbnrxujg5JZcHzFKP2":
+                            continue
+                        for j in range(2):
+                            loc = neighborhoods[(i + j) % len(neighborhoods)]
+                            if not exists(UserLocationFallback, user_id=user.id, neighborhood=loc["name"]):
+                                ulf = UserLocationFallback(
+                                    id=str(uuid.uuid4()),
+                                    user_id=user.id,
+                                    neighborhood=loc["name"],
+                                    latitude=loc["latitude"],
+                                    longitude=loc["longitude"],
+                                    created_at=now,
+                                    updated_at=now
+                                )
+                                db.session.add(ulf)
+                                app.logger.debug(f"Localização alternativa criada: {loc['name']} para usuário {user.id}")
+                    db.session.flush()
+                    app.logger.info("Localizações alternativas de usuário criadas com sucesso.")
+
+                create_user_location_fallbacks()
+
+                # --------------------------------------
+                # Commit das Alterações
                 # --------------------------------------
                 db.session.commit()
                 app.logger.info("População de dados iniciais concluída com sucesso.")
@@ -1769,4 +2000,3 @@ def populate_initial_data(app):
             db.session.rollback()
             app.logger.error(f"Erro ao popular dados iniciais: {str(e)}")
             raise
-
