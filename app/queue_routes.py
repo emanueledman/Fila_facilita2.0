@@ -2116,22 +2116,9 @@ def init_queue_routes(app):
             if sort_by not in ['distance', 'wait_time']:
                 logger.warning(f"Ordenação inválida: sort_by={sort_by}")
                 return jsonify({'error': 'Ordenação deve ser por "distance" ou "wait_time"'}), 400
-            if (user_lat is None or user_lon is None) and user_id is None:
-                logger.warning("Coordenadas ou user_id são necessários")
-                return jsonify({'error': 'Coordenadas do usuário ou user_id são necessários'}), 400
-
-            # Obter coordenadas do usuário
-            if user_id and (user_lat is None or user_lon is None):
-                user = User.query.get(user_id)
-                if user and user.last_known_lat and user.last_known_lon:
-                    user_lat, user_lon = user.last_known_lat, user.last_known_lon
-                else:
-                    logger.warning(f"Usuário {user_id} sem coordenadas válidas")
-                    return jsonify({'error': 'Coordenadas do usuário não disponíveis'}), 400
-
-            if sort_by == 'distance' and (user_lat is None or user_lon is None):
-                logger.warning("Ordenação por distância requer coordenadas")
-                return jsonify({'error': 'Coordenadas do usuário necessárias para ordenar por distância'}), 400
+            if user_lat is None or user_lon is None:
+                logger.warning("Coordenadas do usuário são necessárias")
+                return jsonify({'error': 'Coordenadas do usuário (user_lat e user_lon) são necessárias'}), 400
 
             # Verificar cache
             cache_params = {
