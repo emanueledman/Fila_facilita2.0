@@ -12,11 +12,12 @@ def populate_initial_data(app):
     """
     Popula o banco de dados com dados iniciais para testes, com foco na Conservatória dos Registos e no ramo de Saúde.
     Inclui 8 instituições (4 bancos: BAI, BFA, BIC, Keve; 2 saúde: Hospital Josina Machel, Clínica Sagrada Esperança;
-    2 administrativos: SIAC, Conservatória dos Registos), cada uma com 3 filiais em Luanda. Cada filial tem departamentos
-    com 3 filas (1 24/7, 1 horário comercial, 1 horário intermediário). Saúde tem 10 serviços distintos (5 por instituição).
-    Conservatória tem 8 serviços. Cada fila tem 50 tickets. Inclui usuários, preferências, comportamentos, localizações
-    alternativas, logs de auditoria e notificações. Mantém idempotência, logs em português, e compatibilidade com models.py
-    (incluindo is_client e is_favorite). Suporta testes e modelos de ML.
+    2 administrativos: SIAC, Conservatória dos Registos). Conservatória tem 6 filiais em diferentes bairros de Luanda
+    (Ingombota, Cazenga, Talatona, Kilamba, Viana, Rangel) com 8 serviços cada para testes de serviços semelhantes e
+    sugestões. Saúde tem 10 serviços (5 por instituição). Bancos e SIAC têm 3 filiais cada. Cada filial tem departamentos
+    com 3 filas (1 24/7, 1 horário comercial, 1 horário intermediário). Cada fila tem 50 tickets. Inclui usuários,
+    preferências, comportamentos, localizações alternativas, logs de auditoria e notificações. Mantém idempotência,
+    logs em português, e compatibilidade com models.py (incluindo is_client e is_favorite). Suporta testes e modelos de ML.
     """
     with app.app_context():
         try:
@@ -1187,6 +1188,123 @@ def populate_initial_data(app):
                                         ]
                                     }
                                 ]
+                            },
+                            {
+                                "name": "Conservatória Kilamba",
+                                "location": "Avenida do Kilamba, Kilamba, Luanda",
+                                "neighborhood": "Kilamba",
+                                "latitude": -8.9333,
+                                "longitude": 13.2667,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Registral",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Autenticação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Viana",
+                                "location": "Rua Principal, Viana, Luanda",
+                                "neighborhood": "Viana",
+                                "latitude": -8.9035,
+                                "longitude": 13.3741,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Registral",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Autenticação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Rangel",
+                                "location": "Rua do Rangel, Rangel, Luanda",
+                                "neighborhood": "Rangel",
+                                "latitude": -8.8300,
+                                "longitude": 13.2500,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Registral",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Autenticação"]
+                                            }
+                                        ]
+                                    }
+                                ]
                             }
                         ]
                     }
@@ -1364,7 +1482,7 @@ def populate_initial_data(app):
 
                     # Institution Admins
                     for inst in Institution.query.all():
-                        email = f"admin_{normalize_string(inst.name)}@queue.com"
+                        email = f"admin_{normalize_string( inst.name)}@queue.com"
                         if not exists(User, email=email):
                             admin = User(
                                 id=str(uuid.uuid4()),
@@ -1498,20 +1616,21 @@ def populate_initial_data(app):
                                 qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}-{int(now.timestamp())}"
                             status = "Atendido" if i % 2 == 0 else "Pendente"
                             issued_at = now - timedelta(days=i % 14, hours=i % 24)
+                            service_time = 300.0 + (i % 26) * 60 if status == "Atendido" else None  # 5 a 30 minutos
                             ticket = Ticket(
                                 id=str(uuid.uuid4()),
                                 queue_id=queue.id,
                                 user_id=User.query.filter_by(user_role=UserRole.USER).offset(i % 20).first().id,
                                 ticket_number=ticket_number,
                                 qr_code=qr_code,
-                                priority=1 if i % 5 == 0 else 0,
+                                priority=1 if i % 5 == 0 else 0,  # 20% alta prioridade
                                 is_physical=False,
                                 status=status,
                                 issued_at=issued_at,
                                 expires_at=issued_at + timedelta(days=1),
                                 attended_at=issued_at + timedelta(minutes=10) if status == "Atendido" else None,
                                 counter=(i % queue.num_counters) + 1 if status == "Atendido" else None,
-                                service_time=300.0 + (i % 5) * 60 if status == "Atendido" else None,
+                                service_time=service_time,
                                 trade_available=False
                             )
                             db.session.add(ticket)
@@ -1529,7 +1648,7 @@ def populate_initial_data(app):
                     now = datetime.utcnow()
                     user_list = User.query.filter_by(user_role=UserRole.USER).limit(20).all()
                     for user in user_list:
-                        for inst in Institution.query.limit(4).all():  # Aumentado para 4 instituições
+                        for inst in Institution.query.limit(5).all():  # Aumentado para 5 instituições
                             service = InstitutionService.query.filter_by(institution_id=inst.id).first()
                             branch = Branch.query.filter_by(institution_id=inst.id).first()
                             if not exists(UserBehavior, user_id=user.id, institution_id=inst.id, action="issued_ticket", timestamp=now - timedelta(days=1)):
@@ -1578,7 +1697,15 @@ def populate_initial_data(app):
                     now = datetime.utcnow()
                     users = User.query.limit(30).all()
                     actions = ["USER_LOGIN", "TICKET_CREATED", "TICKET_UPDATED", "QUEUE_MODIFIED", "USER_PROFILE_UPDATED"]
-                    for i in range(200):  # Aumentado para 200 logs
+                    action_details = {
+                        "USER_LOGIN": "Usuário realizou login no sistema",
+                        "TICKET_CREATED": "Usuário criou um novo ticket",
+                        "TICKET_UPDATED": "Status do ticket foi atualizado",
+                        "QUEUE_MODIFIED": "Configuração da fila foi alterada",
+                        "USER_PROFILE_UPDATED": "Perfil do usuário foi atualizado"
+                    }
+                    existing_logs = AuditLog.query.count()
+                    for i in range(existing_logs, 200):
                         user = users[i % len(users)]
                         action = actions[i % len(actions)]
                         timestamp = now - timedelta(days=i % 30, hours=i % 24)
@@ -1587,9 +1714,7 @@ def populate_initial_data(app):
                                 id=str(uuid.uuid4()),
                                 user_id=user.id,
                                 action=action,
-                                resource_type=action.split("_")[0].lower(),
-                                resource_id=str(uuid.uuid4()),
-                                details=f"{action} por {user.email}",
+                                details=action_details[action],
                                 timestamp=timestamp
                             )
                             db.session.add(al)
@@ -1605,34 +1730,43 @@ def populate_initial_data(app):
                 def create_notification_logs():
                     now = datetime.utcnow()
                     users = User.query.filter_by(user_role=UserRole.USER).limit(20).all()
-                    for i, user in enumerate(users):
-                        ticket = Ticket.query.filter_by(user_id=user.id).first()
-                        if ticket:
-                            message = f"Ticket {ticket.qr_code} emitido com sucesso."
-                            if not exists(NotificationLog, user_id=user.id, message=message):
-                                nl = NotificationLog(
-                                    id=str(uuid.uuid4()),
-                                    user_id=user.id,
-                                    message=message,
-                                    sent_at=now - timedelta(days=i % 7),
-                                    status="sent"
-                                )
-                                db.session.add(nl)
-                                app.logger.debug(f"Log de notificação criado para usuário {user.id}")
+                    messages = [
+                        "Ticket emitido com sucesso",
+                        "Fila atualizada, aguarde sua vez",
+                        "Serviço concluído, avalie sua experiência",
+                        "Nova fila disponível na sua instituição favorita"
+                    ]
+                    channels = ["PUSH", "EMAIL", "SMS"]
+                    existing_notifications = NotificationLog.query.count()
+                    for i in range(existing_notifications, 100):
+                        user = users[i % len(users)]
+                        message = messages[i % len(messages)]
+                        channel = channels[i % len(channels)]
+                        timestamp = now - timedelta(days=i % 14, hours=i % 24)
+                        if not exists(NotificationLog, user_id=user.id, message=message, timestamp=timestamp):
+                            nl = NotificationLog(
+                                id=str(uuid.uuid4()),
+                                user_id=user.id,
+                                message=message,
+                                channel=channel,
+                                status="SENT" if i % 5 != 0 else "FAILED",  # 80% enviados com sucesso
+                                timestamp=timestamp
+                            )
+                            db.session.add(nl)
+                            app.logger.debug(f"Log de notificação criado: {message} para usuário {user.id}")
                     db.session.flush()
                     app.logger.info("Logs de notificação criados com sucesso.")
 
                 create_notification_logs()
 
                 # --------------------------------------
-                # Commit Final
+                # Finalizar
                 # --------------------------------------
                 db.session.commit()
                 app.logger.info("População de dados iniciais concluída com sucesso.")
 
         except Exception as e:
             db.session.rollback()
-            app.logger.error(f"Erro durante a população de dados: {str(e)}")
+            app.logger.error(f"Erro ao popular dados iniciais: {str(e)}")
             raise
 
-    return {"message": "População de dados concluída com sucesso."}
