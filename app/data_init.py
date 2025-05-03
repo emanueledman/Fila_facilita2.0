@@ -1815,9 +1815,8 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_user_behaviors():
                     """
-                    Cria comportamentos de usuário para o usuário de teste e outros usuários, respeitando o modelo UserBehavior
-                    que usa service_id em vez de queue_id. Garante compatibilidade com o esquema do banco de dados e
-                    mantém idempotência.
+                    Cria comportamentos de usuário para o usuário de teste e outros usuários, usando UserRole.USER
+                    para filtrar usuários corretamente, respeitando o modelo UserBehavior com service_id.
                     """
                     now = datetime.utcnow()
                     test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
@@ -1864,7 +1863,7 @@ def populate_initial_data(app):
                                 app.logger.debug(f"Comportamento de teste criado: {beh['action']} para usuário {test_user.id} no serviço {service.id}")
 
                     # Comportamentos para outros usuários
-                    user_list = User.query.filter_by(user_role="user").limit(20).all()
+                    user_list = User.query.filter_by(user_role=UserRole.USER).limit(20).all()
                     services = InstitutionService.query.all()
                     if not services:
                         app.logger.warning("Nenhum serviço encontrado para criar comportamentos de usuários regulares")
@@ -1901,15 +1900,23 @@ def populate_initial_data(app):
                     
                     db.session.flush()
                     app.logger.info("Comportamentos de usuário criados com sucesso.")
-
                 create_user_behaviors()
 
                 # --------------------------------------
                 # Criar Logs de Auditoria
                 # --------------------------------------
                 def create_audit_logs():
+                    """
+                    Cria logs de auditoria para o usuário de teste e outros usuários, usando UserRole.USER
+                    para filtrar usuários corretamente.
+                    """
                     now = datetime.utcnow()
                     test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
+
+                    # Função auxiliar para verificar existência
+                    def exists(model, **kwargs):
+                        return model.query.filter_by(**kwargs).first() is not None
+
                     # Logs de auditoria para o usuário de teste
                     if test_user:
                         test_audit_logs = [
@@ -1932,7 +1939,8 @@ def populate_initial_data(app):
                                     action=log["action"],
                                     description=log["description"],
                                     timestamp=now - timedelta(days=log["days_ago"]),
-                                    created_at=now
+                                    resource_type="user_action",
+                                    resource_id=str(uuid.uuid4())
                                 )
                                 db.session.add(al)
                                 app.logger.debug(f"Log de auditoria de teste criado: {log['action']} para usuário {test_user.id}")
@@ -1953,21 +1961,31 @@ def populate_initial_data(app):
                                     action=action,
                                     description=description,
                                     timestamp=now - timedelta(days=(i + j) % 7),
-                                    created_at=now
+                                    resource_type="user_action",
+                                    resource_id=str(uuid.uuid4())
                                 )
                                 db.session.add(al)
                                 app.logger.debug(f"Log de auditoria criado: {action} para usuário {user.id}")
+                    
                     db.session.flush()
                     app.logger.info("Logs de auditoria criados com sucesso.")
-
                 create_audit_logs()
 
                 # --------------------------------------
                 # Criar Logs de Notificação
                 # --------------------------------------
                 def create_notification_logs():
+                    """
+                    Cria logs de notificação para o usuário de teste e outros usuários, usando UserRole.USER
+                    para filtrar usuários corretamente.
+                    """
                     now = datetime.utcnow()
                     test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
+
+                    # Função auxiliar para verificar existência
+                    def exists(model, **kwargs):
+                        return model.query.filter_by(**kwargs).first() is not None
+
                     # Logs de notificação para o usuário de teste
                     if test_user:
                         test_notifications = [
@@ -1985,8 +2003,7 @@ def populate_initial_data(app):
                                     message=notif["message"],
                                     notification_type="PUSH",
                                     status="SENT",
-                                    sent_at=now - timedelta(days=notif["days_ago"]),
-                                    created_at=now
+                                    sent_at=now - timedelta(days=notif["days_ago"])
                                 )
                                 db.session.add(nl)
                                 app.logger.debug(f"Log de notificação de teste criado: {notif['message']} para usuário {test_user.id}")
@@ -2010,22 +2027,39 @@ def populate_initial_data(app):
                                     message=message,
                                     notification_type="PUSH",
                                     status="SENT",
-                                    sent_at=now - timedelta(days=(i + j) % 7),
-                                    created_at=now
+                                    sent_at=now - timedelta(days=(i + j) % 7)
                                 )
                                 db.session.add(nl)
                                 app.logger.debug(f"Log de notificação criado: {message} para usuário {user.id}")
+                    
                     db.session.flush()
                     app.logger.info("Logs de notificação criados com sucesso.")
-
+                
                 create_notification_logs()
 
                 # --------------------------------------
                 # Criar Localizações Alternativas de Usuário
                 # --------------------------------------
                 def create_user_location_fallbacks():
+                    """
+                    Cria localizações alternativas para o usuário de teste e outros usuários, usando UserRole.USER
+                    para filtrar usuários corretamente.
+                    """
                     now = datetime.utcnow()
                     test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
+
+                    # Função auxiliar para verificar existência
+                    def exists(model, **kwargs):
+                        return model.query.filter_by(**kwargs).first() is not None
+
+                    # Lista de bairros (mantida do contexto anterior)
+                    neighborhoods = [
+                        {"name": "Ingombota", "latitude": -8.8167, "longitude": 13.2332},
+                        {"name": "Talatona", "latitude": -8.9167, "longitude": 13.1833},
+                        {"name": "Maianga", "latitude": -8.8267, "longitude": 13.2233},
+                        {"name": "Rangel", "latitude": -8.8367, "longitude": 13.2433}
+                    ]
+
                     # Localizações alternativas para o usuário de teste
                     if test_user:
                         test_locations = [
@@ -2040,7 +2074,6 @@ def populate_initial_data(app):
                                     neighborhood=loc["neighborhood"],
                                     latitude=loc["latitude"],
                                     longitude=loc["longitude"],
-                                    created_at=now,
                                     updated_at=now
                                 )
                                 db.session.add(ulf)
@@ -2060,14 +2093,14 @@ def populate_initial_data(app):
                                     neighborhood=loc["name"],
                                     latitude=loc["latitude"],
                                     longitude=loc["longitude"],
-                                    created_at=now,
                                     updated_at=now
                                 )
                                 db.session.add(ulf)
                                 app.logger.debug(f"Localização alternativa criada: {loc['name']} para usuário {user.id}")
+                    
                     db.session.flush()
                     app.logger.info("Localizações alternativas de usuário criadas com sucesso.")
-
+                
                 create_user_location_fallbacks()
 
                 # --------------------------------------
