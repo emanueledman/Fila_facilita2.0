@@ -1977,8 +1977,8 @@ def populate_initial_data(app):
                 # --------------------------------------
                 def create_notification_logs():
                     """
-                    Cria logs de notificação para o usuário de teste e outros usuários, usando UserRole.USER
-                    para filtrar usuários corretamente.
+                    Cria logs de notificação para o usuário de teste e outros usuários, usando o campo 'status'
+                    em vez de 'notification_type' para alinhar com o modelo NotificationLog.
                     """
                     now = datetime.utcnow()
                     test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
@@ -2002,8 +2002,7 @@ def populate_initial_data(app):
                                     id=str(uuid.uuid4()),
                                     user_id=test_user.id,
                                     message=notif["message"],
-                                    notification_type="PUSH",
-                                    status="SENT",
+                                    status="Sent",
                                     sent_at=now - timedelta(days=notif["days_ago"])
                                 )
                                 db.session.add(nl)
@@ -2026,8 +2025,7 @@ def populate_initial_data(app):
                                     id=str(uuid.uuid4()),
                                     user_id=user.id,
                                     message=message,
-                                    notification_type="PUSH",
-                                    status="SENT",
+                                    status="Sent",
                                     sent_at=now - timedelta(days=(i + j) % 7)
                                 )
                                 db.session.add(nl)
@@ -2035,7 +2033,6 @@ def populate_initial_data(app):
                     
                     db.session.flush()
                     app.logger.info("Logs de notificação criados com sucesso.")
-                
                 create_notification_logs()
 
                 # --------------------------------------
