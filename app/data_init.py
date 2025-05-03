@@ -956,7 +956,7 @@ def populate_initial_data(app):
                                                 "prefix": "BI",
                                                 "daily_limit": 120,
                                                 "num_counters": 6,
-                                                "tags": ["Bis", "Documentos", "24h"]
+                                                "tags": ["Administrativo", "Documentos", "24h"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
@@ -1718,11 +1718,22 @@ def populate_initial_data(app):
                                 continue
                             existing_tickets = Ticket.query.filter_by(queue_id=queue.id, user_id=test_user.id).count()
                             for i in range(tq["count"] - existing_tickets):
-                                ticket_number = Ticket.query.filter_by(queue_id=queue.id).count() + i + 1
-                                branch_code = branch.id[-4:]
+                                # Obter o maior ticket_number existente para a fila
+                                last_ticket = Ticket.query.filter_by(queue_id=queue.id).order_by(Ticket.ticket_number.desc()).first()
+                                ticket_number = (last_ticket.ticket_number + 1) if last_ticket else 1
+                                branch_code = branch.id[-6:]  # Usar 6 caracteres para maior unicidade
                                 qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
-                                if Ticket.query.filter_by(qr_code=qr_code).first():
-                                    qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}-{int(now.timestamp())}"
+                                # Verificar unicidade do qr_code
+                                attempts = 0
+                                max_attempts = 10
+                                while Ticket.query.filter_by(qr_code=qr_code).first() and attempts < max_attempts:
+                                    app.logger.debug(f"qr_code duplicado detectado: {qr_code}. Incrementando ticket_number.")
+                                    ticket_number += 1
+                                    qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
+                                    attempts += 1
+                                if attempts >= max_attempts:
+                                    app.logger.error(f"Não foi possível gerar qr_code único para fila {queue.id} após {max_attempts} tentativas.")
+                                    continue
                                 status = "Atendido" if i % 2 == 0 else "Pendente"
                                 issued_at = now - timedelta(days=i % 30, hours=i % 24)
                                 ticket = Ticket(
@@ -1742,6 +1753,7 @@ def populate_initial_data(app):
                                     trade_available=False
                                 )
                                 db.session.add(ticket)
+                                db.session.flush()  # Inserir imediatamente para verificar unicidade
                                 app.logger.debug(f"Ticket de teste criado: {qr_code} para usuário {test_user.id}")
 
                     # Tickets para outras filas
@@ -1754,13 +1766,24 @@ def populate_initial_data(app):
                         if not branch:
                             app.logger.warning(f"Filial não encontrada para departamento {queue.department_id}")
                             continue
-                        branch_code = branch.id[-4:]
+                        branch_code = branch.id[-6:]  # Usar 6 caracteres para maior unicidade
                         for i in range(50 - existing_tickets):
                             user = user_list[i % len(user_list)] if i % 2 == 0 else None  # 50% dos tickets associados a usuários
-                            ticket_number = existing_tickets + i + 1
+                            # Obter o maior ticket_number existente para a fila
+                            last_ticket = Ticket.query.filter_by(queue_id=queue.id).order_by(Ticket.ticket_number.desc()).first()
+                            ticket_number = (last_ticket.ticket_number + 1) if last_ticket else 1
                             qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
-                            if Ticket.query.filter_by(qr_code=qr_code).first():
-                                qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}-{int(now.timestamp())}"
+                            # Verificar unicidade do qr_code
+                            attempts = 0
+                            max_attempts = 10
+                            while Ticket.query.filter_by(qr_code=qr_code).first() and attempts < max_attempts:
+                                app.logger.debug(f"qr_code duplicado detectado: {qr_code}. Incrementando ticket_number.")
+                                ticket_number += 1
+                                qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
+                                attempts += 1
+                            if attempts >= max_attempts:
+                                app.logger.error(f"Não foi possível gerar qr_code único para fila {queue.id} após {max_attempts} tentativas.")
+                                continue
                             status = "Atendido" if i % 3 == 0 else "Pendente"
                             issued_at = now - timedelta(days=i % 30, hours=i % 24)
                             ticket = Ticket(
@@ -1780,6 +1803,7 @@ def populate_initial_data(app):
                                 trade_available=i % 10 == 0  # 10% disponíveis para troca
                             )
                             db.session.add(ticket)
+                            db.session.flush()  # Inserir imediatamente para verificar unicidade
                             app.logger.debug(f"Ticket criado: {qr_code} para fila {queue.id}")
                     db.session.flush()
                     app.logger.info("Tickets criados com sucesso.")
