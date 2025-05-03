@@ -104,10 +104,18 @@ def create_app():
         with app.app_context():
             from .models import Institution, Queue, User, Ticket, Department, UserPreference, UserRole, Branch, ServiceCategory, ServiceTag, AuditLog, BranchSchedule
             from .data_init import populate_initial_data
+            from sqlalchemy import text
 
             try:
-                # Criar tabelas, limpando a base
-                db.drop_all()
+                engine = db.get_engine()
+                with engine.connect() as conn:
+                    if engine.dialect.name == 'postgresql':
+                        conn.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
+                        app.logger.info("Esquema do banco de dados PostgreSQL reinicializado com CASCADE.")
+                    else:
+                        db.drop_all()
+                        app.logger.info("Tabelas antigas removidas com db.drop_all()")
+
                 db.create_all()
                 app.logger.info("Tabelas criadas ou verificadas no banco de dados")
 
@@ -145,6 +153,7 @@ def create_app():
             except Exception as e:
                 app.logger.error(f"Erro ao inicializar banco de dados: {str(e)}")
                 return jsonify({"status": "error", "message": f"Erro ao inicializar banco de dados: {str(e)}"}), 500
+
 
     if os.getenv('FLASK_ENV') == 'production':
         app.config['DEBUG'] = False
