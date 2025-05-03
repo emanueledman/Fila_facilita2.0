@@ -95,14 +95,14 @@ def create_app():
     init_routes(app)
     init_queue_routes(app)
     init_user_routes(app)
-    #init_admin_routes(app)
+    init_admin_routes(app)
 
     # Rota para inicializar o banco de dados
     @app.route('/init-db', methods=['POST'])
     @limiter.limit("5 per minute")  # Limitar a 5 requisições por minuto
     def init_db():
         with app.app_context():
-            from .models import Institution, Queue, User, Ticket, Department, UserPreference, UserRole, Branch, ServiceCategory, ServiceTag, QueueSchedule, AuditLog
+            from .models import Institution, Queue, User, Ticket, Department, UserPreference, UserRole, Branch, ServiceCategory, ServiceTag AuditLog
             from .data_init import populate_initial_data
 
             try:
