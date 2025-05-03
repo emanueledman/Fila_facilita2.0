@@ -102,7 +102,7 @@ def create_app():
     @limiter.limit("5 per minute")  # Limitar a 5 requisições por minuto
     def init_db():
         with app.app_context():
-            from .models import Institution, Queue, User, Ticket, Department, UserPreference, UserRole, Branch, ServiceCategory, ServiceTag AuditLog
+            from .models import Institution, Queue, User, Ticket, Department, UserPreference, UserRole, Branch, ServiceCategory, ServiceTag, AuditLog, BranchSchedule
             from .data_init import populate_initial_data
 
             try:
