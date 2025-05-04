@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timedelta
 import io
 import json
+import pytz
 from .recommendation_service import RecommendationService
 import re
 from .auth import require_auth
@@ -237,6 +238,7 @@ def init_queue_routes(app):
             return jsonify({'error': 'Erro interno do servidor'}), 500
 
 
+
     @app.route('/institutions/<institution_id>/services', methods=['GET'])
     def services_by_institution(institution_id):
         """Lista serviços de uma instituição, com informações básicas e, opcionalmente, filiais com filas ativas."""
@@ -287,8 +289,8 @@ def init_queue_routes(app):
             services_query = InstitutionService.query.filter_by(institution_id=institution_id)
             if category_id:
                 services_query = services_query.filter_by(category_id=category_id)
-            
-            # Ordenação inicial por nome, se necessário
+
+            # Ordenação inicial por nome
             if sort_by == 'name':
                 services_query = services_query.order_by(InstitutionService.name.asc())
 
@@ -297,9 +299,8 @@ def init_queue_routes(app):
             services = services_query.offset((page - 1) * per_page).limit(per_page).all()
             logger.debug(f"Total de serviços encontrados para institution_id={institution_id}: {total}")
 
-            # Montar resposta
-            results = []
-            local_tz = pytz.timezone('Africa/Luanda')  # Ajuste para seu fuso horário
+            # Verificar horário de funcionamento
+            local_tz = pytz.timezone('Africa/Luanda')
             now = datetime.now(local_tz)
             weekday_str = now.strftime('%A').upper()
             try:
@@ -308,6 +309,8 @@ def init_queue_routes(app):
                 logger.error(f"Dia da semana inválido para instituição {institution_id}: {weekday_str}")
                 return jsonify({'error': 'Dia da semana inválido'}), 400
 
+            # Montar resposta
+            results = []
             for service in services:
                 service_data = {
                     'id': service.id,
@@ -332,6 +335,7 @@ def init_queue_routes(app):
                     branches_data = []
                     min_wait_time = float('inf')
                     for queue in queues:
+                        branch = queue.department.branch
                         wait_time = wait_time_predictor.predict(
                             queue_id=queue.id,
                             position=queue.active_tickets + 1,
@@ -346,17 +350,17 @@ def init_queue_routes(app):
                             min_wait_time = min(min_wait_time, wait_time)
 
                         schedule = BranchSchedule.query.filter_by(
-                            branch_id=queue.department.branch_id,
+                            branch_id=branch.id,
                             weekday=weekday_enum
                         ).first()
                         branches_data.append({
                             'queue_id': queue.id,
                             'branch': {
-                                'id': queue.department.branch.id,
-                                'name': queue.department.branch.name or 'Desconhecida',
-                                'neighborhood': queue.department.branch.neighborhood or 'Desconhecido',
-                                'latitude': float(queue.department.branch.latitude) if queue.department.branch.latitude else None,
-                                'longitude': float(queue.department.branch.longitude) if queue.department.branch.longitude else None
+                                'id': branch.id,
+                                'name': branch.name or 'Desconhecida',
+                                'neighborhood': branch.neighborhood or 'Desconhecido',
+                                'latitude': float(branch.latitude) if branch.latitude else None,
+                                'longitude': float(branch.longitude) if branch.longitude else None
                             },
                             'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) and wait_time >= 0 else 'Aguardando início',
                             'active_tickets': queue.active_tickets or 0,
@@ -369,7 +373,7 @@ def init_queue_routes(app):
                     service_data['branches'] = branches_data
                     service_data['min_wait_time'] = f"{int(min_wait_time)} minutos" if min_wait_time != float('inf') else 'Aguardando início'
                 else:
-                    service_data['is_available'] = None  # Não sabemos sem consultar filas
+                    service_data['is_available'] = None
                     service_data['branches'] = []
                     service_data['min_wait_time'] = None
 
@@ -391,15 +395,15 @@ def init_queue_routes(app):
             }
 
             # Cachear resultado
-            redis_client.setex(cache_k, 30, json.dumps(result, default=str))  # Cache de 30s para mudanças rápidas
+            redis_client.setex(cache_k, 30, json.dumps(result, default=str))
             logger.info(f"Lista de serviços retornada para institution_id={institution_id}: {total} resultados, cache_key={cache_k}")
 
             return jsonify(result)
         except Exception as e:
             logger.error(f"Erro ao listar serviços da instituição {institution_id}: {str(e)}")
-            return jsonify({'error': 'Erro interno do servidor'}), 500
-        
+            return jsonify({'error': f'Erro interno do servidor: {str(e)}'}), 500
 
+ 
     @app.route('/institutions/<institution_id>/services/<service_id>/branches', methods=['GET'])
     def branches_by_service(institution_id, service_id):
         """Lista filiais que oferecem um serviço específico, com detalhes da fila, distância e recomendações."""
