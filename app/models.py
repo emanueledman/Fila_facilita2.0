@@ -1,6 +1,7 @@
-
 from sqlalchemy import Column, Integer, String, Float, Time, Boolean, DateTime, ForeignKey, Enum, Index, Text, JSON
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+from sqlalchemy import or_
 from app import db
 from datetime import datetime
 import bcrypt
@@ -45,6 +46,17 @@ class InstitutionService(db.Model):
     description = Column(Text, nullable=True)
     institution = relationship('Institution', backref=db.backref('services', lazy='dynamic'))
     category = relationship('ServiceCategory', backref=db.backref('services', lazy='dynamic'))
+    
+    @property
+    def is_available(self):
+        """Verifica se o serviço está disponível em pelo menos uma filial."""
+        return Queue.query.join(Department).join(Branch).join(BranchSchedule).filter(
+            Queue.service_id == self.id,
+            BranchSchedule.is_closed == False,
+            BranchSchedule.open_time <= datetime.utcnow().time(),
+            BranchSchedule.end_time >= datetime.utcnow().time(),
+            Queue.active_tickets < Queue.daily_limit
+        ).count() > 0
     
     def __repr__(self):
         return f'<InstitutionService {self.name} for Institution {self.institution_id}>'
@@ -333,4 +345,4 @@ Index('idx_notification_log_sent_at', NotificationLog.sent_at)
 Index('idx_user_behavior_user_id', UserBehavior.user_id)
 Index('idx_user_behavior_timestamp', UserBehavior.timestamp)
 Index('idx_user_location_fallback_user_id', UserLocationFallback.user_id)
-
+Index('idx_queue_service_id_branch_schedule', Queue.service_id, BranchSchedule.weekday, BranchSchedule.is_closed)
