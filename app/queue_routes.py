@@ -239,23 +239,37 @@ def init_queue_routes(app):
 
     @app.route('/institutions/<institution_id>/services', methods=['GET'])
     def services_by_institution(institution_id):
-        """Lista todos os serviços de uma instituição, indicando quais estão disponíveis em suas filiais."""
+        """Lista serviços de uma instituição, com informações básicas e, opcionalmente, filiais com filas ativas."""
         try:
+            user_id = request.args.get('user_id')
             category_id = request.args.get('category_id')
+            include_branches = request.args.get('include_branches', 'false').lower() == 'true'
+            max_wait_time = request.args.get('max_wait_time', type=float)
             page = int(request.args.get('page', 1))
             per_page = int(request.args.get('per_page', 10))
+            sort_by = request.args.get('sort_by', 'name')  # Opções: name, wait_time
 
             # Validar entrada
             if page < 1 or per_page < 1:
                 logger.warning(f"Parâmetros inválidos: page={page}, per_page={per_page}")
                 return jsonify({'error': 'Página e itens por página devem ser positivos'}), 400
+            if sort_by not in ['name', 'wait_time']:
+                logger.warning(f"Ordenação inválida: sort_by={sort_by}")
+                return jsonify({'error': 'Ordenação deve ser por "name" ou "wait_time"'}), 400
+            if sort_by == 'wait_time' and not include_branches:
+                logger.warning("Ordenação por wait_time requer include_branches=true")
+                return jsonify({'error': 'Ordenação por wait_time requer include_branches=true'}), 400
 
             # Verificar cache
             cache_params = {
                 'institution_id': institution_id,
+                'user_id': user_id,
                 'category_id': category_id,
+                'include_branches': include_branches,
+                'max_wait_time': max_wait_time,
                 'page': page,
-                'per_page': per_page
+                'per_page': per_page,
+                'sort_by': sort_by
             }
             cache_k = cache_key('services_by_institution', **cache_params)
             cached_result = redis_client.get(cache_k)
@@ -273,24 +287,99 @@ def init_queue_routes(app):
             services_query = InstitutionService.query.filter_by(institution_id=institution_id)
             if category_id:
                 services_query = services_query.filter_by(category_id=category_id)
+            
+            # Ordenação inicial por nome, se necessário
+            if sort_by == 'name':
+                services_query = services_query.order_by(InstitutionService.name.asc())
 
-            # Ordenar por nome e paginar
-            services_query = services_query.order_by(InstitutionService.name.asc())
+            # Paginação
             total = services_query.count()
             services = services_query.offset((page - 1) * per_page).limit(per_page).all()
+            logger.debug(f"Total de serviços encontrados para institution_id={institution_id}: {total}")
 
             # Montar resposta
             results = []
+            local_tz = pytz.timezone('Africa/Luanda')  # Ajuste para seu fuso horário
+            now = datetime.now(local_tz)
+            weekday_str = now.strftime('%A').upper()
+            try:
+                weekday_enum = Weekday[weekday_str]
+            except KeyError:
+                logger.error(f"Dia da semana inválido para instituição {institution_id}: {weekday_str}")
+                return jsonify({'error': 'Dia da semana inválido'}), 400
+
             for service in services:
-                results.append({
-                    'service': {
-                        'id': service.id,
-                        'name': service.name or 'Desconhecido',
-                        'category_id': service.category_id,
-                        'description': service.description or 'Sem descrição'
-                    },
-                    'is_available': service.is_available
-                })
+                service_data = {
+                    'id': service.id,
+                    'name': service.name or 'Desconhecido',
+                    'category_id': service.category_id,
+                    'description': service.description or 'Sem descrição',
+                    'institution_id': service.institution_id
+                }
+
+                if include_branches:
+                    # Consultar filas ativas para o serviço
+                    queues = Queue.query.join(Department).join(Branch).join(BranchSchedule).filter(
+                        Queue.service_id == service.id,
+                        Branch.institution_id == institution_id,
+                        BranchSchedule.weekday == weekday_enum,
+                        BranchSchedule.is_closed == False,
+                        BranchSchedule.open_time <= now.time(),
+                        BranchSchedule.end_time >= now.time(),
+                        Queue.active_tickets < Queue.daily_limit
+                    ).all()
+
+                    branches_data = []
+                    min_wait_time = float('inf')
+                    for queue in queues:
+                        wait_time = wait_time_predictor.predict(
+                            queue_id=queue.id,
+                            position=queue.active_tickets + 1,
+                            active_tickets=queue.active_tickets,
+                            priority=0,
+                            hour_of_day=now.hour,
+                            user_id=user_id
+                        )
+                        if max_wait_time and isinstance(wait_time, (int, float)) and wait_time > max_wait_time:
+                            continue
+                        if isinstance(wait_time, (int, float)) and wait_time >= 0:
+                            min_wait_time = min(min_wait_time, wait_time)
+
+                        schedule = BranchSchedule.query.filter_by(
+                            branch_id=queue.department.branch_id,
+                            weekday=weekday_enum
+                        ).first()
+                        branches_data.append({
+                            'queue_id': queue.id,
+                            'branch': {
+                                'id': queue.department.branch.id,
+                                'name': queue.department.branch.name or 'Desconhecida',
+                                'neighborhood': queue.department.branch.neighborhood or 'Desconhecido',
+                                'latitude': float(queue.department.branch.latitude) if queue.department.branch.latitude else None,
+                                'longitude': float(queue.department.branch.longitude) if queue.department.branch.longitude else None
+                            },
+                            'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) and wait_time >= 0 else 'Aguardando início',
+                            'active_tickets': queue.active_tickets or 0,
+                            'daily_limit': queue.daily_limit or 100,
+                            'open_time': schedule.open_time.strftime('%H:%M') if schedule and schedule.open_time else None,
+                            'end_time': schedule.end_time.strftime('%H:%M') if schedule and schedule.end_time else None
+                        })
+
+                    service_data['is_available'] = bool(branches_data)
+                    service_data['branches'] = branches_data
+                    service_data['min_wait_time'] = f"{int(min_wait_time)} minutos" if min_wait_time != float('inf') else 'Aguardando início'
+                else:
+                    service_data['is_available'] = None  # Não sabemos sem consultar filas
+                    service_data['branches'] = []
+                    service_data['min_wait_time'] = None
+
+                results.append(service_data)
+
+            # Ordenação por wait_time, se necessário
+            if sort_by == 'wait_time':
+                results.sort(
+                    key=lambda x: float(x['min_wait_time'].split()[0]) if x['min_wait_time'] and x['min_wait_time'] != 'Aguardando início' else float('inf')
+                )
 
             result = {
                 'services': results,
@@ -302,43 +391,48 @@ def init_queue_routes(app):
             }
 
             # Cachear resultado
-            redis_client.setex(cache_k, 60, json.dumps(result, default=str))
+            redis_client.setex(cache_k, 30, json.dumps(result, default=str))  # Cache de 30s para mudanças rápidas
             logger.info(f"Lista de serviços retornada para institution_id={institution_id}: {total} resultados, cache_key={cache_k}")
 
             return jsonify(result)
         except Exception as e:
             logger.error(f"Erro ao listar serviços da instituição {institution_id}: {str(e)}")
             return jsonify({'error': 'Erro interno do servidor'}), 500
+        
 
     @app.route('/institutions/<institution_id>/services/<service_id>/branches', methods=['GET'])
     def branches_by_service(institution_id, service_id):
-        """Lista filiais de uma instituição que oferecem um serviço específico, com informações de distância e tempo de espera."""
+        """Lista filiais que oferecem um serviço específico, com detalhes da fila, distância e recomendações."""
         try:
+            user_id = request.args.get('user_id')
             user_lat = request.args.get('user_lat', type=float)
             user_lon = request.args.get('user_lon', type=float)
             max_distance_km = request.args.get('max_distance_km', 10.0, type=float)
+            max_wait_time = request.args.get('max_wait_time', type=float)
             page = int(request.args.get('page', 1))
             per_page = int(request.args.get('per_page', 10))
-            sort_by = request.args.get('sort_by', 'distance')  # Opções: distance, wait_time
+            sort_by = request.args.get('sort_by', 'recommended')  # Opções: recommended, distance, wait_time
 
             # Validar entrada
             if page < 1 or per_page < 1:
                 logger.warning(f"Parâmetros inválidos: page={page}, per_page={per_page}")
                 return jsonify({'error': 'Página e itens por página devem ser positivos'}), 400
-            if sort_by not in ['distance', 'wait_time']:
+            if sort_by not in ['recommended', 'distance', 'wait_time']:
                 logger.warning(f"Ordenação inválida: sort_by={sort_by}")
-                return jsonify({'error': 'Ordenação deve ser por "distance" ou "wait_time"'}), 400
-            if user_lat is None or user_lon is None:
-                logger.warning("Coordenadas do usuário são necessárias")
-                return jsonify({'error': 'Coordenadas do usuário (user_lat e user_lon) são necessárias'}), 400
+                return jsonify({'error': 'Ordenação deve ser por "recommended", "distance" ou "wait_time"'}), 400
+            if sort_by == 'distance' and (user_lat is None or user_lon is None):
+                logger.warning("Coordenadas do usuário necessárias para ordenar por distância")
+                return jsonify({'error': 'Coordenadas do usuário (user_lat e user_lon) são necessárias para ordenar por distância'}), 400
 
             # Verificar cache
             cache_params = {
                 'institution_id': institution_id,
                 'service_id': service_id,
+                'user_id': user_id,
                 'user_lat': user_lat,
                 'user_lon': user_lon,
                 'max_distance_km': max_distance_km,
+                'max_wait_time': max_wait_time,
                 'page': page,
                 'per_page': per_page,
                 'sort_by': sort_by
@@ -349,7 +443,7 @@ def init_queue_routes(app):
                 logger.debug(f"Cache hit para branches_by_service: {cache_k}")
                 return jsonify(json.loads(cached_result))
 
-            # Verificar se a instituição e o serviço existem
+            # Verificar instituição e serviço
             institution = Institution.query.get(institution_id)
             if not institution:
                 logger.warning(f"Instituição não encontrada: institution_id={institution_id}")
@@ -360,8 +454,9 @@ def init_queue_routes(app):
                 logger.warning(f"Serviço não encontrado ou não pertence à instituição: service_id={service_id}")
                 return jsonify({'error': 'Serviço não encontrado ou não pertence à instituição'}), 404
 
-            # Consultar filas ativas para o serviço
-            now = datetime.utcnow()
+            # Verificar horário de funcionamento
+            local_tz = pytz.timezone('Africa/Luanda')  # Ajuste para seu fuso horário
+            now = datetime.now(local_tz)
             weekday_str = now.strftime('%A').upper()
             try:
                 weekday_enum = Weekday[weekday_str]
@@ -369,6 +464,7 @@ def init_queue_routes(app):
                 logger.error(f"Dia da semana inválido para instituição {institution_id}: {weekday_str}")
                 return jsonify({'error': 'Dia da semana inválido'}), 400
 
+            # Consultar filas ativas
             queues = Queue.query.join(Department).join(Branch).join(BranchSchedule).filter(
                 Queue.service_id == service_id,
                 Branch.institution_id == institution_id,
@@ -379,22 +475,22 @@ def init_queue_routes(app):
                 Queue.active_tickets < Queue.daily_limit
             ).all()
 
-            # Processar filas e calcular distância e tempo de espera
+            # Montar resposta
             results = []
             for queue in queues:
                 branch = queue.department.branch
                 if not branch.latitude or not branch.longitude:
                     continue
 
-                # Calcular distância usando geopy
-                try:
-                    distance = geodesic((user_lat, user_lon), (branch.latitude, branch.longitude)).kilometers
-                except Exception as e:
-                    logger.warning(f"Erro ao calcular distância para branch_id={branch.id}: {str(e)}")
-                    continue
-
-                if distance > max_distance_km:
-                    continue
+                # Calcular distância
+                distance = None
+                if user_lat is not None and user_lon is not None:
+                    distance = geodesic(
+                        (user_lat, user_lon),
+                        (branch.latitude, branch.longitude)
+                    ).kilometers
+                    if distance > max_distance_km:
+                        continue
 
                 # Calcular tempo de espera
                 wait_time = wait_time_predictor.predict(
@@ -402,8 +498,46 @@ def init_queue_routes(app):
                     position=queue.active_tickets + 1,
                     active_tickets=queue.active_tickets,
                     priority=0,
-                    hour_of_day=now.hour
+                    hour_of_day=now.hour,
+                    user_id=user_id
                 )
+                if max_wait_time and isinstance(wait_time, (int, float)) and wait_time > max_wait_time:
+                    continue
+
+                # Determinar rótulo e classe do tempo de espera
+                wait_label = ""
+                wait_class = ""
+                if isinstance(wait_time, (int, float)) and wait_time >= 0:
+                    if wait_time <= 10:
+                        wait_label = "Rápido"
+                        wait_class = "text-green-500"
+                    elif wait_time <= 20:
+                        wait_label = "Moderado"
+                        wait_class = "text-yellow-500"
+                    else:
+                        wait_label = "Longo"
+                        wait_class = "text-red-500"
+
+                # Determinar recomendação
+                recommendation = ""
+                reason_label = ""
+                reason = ""
+                recommendation_score = 0
+                if isinstance(wait_time, (int, float)) and wait_time >= 0:
+                    if distance is not None and distance <= 2.0 and wait_time <= 20:
+                        recommendation = "RECOMENDADO"
+                        reason_label = "Próximo a você"
+                        reason = "Esta filial está perto da sua localização com tempo de espera aceitável"
+                        recommendation_score = 2  # Alta prioridade
+                    elif wait_time <= 5:
+                        recommendation = "MAIS RÁPIDO"
+                        reason_label = "Menor tempo de espera"
+                        reason = "Esta filial tem o menor tempo de espera, mas pode estar mais distante"
+                        recommendation_score = 1  # Média prioridade
+                    elif wait_time > 30:
+                        reason_label = "Alta demanda"
+                        reason = "Alta demanda hoje"
+                        recommendation_score = -1  # Baixa prioridade
 
                 schedule = BranchSchedule.query.filter_by(
                     branch_id=branch.id,
@@ -411,40 +545,50 @@ def init_queue_routes(app):
                 ).first()
 
                 results.append({
+                    'queue_id': queue.id,
                     'branch': {
                         'id': branch.id,
                         'name': branch.name or 'Desconhecida',
-                        'location': branch.location or 'Desconhecida',
                         'neighborhood': branch.neighborhood or 'Desconhecido',
-                        'latitude': float(branch.latitude),
-                        'longitude': float(branch.longitude),
-                        'distance': round(float(distance), 2)
+                        'latitude': float(branch.latitude) if branch.latitude else None,
+                        'longitude': float(branch.longitude) if branch.longitude else None,
+                        'distance': float(distance) if distance is not None else None
                     },
-                    'queue': {
-                        'id': queue.id,
-                        'wait_time': f"{int(wait_time)} min" if isinstance(wait_time, (int, float)) else 'Aguardando início',
-                        'active_tickets': queue.active_tickets or 0,
-                        'daily_limit': queue.daily_limit or 100,
-                        'open_time': schedule.open_time.strftime('%H:%M') if schedule and schedule.open_time else None,
-                        'end_time': schedule.end_time.strftime('%H:%M') if schedule and schedule.end_time else None
-                    }
+                    'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) and wait_time >= 0 else 'Aguardando início',
+                    'wait_label': wait_label,
+                    'wait_class': wait_class,
+                    'active_tickets': queue.active_tickets or 0,
+                    'daily_limit': queue.daily_limit or 100,
+                    'open_time': schedule.open_time.strftime('%H:%M') if schedule and schedule.open_time else None,
+                    'end_time': schedule.end_time.strftime('%H:%M') if schedule and schedule.end_time else None,
+                    'recommendation': recommendation,
+                    'reason_label': reason_label,
+                    'reason': reason,
+                    'recommendation_score': recommendation_score
                 })
 
             # Contar total
             total = len(results)
+            logger.debug(f"Total de filiais encontradas para institution_id={institution_id}, service_id={service_id}: {total}")
+
+            # Ordenação
+            if sort_by == 'recommended':
+                results.sort(
+                    key=lambda x: (-x['recommendation_score'], x['wait_time'].split()[0] if x['wait_time'] != 'Aguardando início' else float('inf'))
+                )
+            elif sort_by == 'distance':
+                results.sort(
+                    key=lambda x: x['branch']['distance'] if x['branch']['distance'] is not None else float('inf')
+                )
+            else:  # wait_time
+                results.sort(
+                    key=lambda x: float(x['wait_time'].split()[0]) if x['wait_time'] != 'Aguardando início' else float('inf')
+                )
 
             # Paginação
             start = (page - 1) * per_page
             end = start + per_page
             paginated_results = results[start:end]
-
-            # Ordenação
-            if sort_by == 'wait_time':
-                paginated_results.sort(
-                    key=lambda x: float(x['queue']['wait_time'].split()[0]) if x['queue']['wait_time'] != 'Aguardando início' else float('inf')
-                )
-            else:
-                paginated_results.sort(key=lambda x: x['branch']['distance'])
 
             result = {
                 'branches': paginated_results,
@@ -456,14 +600,14 @@ def init_queue_routes(app):
             }
 
             # Cachear resultado
-            redis_client.setex(cache_k, 60, json.dumps(result, default=str))
+            redis_client.setex(cache_k, 30, json.dumps(result, default=str))  # Cache de 30s para mudanças rápidas
             logger.info(f"Lista de filiais retornada para institution_id={institution_id}, service_id={service_id}: {total} resultados, cache_key={cache_k}")
 
             return jsonify(result)
         except Exception as e:
             logger.error(f"Erro ao listar filiais para institution_id={institution_id}, service_id={service_id}: {str(e)}")
             return jsonify({'error': 'Erro interno do servidor'}), 500
-
+        
     @app.route('/institutions', methods=['GET'])
     def list_institutions():
         try:
