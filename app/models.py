@@ -29,8 +29,8 @@ class InstitutionType(db.Model):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     name = Column(String(100), nullable=False, unique=True)
     description = Column(Text, nullable=True)
-    institutions = relationship('Institution', backref='type', lazy='dynamic')
     logo_url = Column(String(255), nullable=True)
+    institutions = relationship('Institution', backref='type', lazy='dynamic')
     
     def __repr__(self):
         return f'<InstitutionType {self.name}>'
@@ -79,7 +79,7 @@ class Institution(db.Model):
     name = Column(String(100), nullable=False)
     institution_type_id = Column(String(36), ForeignKey('institution_type.id'), nullable=False, index=True)
     description = Column(Text, nullable=True)
-    logo_url = Column(String(255), nullable=True)  # Aumentado de String(100) para String(255)
+    logo_url = Column(String(255), nullable=True)
     
     def __repr__(self):
         return f'<Institution {self.name} ({self.type.name})>'
@@ -165,7 +165,7 @@ class Ticket(db.Model):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     queue_id = Column(String(36), ForeignKey('queue.id'), nullable=False, index=True)
     user_id = Column(String(36), ForeignKey('user.id'), nullable=True, index=True)
-    ticket_number = Column(Integer, nullable=False)
+    ticket_number = Column(String(50), nullable=False)  # Alterado de Integer para String(50)
     qr_code = Column(String(50), nullable=False, unique=True)
     priority = Column(Integer, default=0)
     is_physical = Column(Boolean, default=False)
