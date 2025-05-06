@@ -5,9 +5,9 @@ import json
 import re
 from sqlalchemy import and_, func, or_
 from datetime import datetime, time, timedelta
-from app.models import Queue, Ticket, AuditLog, Department, Institution, User, UserPreference, Weekday, Branch, InstitutionService, ServiceCategory, ServiceTag, UserBehavior, UserLocationFallback, NotificationLog, BranchSchedule
-from app.ml_models import wait_time_predictor, service_recommendation_predictor, clustering_model, demand_model
-from app import db, redis_client, socketio
+from .models import Queue, Ticket, AuditLog, Department, Institution, User, UserPreference, Weekday, Branch, InstitutionService, ServiceCategory, ServiceTag, UserBehavior, UserLocationFallback, NotificationLog, BranchSchedule
+from .ml_models import wait_time_predictor, service_recommendation_predictor, clustering_model, demand_model
+from . import db, redis_client, socketio
 from .utils.pdf_generator import generate_ticket_pdf
 from firebase_admin import messaging
 from sqlalchemy.exc import SQLAlchemyError

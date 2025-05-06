@@ -147,7 +147,7 @@ class Queue(db.Model):
     default_attendant = relationship('User', backref=db.backref('default_queues', lazy='dynamic'))
     
     def update_estimated_wait_time(self):
-        from app import wait_time_predictor
+        from .ml_models import wait_time_predictor
         self.estimated_wait_time = wait_time_predictor.predict(
             queue_id=self.id,
             position=self.current_ticket + 1,
