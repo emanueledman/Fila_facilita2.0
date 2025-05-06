@@ -1579,7 +1579,7 @@ def init_queue_routes(app):
             return jsonify({'error': 'Fila não disponível fora do horário de funcionamento'}), 400
 
         try:
-            ticket = QueueService.generate_virtual_ticket(
+            ticket = QueueService.add_to_queue(
                 queue_id=queue_id,
                 user_id=user_id,
                 priority=priority,
