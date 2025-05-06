@@ -1560,14 +1560,20 @@ def init_queue_routes(app):
         # Verificar horário de funcionamento da filial
         branch = queue.department.branch
         schedules = BranchSchedule.query.filter_by(branch_id=branch.id).all()
-        current_weekday = datetime.utcnow().strftime('%A').lower()
-        current_time = datetime.utcnow().time()
+        local_tz = pytz.timezone('Africa/Luanda')
+        current_time = datetime.now(local_tz).time()
+        current_weekday = datetime.now(local_tz).strftime('%A').upper()  # Ex.: 'TUESDAY'
         is_open = False
         for schedule in schedules:
-            if schedule.weekday == current_weekday and not schedule.is_closed:
-                if schedule.open_time <= current_time <= schedule.end_time:
-                    is_open = True
-                    break
+            try:
+                # Comparar o Enum Weekday com o valor mapeado
+                if schedule.weekday == Weekday[current_weekday] and not schedule.is_closed:
+                    if schedule.open_time <= current_time <= schedule.end_time:
+                        is_open = True
+                        break
+            except KeyError:
+                logger.error(f"Dia da semana inválido: {current_weekday}")
+                continue
         if not is_open:
             logger.warning(f"Fila {queue_id} não está disponível fora do horário de funcionamento")
             return jsonify({'error': 'Fila não disponível fora do horário de funcionamento'}), 400
@@ -1621,7 +1627,7 @@ def init_queue_routes(app):
             db.session.rollback()
             logger.error(f"Erro inesperado ao gerar ticket para queue_id={queue_id}, user_id={user_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao gerar ticket'}), 500
-        
+            
     @app.route('/api/tickets/<ticket_id>/trade', methods=['POST'])
     @require_auth
     def trade_ticket(ticket_id):
