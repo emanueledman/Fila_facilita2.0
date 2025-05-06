@@ -2010,37 +2010,49 @@ def populate_initial_data(app):
                     for user in users:
                         behaviors = [
                             {
-                                "action_type": "queue_selected",
+                                "action": "queue_selected",
                                 "value": "Registo Comercial",
-                                "frequency": 5,
-                                "last_performed": now - timedelta(days=2)
+                                "timestamp": now - timedelta(days=2)
                             },
                             {
-                                "action_type": "branch_visited",
+                                "action": "branch_visited",
                                 "value": "Conservatória Ingombota",
-                                "frequency": 3,
-                                "last_performed": now - timedelta(days=1)
+                                "timestamp": now - timedelta(days=1)
                             }
                         ]
                         for behavior in behaviors:
-                            if not exists(UserBehavior, user_id=user.id, action_type=behavior["action_type"], value=behavior["value"]):
+                            # Mapear 'value' para os campos corretos
+                            service_id = None
+                            branch_id = None
+                            institution_id = None
+                            if behavior["action"] == "queue_selected":
+                                service = InstitutionService.query.filter_by(name=behavior["value"]).first()
+                                if service:
+                                    service_id = service.id
+                                    institution_id = service.institution_id
+                            elif behavior["action"] == "branch_visited":
+                                branch = Branch.query.filter_by(name=behavior["value"]).first()
+                                if branch:
+                                    branch_id = branch.id
+                                    institution_id = branch.institution_id
+
+                            if not exists(UserBehavior, user_id=user.id, action=behavior["action"], 
+                                        service_id=service_id, branch_id=branch_id):
                                 ub = UserBehavior(
                                     id=str(uuid.uuid4()),
                                     user_id=user.id,
-                                    action_type=behavior["action_type"],
-                                    value=behavior["value"],
-                                    frequency=behavior["frequency"],
-                                    last_performed=behavior["last_performed"],
-                                    created_at=now,
-                                    updated_at=now
+                                    institution_id=institution_id,
+                                    service_id=service_id,
+                                    branch_id=branch_id,
+                                    action=behavior["action"],
+                                    timestamp=behavior["timestamp"]
                                 )
                                 db.session.add(ub)
-                                app.logger.debug(f"Comportamento criado para usuário {user.id}: {behavior['action_type']} - {behavior['value']}")
+                                app.logger.debug(f"Comportamento criado para usuário {user.id}: {behavior['action']} - {behavior['value']}")
                             else:
-                                app.logger.debug(f"Comportamento já existe para usuário {user.id}: {behavior['action_type']} - {behavior['value']}")
+                                app.logger.debug(f"Comportamento já existe para usuário {user.id}: {behavior['action']} - {behavior['value']}")
                         db.session.flush()
                     app.logger.info("Comportamentos de usuário criados ou recuperados com sucesso.")
-
                 create_user_behavior()
 
                 # --------------------------------------
@@ -2053,10 +2065,9 @@ def populate_initial_data(app):
                             ulf = UserLocationFallback(
                                 id=str(uuid.uuid4()),
                                 user_id=user.id,
-                                latitude=-8.8167,  # Ingombota como padrão
-                                longitude=13.2332,
                                 neighborhood="Ingombota",
-                                last_updated=now
+                                address="Ingombota, Luanda",
+                                updated_at=now
                             )
                             db.session.add(ulf)
                             app.logger.debug(f"Localização de fallback criada para usuário {user.id}: Ingombota")
@@ -2064,7 +2075,6 @@ def populate_initial_data(app):
                             app.logger.debug(f"Localização de fallback já existe para usuário {user.id}")
                     db.session.flush()
                     app.logger.info("Localizações de fallback criadas ou recuperadas com sucesso.")
-
                 create_user_location_fallback()
 
                 # --------------------------------------
@@ -2073,35 +2083,35 @@ def populate_initial_data(app):
                 def create_notification_logs():
                     now = datetime.utcnow()
                     for user in users:
+                        branch = Branch.query.filter_by(name="Conservatória Ingombota").first()
+                        queue = Queue.query.join(InstitutionService).filter(InstitutionService.name=="Registo Comercial").first()
                         notifications = [
                             {
-                                "type": "ticket_issued",
-                                "message": "Seu ticket foi emitido com sucesso.",
+                                "message": "Seu ticket foi emitido com sucesso (ticket_issued).",
                                 "sent_at": now - timedelta(days=1)
                             },
                             {
-                                "type": "ticket_called",
-                                "message": "Seu ticket foi chamado. Dirija-se ao balcão.",
+                                "message": "Seu ticket foi chamado. Dirija-se ao balcão (ticket_called).",
                                 "sent_at": now - timedelta(days=1, hours=1)
                             }
                         ]
                         for notif in notifications:
-                            if not exists(NotificationLog, user_id=user.id, type=notif["type"], message=notif["message"]):
+                            if not exists(NotificationLog, user_id=user.id, message=notif["message"], sent_at=notif["sent_at"]):
                                 nl = NotificationLog(
                                     id=str(uuid.uuid4()),
                                     user_id=user.id,
-                                    type=notif["type"],
+                                    branch_id=branch.id if branch else None,
+                                    queue_id=queue.id if queue else None,
                                     message=notif["message"],
                                     sent_at=notif["sent_at"],
                                     status="Delivered"
                                 )
                                 db.session.add(nl)
-                                app.logger.debug(f"Notificação criada para usuário {user.id}: {notif['type']}")
+                                app.logger.debug(f"Notificação criada para usuário {user.id}: {notif['message']}")
                             else:
-                                app.logger.debug(f"Notificação já existe para usuário {user.id}: {notif['type']}")
+                                app.logger.debug(f"Notificação já existe para usuário {user.id}: {notif['message']}")
                         db.session.flush()
                     app.logger.info("Logs de notificação criados ou recuperados com sucesso.")
-
                 create_notification_logs()
 
                 # --------------------------------------
@@ -2113,23 +2123,29 @@ def populate_initial_data(app):
                         audits = [
                             {
                                 "action": "user_login",
-                                "description": f"Usuário {user.email} fez login no sistema.",
-                                "performed_at": now - timedelta(days=2)
+                                "details": f"Usuário {user.email} fez login no sistema.",
+                                "timestamp": now - timedelta(days=2),
+                                "resource_type": "user",
+                                "resource_id": user.id
                             },
                             {
                                 "action": "ticket_issued",
-                                "description": f"Usuário {user.email} emitiu um ticket.",
-                                "performed_at": now - timedelta(days=1)
+                                "details": f"Usuário {user.email} emitiu um ticket.",
+                                "timestamp": now - timedelta(days=1),
+                                "resource_type": "ticket",
+                                "resource_id": str(uuid.uuid4())
                             }
                         ]
                         for audit in audits:
-                            if not exists(AuditLog, user_id=user.id, action=audit["action"], description=audit["description"]):
+                            if not exists(AuditLog, user_id=user.id, action=audit["action"], details=audit["details"]):
                                 al = AuditLog(
                                     id=str(uuid.uuid4()),
                                     user_id=user.id,
                                     action=audit["action"],
-                                    description=audit["description"],
-                                    performed_at=audit["performed_at"]
+                                    resource_type=audit["resource_type"],
+                                    resource_id=audit["resource_id"],
+                                    details=audit["details"],
+                                    timestamp=audit["timestamp"]
                                 )
                                 db.session.add(al)
                                 app.logger.debug(f"Log de auditoria criado para usuário {user.id}: {audit['action']}")
@@ -2137,7 +2153,6 @@ def populate_initial_data(app):
                                 app.logger.debug(f"Log de auditoria já existe para usuário {user.id}: {audit['action']}")
                         db.session.flush()
                     app.logger.info("Logs de auditoria criados ou recuperados com sucesso.")
-
                 create_audit_logs()
 
                 # --------------------------------------
