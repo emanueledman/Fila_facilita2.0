@@ -1711,14 +1711,27 @@ def populate_initial_data(app):
                         "Administrativo", "Documentos", "Registros", "Licenças", "Autenticação", "24h"
                     ]
                     for tag_name in tags:
-                        if not exists(ServiceTag, name=tag_name):
+                        try:
+                            # Tentar buscar a tag usando o campo 'tag_name' (ou ajustar para o campo correto)
+                            if not exists(ServiceTag, tag_name=tag_name):
+                                tag = ServiceTag(
+                                    id=str(uuid.uuid4()),
+                                    tag_name=tag_name  # Usar 'tag_name' em vez de 'name'
+                                )
+                                db.session.add(tag)
+                                db.session.flush()
+                                app.logger.debug(f"Tag de serviço criada: {tag_name}")
+                        except AttributeError as e:
+                            app.logger.error(f"Erro ao acessar propriedade de ServiceTag: {str(e)}")
+                            app.logger.warning(f"Tentando campo alternativo para tag: {tag_name}")
+                            # Fallback: criar tag sem verificar existência, se o campo estiver errado
                             tag = ServiceTag(
                                 id=str(uuid.uuid4()),
-                                name=tag_name
+                                tag_name=tag_name
                             )
                             db.session.add(tag)
                             db.session.flush()
-                            app.logger.debug(f"Tag de serviço criada: {tag_name}")
+                            app.logger.debug(f"Tag de serviço criada (fallback): {tag_name}")
                     app.logger.info("Tags de serviço criadas ou recuperadas com sucesso.")
 
                 create_service_tags()
