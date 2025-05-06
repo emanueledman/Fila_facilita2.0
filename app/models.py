@@ -1,4 +1,3 @@
-
 from sqlalchemy import Column, Integer, String, Float, Time, Boolean, DateTime, ForeignKey, Enum, Index, Text, JSON
 from sqlalchemy.orm import relationship
 from app import db
@@ -31,6 +30,7 @@ class InstitutionType(db.Model):
     name = Column(String(100), nullable=False, unique=True)
     description = Column(Text, nullable=True)
     institutions = relationship('Institution', backref='type', lazy='dynamic')
+    logo_url = Column(String(255), nullable=True)
     
     def __repr__(self):
         return f'<InstitutionType {self.name}>'
@@ -79,6 +79,7 @@ class Institution(db.Model):
     name = Column(String(100), nullable=False)
     institution_type_id = Column(String(36), ForeignKey('institution_type.id'), nullable=False, index=True)
     description = Column(Text, nullable=True)
+    logo_url = Column(String(255), nullable=True)  # Aumentado de String(100) para String(255)
     
     def __repr__(self):
         return f'<Institution {self.name} ({self.type.name})>'
