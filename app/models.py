@@ -277,6 +277,7 @@ class NotificationLog(db.Model):
     message = Column(String(200), nullable=False)
     sent_at = Column(DateTime, default=datetime.utcnow)
     status = Column(String(20), default='Sent')
+    type = Column(String(20), nullable=False, default='general')
     user = relationship('User', backref=db.backref('notifications', lazy='dynamic'))
     branch = relationship('Branch', backref=db.backref('notifications', lazy='dynamic'))
     queue = relationship('Queue', backref=db.backref('notifications', lazy='dynamic'))

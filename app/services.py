@@ -366,7 +366,7 @@ class QueueService:
                 user_id=user_id,
                 message=message,
                 type='ticket' if ticket_id else 'general',
-                timestamp=datetime.utcnow()
+                sent_at=datetime.utcnow()
             )
             db.session.add(notification)
             websocket_success = False

@@ -103,6 +103,28 @@ def create_app():
     init_admin_routes(app)
 
     # Rota para inicializar o banco de dados
+    
+    @app.route('/add-notification-type', methods=['POST'])
+    @limiter.limit("5 per minute")
+    def add_notification_type():
+        try:
+            with db.engine.connect() as conn:
+                # Verifica se a coluna já existe
+                if db.engine.dialect.name == 'postgresql':
+                    exists_query = text("SELECT column_name FROM information_schema.columns WHERE table_name='notification_log' AND column_name='type'")
+                    result = conn.execute(exists_query).fetchone()
+                    if not result:
+                        # Adiciona a coluna se não existir
+                        conn.execute(text("ALTER TABLE notification_log ADD COLUMN type VARCHAR(50) DEFAULT 'standard' NOT NULL"))
+                        conn.commit()
+                else:
+                    # Para SQLite
+                    conn.execute(text("ALTER TABLE notification_log ADD COLUMN type VARCHAR(50) DEFAULT 'standard' NOT NULL"))
+                    conn.commit()
+                
+            return jsonify({"status": "success", "message": "Coluna 'type' adicionada à tabela notification_log"})
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)})
 
     @app.route('/init-db', methods=['POST'])
     @limiter.limit("5 per minute")  # Limitar a 5 requisições por minuto
