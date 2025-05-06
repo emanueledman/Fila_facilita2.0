@@ -544,6 +544,8 @@ class QueueService:
             logger.error(f"Erro ao adicionar ticket à fila {service}: {e}")
             raise
 
+
+
     @staticmethod
     def generate_physical_ticket_for_totem(service, branch_id, client_ip):
         """Gera um ticket físico via totem para um usuário anônimo, baseado no serviço selecionado."""
