@@ -434,16 +434,13 @@ class QueueService:
 
 
     @staticmethod
-    def add_to_queue(service, user_id, priority=0, is_physical=False, fcm_token=None, branch_id=None, user_lat=None, user_lon=None):
-        """Adiciona um ticket à fila, priorizando serviços semelhantes e preferências do usuário. Senhas físicas só via totem."""
+    def add_to_queue(queue_id=None, service=None, user_id=None, priority=0, is_physical=False, fcm_token=None, branch_id=None, user_lat=None, user_lon=None):
+        """Adiciona um ticket à fila, usando queue_id diretamente se fornecido, ou buscando por serviço e filial."""
         try:
             if is_physical:
                 logger.error("Senhas físicas só podem ser geradas via totem (use generate_physical_ticket_for_totem)")
                 raise ValueError("Senhas físicas só podem ser geradas no totem da filial")
-            if not isinstance(service, str) or not service.strip():
-                logger.error("Serviço inválido")
-                raise ValueError("Serviço inválido")
-            if not isinstance(user_id, str) or not user_id:
+            if not user_id or not isinstance(user_id, str):
                 logger.error("user_id inválido")
                 raise ValueError("user_id inválido")
             if not isinstance(priority, (int, float)) or priority < 0:
@@ -456,34 +453,47 @@ class QueueService:
             if not user:
                 logger.error(f"Usuário não encontrado: user_id={user_id}")
                 raise ValueError("Usuário não encontrado")
-            service_id = QueueService.get_service_id_from_query(service)
-            if not service_id:
-                logger.warning(f"Serviço '{service}' não encontrado, usando consulta textual")
-            query = Queue.query.join(Department).join(Branch).join(InstitutionService)
-            if service_id:
-                query = query.filter(Queue.service_id == service_id)
-            else:
-                search_terms = re.sub(r'[^\w\sÀ-ÿ]', '', service.lower()).split()
-                if search_terms:
-                    search_query = ' & '.join(search_terms)
-                    query = query.filter(
-                        or_(
-                            func.to_tsvector('portuguese', func.concat(
-                                InstitutionService.name, ' ', InstitutionService.description
-                            )).op('@@')(func.to_tsquery('portuguese', search_query)),
-                            Queue.id.in_(
-                                db.session.query(ServiceTag.queue_id).filter(
-                                    ServiceTag.tag.ilike(f'%{service.lower()}%')
+
+            # Buscar a fila
+            queue = None
+            if queue_id:
+                queue = Queue.query.get(queue_id)
+                if not queue:
+                    logger.error(f"Fila não encontrada para queue_id: {queue_id}")
+                    raise ValueError("Fila não encontrada")
+            elif service and isinstance(service, str) and service.strip():
+                service_id = QueueService.get_service_id_from_query(service)
+                if not service_id:
+                    logger.warning(f"Serviço '{service}' não encontrado, usando consulta textual")
+                query = Queue.query.join(Department).join(Branch).join(InstitutionService)
+                if service_id:
+                    query = query.filter(Queue.service_id == service_id)
+                else:
+                    search_terms = re.sub(r'[^\w\sÀ-ÿ]', '', service.lower()).split()
+                    if search_terms:
+                        search_query = ' & '.join(search_terms)
+                        query = query.filter(
+                            or_(
+                                func.to_tsvector('portuguese', func.concat(
+                                    InstitutionService.name, ' ', InstitutionService.description
+                                )).op('@@')(func.to_tsquery('portuguese', search_query)),
+                                Queue.id.in_(
+                                    db.session.query(ServiceTag.queue_id).filter(
+                                        ServiceTag.tag.ilike(f'%{service.lower()}%')
+                                    )
                                 )
                             )
                         )
-                    )
-            if branch_id:
-                query = query.filter(Branch.id == branch_id)
-            queue = query.first()
-            if not queue:
-                logger.error(f"Fila não encontrada para serviço: {service}, branch_id: {branch_id}")
-                raise ValueError("Fila não encontrada")
+                if branch_id:
+                    query = query.filter(Branch.id == branch_id)
+                queue = query.first()
+                if not queue:
+                    logger.error(f"Fila não encontrada para serviço: {service}, branch_id: {branch_id}")
+                    raise ValueError("Fila não encontrada")
+            else:
+                logger.error("Nenhum queue_id ou serviço válido fornecido")
+                raise ValueError("Forneça um queue_id ou um serviço válido")
+
             branch_name = queue.department.branch.name if queue.department and queue.department.branch else "Desconhecida"
             if not QueueService.is_queue_open(queue):
                 logger.warning(f"Fila {queue.id} está fechada (filial: {branch_name})")
@@ -513,11 +523,12 @@ class QueueService:
             )
             queue.active_tickets += 1
             db.session.add(ticket)
+            service_id = queue.service_id
             if service_id:
                 behavior = UserBehavior(
                     user_id=user_id,
                     service_id=service_id,
-                    action='ticket_emission',  # Corrigido de interaction_type para action
+                    action='ticket_emission',
                     timestamp=datetime.utcnow()
                 )
                 db.session.add(behavior)
@@ -542,9 +553,9 @@ class QueueService:
             return ticket, None
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Erro ao adicionar ticket à fila {service}: {e}")
+            logger.error(f"Erro ao adicionar ticket à fila {queue_id or service}: {e}")
             raise
-
+        
     @staticmethod
     def generate_physical_ticket_for_totem(service, branch_id, client_ip):
         """Gera um ticket físico via totem para um usuário anônimo, baseado no serviço selecionado."""

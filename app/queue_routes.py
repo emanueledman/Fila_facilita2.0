@@ -1579,9 +1579,9 @@ def init_queue_routes(app):
             return jsonify({'error': 'Fila não disponível fora do horário de funcionamento'}), 400
 
         try:
-            # Chamar add_to_queue
+            # Chamar add_to_queue com queue_id
             ticket, _ = QueueService.add_to_queue(
-                service=queue.service.name,
+                queue_id=queue_id,
                 user_id=user_id,
                 priority=priority,
                 is_physical=False,
@@ -1631,7 +1631,8 @@ def init_queue_routes(app):
             db.session.rollback()
             logger.error(f"Erro inesperado ao gerar ticket para queue_id={queue_id}, user_id={user_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao gerar ticket'}), 500
-    
+
+ 
     @app.route('/api/tickets/<ticket_id>/trade', methods=['POST'])
     @require_auth
     def trade_ticket(ticket_id):
