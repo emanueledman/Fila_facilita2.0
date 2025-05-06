@@ -13,7 +13,7 @@ import os
 from dotenv import load_dotenv
 
 from flask import jsonify
-from app import app, db
+
 from sqlalchemy import text
 
 load_dotenv()
