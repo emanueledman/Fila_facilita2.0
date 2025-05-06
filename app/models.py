@@ -165,7 +165,7 @@ class Ticket(db.Model):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     queue_id = Column(String(36), ForeignKey('queue.id'), nullable=False, index=True)
     user_id = Column(String(36), ForeignKey('user.id'), nullable=True, index=True)
-    ticket_number = Column(String(50), nullable=False)  # Alterado de Integer para String(50)
+    ticket_number = Column(Integer, nullable=False)  # Alterado de Integer para String(50)
     qr_code = Column(String(50), nullable=False, unique=True)
     priority = Column(Integer, default=0)
     is_physical = Column(Boolean, default=False)
