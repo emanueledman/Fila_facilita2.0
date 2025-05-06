@@ -7,9 +7,14 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+
 from redis import Redis
 import os
 from dotenv import load_dotenv
+
+from flask import jsonify
+from app import app, db
+from sqlalchemy import text
 
 load_dotenv()
 
@@ -98,36 +103,43 @@ def create_app():
     init_admin_routes(app)
 
     # Rota para inicializar o banco de dados
+
     @app.route('/init-db', methods=['POST'])
     @limiter.limit("5 per minute")  # Limitar a 5 requisições por minuto
     def init_db():
         with app.app_context():
             from .models import Institution, Queue, User, Ticket, Department, UserPreference, UserRole, Branch, ServiceCategory, ServiceTag, AuditLog, BranchSchedule
             from .data_init import populate_initial_data
-            from sqlalchemy import text
 
             try:
+                # Obter o engine do banco de dados
                 engine = db.get_engine()
                 with engine.connect() as conn:
+                    # Limpar completamente o banco de dados
                     if engine.dialect.name == 'postgresql':
-                        conn.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
-                        app.logger.info("Esquema do banco de dados PostgreSQL reinicializado com CASCADE.")
+                        # Para PostgreSQL, dropar o esquema public e recriá-lo
+                        conn.execute(text("DROP SCHEMA public CASCADE;"))
+                        conn.execute(text("CREATE SCHEMA public;"))
+                        conn.commit()
+                        app.logger.info("Esquema 'public' do PostgreSQL limpo com DROP SCHEMA CASCADE e recriado.")
                     else:
+                        # Para outros bancos (SQLite, MySQL, etc.), usar db.drop_all()
                         db.drop_all()
-                        app.logger.info("Tabelas antigas removidas com db.drop_all()")
+                        app.logger.info("Todas as tabelas removidas usando db.drop_all().")
 
+                # Recriar todas as tabelas com base nos modelos
                 db.create_all()
-                app.logger.info("Tabelas criadas ou verificadas no banco de dados")
+                app.logger.info("Tabelas criadas com sucesso no banco de dados.")
 
-                # Inserir dados iniciais de forma idempotente
+                # Popular dados iniciais
                 populate_initial_data(app)
-                app.logger.info("Dados iniciais inseridos automaticamente")
+                app.logger.info("Dados iniciais populados com sucesso usando populate_initial_data().")
 
                 # Opcional: Inicializar modelos de ML
-                app.logger.debug("Tentando importar preditores de ML")
+                app.logger.debug("Tentando importar e inicializar preditores de ML.")
                 try:
                     from .ml_models import wait_time_predictor, service_recommendation_predictor, collaborative_model, demand_model, clustering_model
-                    app.logger.info("Preditores de ML importados com sucesso")
+                    app.logger.info("Preditores de ML importados com sucesso.")
                     if wait_time_predictor:
                         queues = Queue.query.all()
                         for queue in queues:
@@ -135,24 +147,31 @@ def create_app():
                             wait_time_predictor.train(queue.id)
                             app.logger.debug(f"Treinando DemandForecastingModel para queue_id={queue.id}")
                             demand_model.train(queue.id)
-                        app.logger.debug("Treinando ServiceRecommendationPredictor")
+                        app.logger.debug("Treinando ServiceRecommendationPredictor.")
                         service_recommendation_predictor.train()
-                        app.logger.debug("Treinando CollaborativeFilteringModel")
+                        app.logger.debug("Treinando CollaborativeFilteringModel.")
                         collaborative_model.train()
-                        app.logger.debug("Treinando ServiceClusteringModel")
+                        app.logger.debug("Treinando ServiceClusteringModel.")
                         clustering_model.train()
-                        app.logger.info("Modelos de ML inicializados com sucesso")
+                        app.logger.info("Modelos de ML inicializados com sucesso.")
                 except ImportError as e:
-                    app.logger.error(f"Erro ao importar preditores de ML: {e}")
-                    app.logger.warning("Continuando sem modelos de ML")
+                    app.logger.error(f"Erro ao importar preditores de ML: {str(e)}")
+                    app.logger.warning("Continuando sem inicialização dos modelos de ML.")
                 except Exception as e:
                     app.logger.error(f"Erro ao inicializar modelos de ML: {str(e)}")
-                    app.logger.warning("Continuando apesar de erros nos modelos de ML")
+                    app.logger.warning("Continuando apesar de erros nos modelos de ML.")
 
-                return jsonify({"status": "success", "message": "Banco de dados inicializado e dados populados com sucesso"}), 200
+                return jsonify({
+                    "status": "success",
+                    "message": "Banco de dados limpo, tabelas recriadas e dados iniciais populados com sucesso."
+                }), 200
+
             except Exception as e:
                 app.logger.error(f"Erro ao inicializar banco de dados: {str(e)}")
-                return jsonify({"status": "error", "message": f"Erro ao inicializar banco de dados: {str(e)}"}), 500
+                return jsonify({
+                    "status": "error",
+                    "message": f"Erro ao inicializar banco de dados: {str(e)}"
+                }), 500
 
 
     if os.getenv('FLASK_ENV') == 'production':

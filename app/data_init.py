@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, time, timedelta
 import bcrypt
+import random
 from app import db
 from app.models import (
     InstitutionType, Institution, Branch, BranchSchedule, Department, Queue,
@@ -10,14 +11,12 @@ from app.models import (
 
 def populate_initial_data(app):
     """
-    Popula o banco de dados com dados iniciais para testes, com foco na Conservatória dos Registos e no ramo de Saúde.
+    Popula o banco de dados com dados iniciais para testes, com foco na Conservatória dos Registos (10 filiais).
     Inclui 8 instituições (4 bancos: BAI, BFA, BIC, Keve; 2 saúde: Hospital Josina Machel, Clínica Sagrada Esperança;
-    2 administrativos: SIAC, Conservatória dos Registos). Conservatória tem 6 filiais em diferentes bairros de Luanda
-    (Ingombota, Cazenga, Talatona, Kilamba, Viana, Rangel) com 8 serviços cada para testes de serviços semelhantes e
-    sugestões. Saúde tem 10 serviços (5 por instituição). Bancos e SIAC têm 3 filiais cada. Cada filial tem departamentos
-    com 3 filas (1 24/7, 1 horário comercial, 1 horário intermediário). Cada fila tem 50 tickets. Inclui usuários,
-    preferências, comportamentos, localizações alternativas, logs de auditoria e notificações. Adiciona um usuário de teste
-    com UID nMSnRc8jpYQbnrxujg5JZcHzFKP2 e email edmannews5@gmail.com com histórico robusto para testes.
+    2 administrativos: SIAC, Conservatória). Conservatória tem 10 filiais, bancos e SIAC 3 cada, hospitais 5 cada.
+    Cada filial tem 1 departamento com 3 filas (1 24/7, 2 horário comercial). Cada fila tem 10 tickets, todos 'Atendido'.
+    Inclui 5 usuários (1 teste: nMSnRc8jpYQbnrxujg5JZcHzFKP2, edmannews5@gmail.com; 4 regulares).
+    Usa 35 bairros únicos de Luanda para filiais, sem repetições.
     Mantém idempotência, logs em português, e compatibilidade com models.py (incluindo is_client e is_favorite).
     Suporta testes e modelos de ML.
     """
@@ -128,7 +127,7 @@ def populate_initial_data(app):
                 category_map = create_service_categories()
 
                 # --------------------------------------
-                # Bairros de Luanda
+                # Bairros de Luanda (35 únicos)
                 # --------------------------------------
                 neighborhoods = [
                     {"name": "Ingombota", "latitude": -8.8167, "longitude": 13.2332},
@@ -137,11 +136,39 @@ def populate_initial_data(app):
                     {"name": "Kilamba", "latitude": -8.9333, "longitude": 13.2667},
                     {"name": "Cazenga", "latitude": -8.8500, "longitude": 13.2833},
                     {"name": "Viana", "latitude": -8.9035, "longitude": 13.3741},
-                    {"name": "Rangel", "latitude": -8.8300, "longitude": 13.2500}
+                    {"name": "Rangel", "latitude": -8.8300, "longitude": 13.2500},
+                    {"name": "Samba", "latitude": -8.8333, "longitude": 13.2333},
+                    {"name": "Cacuaco", "latitude": -8.7833, "longitude": 13.3667},
+                    {"name": "Belas", "latitude": -8.9333, "longitude": 13.2000},
+                    {"name": "Sambizanga", "latitude": -8.8050, "longitude": 13.2400},
+                    {"name": "Vila Alice", "latitude": -8.8200, "longitude": 13.2450},
+                    {"name": "Prenda", "latitude": -8.8250, "longitude": 13.2300},
+                    {"name": "Mutamba", "latitude": -8.8130, "longitude": 13.2350},
+                    {"name": "Maculusso", "latitude": -8.8180, "longitude": 13.2380},
+                    {"name": "Alvalade", "latitude": -8.8300, "longitude": 13.2400},
+                    {"name": "Bairro Operário", "latitude": -8.8150, "longitude": 13.2500},
+                    {"name": "Bairro Azul", "latitude": -8.8100, "longitude": 13.2450},
+                    {"name": "Patrice Lumumba", "latitude": -8.8200, "longitude": 13.2550},
+                    {"name": "Nova Vida", "latitude": -8.9000, "longitude": 13.2600},
+                    {"name": "Zango", "latitude": -8.9500, "longitude": 13.3500},
+                    {"name": "Camama", "latitude": -8.9200, "longitude": 13.2200},
+                    {"name": "Benfica", "latitude": -8.9500, "longitude": 13.1800},
+                    {"name": "Palanca", "latitude": -8.8700, "longitude": 13.2700},
+                    {"name": "Morro Bento", "latitude": -8.9100, "longitude": 13.1900},
+                    {"name": "Coqueiros", "latitude": -8.8050, "longitude": 13.2300},
+                    {"name": "Futungo de Belas", "latitude": -8.9700, "longitude": 13.1600},
+                    {"name": "Lar do Patriota", "latitude": -8.8900, "longitude": 13.2400},
+                    {"name": "Bairro Popular", "latitude": -8.8350, "longitude": 13.2600},
+                    {"name": "Hoji Ya Henda", "latitude": -8.8400, "longitude": 13.2800},
+                    {"name": "Ngola Kiluanji", "latitude": -8.8500, "longitude": 13.2650},
+                    {"name": "Cassenda", "latitude": -8.8300, "longitude": 13.2350},
+                    {"name": "Rocha Pinto", "latitude": -8.8400, "longitude": 13.2450},
+                    {"name": "Vila Estoril", "latitude": -8.8200, "longitude": 13.2300},
+                    {"name": "Kinaxixi", "latitude": -8.8170, "longitude": 13.2400}
                 ]
 
                 # --------------------------------------
-                # Dados de Instituições
+                # Dados de Instituições com Bairros Únicos
                 # --------------------------------------
                 institutions_data = [
                     {
@@ -156,11 +183,11 @@ def populate_initial_data(app):
                         ],
                         "branches": [
                             {
-                                "name": "Agência Central",
+                                "name": "Agência Ingombota",
                                 "location": "Rua Rainha Ginga, Ingombota, Luanda",
                                 "neighborhood": "Ingombota",
-                                "latitude": -8.8170,
-                                "longitude": 13.2350,
+                                "latitude": -8.8167,
+                                "longitude": 13.2332,
                                 "departments": [
                                     {
                                         "name": "Atendimento ao Cliente",
@@ -198,8 +225,8 @@ def populate_initial_data(app):
                                 "name": "Agência Talatona",
                                 "location": "Via Expressa, Talatona, Luanda",
                                 "neighborhood": "Talatona",
-                                "latitude": -8.9180,
-                                "longitude": 13.1840,
+                                "latitude": -8.9167,
+                                "longitude": 13.1833,
                                 "departments": [
                                     {
                                         "name": "Atendimento ao Cliente",
@@ -237,8 +264,8 @@ def populate_initial_data(app):
                                 "name": "Agência Viana",
                                 "location": "Rua Principal, Viana, Luanda",
                                 "neighborhood": "Viana",
-                                "latitude": -8.9040,
-                                "longitude": 13.3750,
+                                "latitude": -8.9035,
+                                "longitude": 13.3741,
                                 "departments": [
                                     {
                                         "name": "Atendimento ao Cliente",
@@ -289,8 +316,8 @@ def populate_initial_data(app):
                                 "name": "Agência Maianga",
                                 "location": "Rua Joaquim Kapango, Maianga, Luanda",
                                 "neighborhood": "Maianga",
-                                "latitude": -8.8150,
-                                "longitude": 13.2310,
+                                "latitude": -8.8147,
+                                "longitude": 13.2302,
                                 "departments": [
                                     {
                                         "name": "Atendimento ao Cliente",
@@ -328,8 +355,8 @@ def populate_initial_data(app):
                                 "name": "Agência Kilamba",
                                 "location": "Avenida do Kilamba, Kilamba, Luanda",
                                 "neighborhood": "Kilamba",
-                                "latitude": -8.9340,
-                                "longitude": 13.2670,
+                                "latitude": -8.9333,
+                                "longitude": 13.2667,
                                 "departments": [
                                     {
                                         "name": "Atendimento ao Cliente",
@@ -367,8 +394,8 @@ def populate_initial_data(app):
                                 "name": "Agência Cazenga",
                                 "location": "Avenida dos Combatentes, Cazenga, Luanda",
                                 "neighborhood": "Cazenga",
-                                "latitude": -8.8510,
-                                "longitude": 13.2840,
+                                "latitude": -8.8500,
+                                "longitude": 13.2833,
                                 "departments": [
                                     {
                                         "name": "Atendimento ao Cliente",
@@ -455,11 +482,11 @@ def populate_initial_data(app):
                                 ]
                             },
                             {
-                                "name": "Agência Ingombota",
-                                "location": "Avenida 4 de Fevereiro, Ingombota, Luanda",
-                                "neighborhood": "Ingombota",
-                                "latitude": -8.8167,
-                                "longitude": 13.2332,
+                                "name": "Agência Samba",
+                                "location": "Rua Principal, Samba, Luanda",
+                                "neighborhood": "Samba",
+                                "latitude": -8.8333,
+                                "longitude": 13.2333,
                                 "departments": [
                                     {
                                         "name": "Atendimento ao Cliente",
@@ -494,11 +521,11 @@ def populate_initial_data(app):
                                 ]
                             },
                             {
-                                "name": "Agência Talatona",
-                                "location": "Rua Principal, Talatona, Luanda",
-                                "neighborhood": "Talatona",
-                                "latitude": -8.9167,
-                                "longitude": 13.1833,
+                                "name": "Agência Cacuaco",
+                                "location": "Estrada Principal, Cacuaco, Luanda",
+                                "neighborhood": "Cacuaco",
+                                "latitude": -8.7833,
+                                "longitude": 13.3667,
                                 "departments": [
                                     {
                                         "name": "Atendimento ao Cliente",
@@ -546,89 +573,89 @@ def populate_initial_data(app):
                         ],
                         "branches": [
                             {
-                                "name": "Agência Ingombota",
-                                "location": "Avenida Che Guevara, Ingombota, Luanda",
-                                "neighborhood": "Ingombota",
-                                "latitude": -8.8165,
-                                "longitude": 13.2340,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento ao Cliente",
-                                        "sector": "Bancário",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Atendimento Bancário",
-                                                "prefix": "AB",
-                                                "daily_limit": 100,
-                                                "num_counters": 5,
-                                                "tags": ["Bancário", "Atendimento", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Empréstimos",
-                                                "prefix": "EM",
-                                                "daily_limit": 100,
-                                                "num_counters": 3,
-                                                "tags": ["Bancário", "Empréstimo"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Investimentos",
-                                                "prefix": "IN",
-                                                "daily_limit": 80,
-                                                "num_counters": 2,
-                                                "tags": ["Bancário", "Investimento"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "Agência Viana",
-                                "location": "Rua Principal, Viana, Luanda",
-                                "neighborhood": "Viana",
-                                "latitude": -8.9035,
-                                "longitude": 13.3741,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento ao Cliente",
-                                        "sector": "Bancário",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Atendimento Bancário",
-                                                "prefix": "AB",
-                                                "daily_limit": 100,
-                                                "num_counters": 5,
-                                                "tags": ["Bancário", "Atendimento", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Empréstimos",
-                                                "prefix": "EM",
-                                                "daily_limit": 100,
-                                                "num_counters": 3,
-                                                "tags": ["Bancário", "Empréstimo"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Investimentos",
-                                                "prefix": "IN",
-                                                "daily_limit": 80,
-                                                "num_counters": 2,
-                                                "tags": ["Bancário", "Investimento"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "Agência Kilamba",
-                                "location": "Rua Principal, Kilamba, Luanda",
-                                "neighborhood": "Kilamba",
+                                "name": "Agência Belas",
+                                "location": "Estrada de Belas, Belas, Luanda",
+                                "neighborhood": "Belas",
                                 "latitude": -8.9333,
-                                "longitude": 13.2667,
+                                "longitude": 13.2000,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento ao Cliente",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento Bancário",
+                                                "prefix": "AB",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Empréstimos",
+                                                "prefix": "EM",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Empréstimo"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Investimentos",
+                                                "prefix": "IN",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Investimento"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Agência Sambizanga",
+                                "location": "Rua Principal, Sambizanga, Luanda",
+                                "neighborhood": "Sambizanga",
+                                "latitude": -8.8050,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento ao Cliente",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento Bancário",
+                                                "prefix": "AB",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Empréstimos",
+                                                "prefix": "EM",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Empréstimo"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Investimentos",
+                                                "prefix": "IN",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Investimento"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Agência Vila Alice",
+                                "location": "Rua da Vila, Vila Alice, Luanda",
+                                "neighborhood": "Vila Alice",
+                                "latitude": -8.8200,
+                                "longitude": 13.2450,
                                 "departments": [
                                     {
                                         "name": "Atendimento ao Cliente",
@@ -667,22 +694,22 @@ def populate_initial_data(app):
                     {
                         "id": str(uuid.uuid4()),
                         "name": "Hospital Josina Machel",
-                        "description": "Serviços de saúde públicos em Luanda",
+                        "description": "Serviços de saúde pública em Luanda",
                         "institution_type_id": institution_type_map["Saúde"],
                         "services": [
-                            {"name": "Consulta Geral", "category_id": category_map["Consulta Médica"], "description": "Consultas médicas gerais"},
-                            {"name": "Exames Laboratoriais", "category_id": category_map["Exames"], "description": "Exames de diagnóstico"},
-                            {"name": "Triagem", "category_id": category_map["Triagem"], "description": "Atendimento inicial e triagem"},
-                            {"name": "Internamento", "category_id": category_map["Internamento"], "description": "Serviços de internamento hospitalar"},
+                            {"name": "Consulta Geral", "category_id": category_map["Consulta Médica"], "description": "Atendimento clínico geral"},
+                            {"name": "Exames Laboratoriais", "category_id": category_map["Exames"], "description": "Exames de sangue e urina"},
+                            {"name": "Triagem", "category_id": category_map["Triagem"], "description": "Triagem de pacientes"},
+                            {"name": "Internamento", "category_id": category_map["Internamento"], "description": "Cuidados hospitalares"},
                             {"name": "Cirurgia de Urgência", "category_id": category_map["Cirurgia"], "description": "Cirurgias de emergência"}
                         ],
                         "branches": [
                             {
-                                "name": "Unidade Central",
-                                "location": "Avenida Ho Chi Minh, Maianga, Luanda",
-                                "neighborhood": "Maianga",
-                                "latitude": -8.8147,
-                                "longitude": 13.2302,
+                                "name": "Unidade Prenda",
+                                "location": "Rua da Saúde, Prenda, Luanda",
+                                "neighborhood": "Prenda",
+                                "latitude": -8.8250,
+                                "longitude": 13.2300,
                                 "departments": [
                                     {
                                         "name": "Clínica Geral",
@@ -693,15 +720,15 @@ def populate_initial_data(app):
                                                 "service_name": "Consulta Geral",
                                                 "prefix": "CG",
                                                 "daily_limit": 80,
-                                                "num_counters": 4,
+                                                "num_counters": 5,
                                                 "tags": ["Saúde", "Consulta", "24h"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
                                                 "service_name": "Exames Laboratoriais",
                                                 "prefix": "EL",
-                                                "daily_limit": 60,
-                                                "num_counters": 2,
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
                                                 "tags": ["Saúde", "Exames"]
                                             },
                                             {
@@ -717,11 +744,11 @@ def populate_initial_data(app):
                                 ]
                             },
                             {
-                                "name": "Unidade Kilamba",
-                                "location": "Rua Principal, Kilamba, Luanda",
-                                "neighborhood": "Kilamba",
-                                "latitude": -8.9333,
-                                "longitude": 13.2667,
+                                "name": "Unidade Mutamba",
+                                "location": "Avenida 4 de Fevereiro, Mutamba, Luanda",
+                                "neighborhood": "Mutamba",
+                                "latitude": -8.8130,
+                                "longitude": 13.2350,
                                 "departments": [
                                     {
                                         "name": "Clínica Geral",
@@ -732,15 +759,15 @@ def populate_initial_data(app):
                                                 "service_name": "Consulta Geral",
                                                 "prefix": "CG",
                                                 "daily_limit": 80,
-                                                "num_counters": 4,
+                                                "num_counters": 5,
                                                 "tags": ["Saúde", "Consulta", "24h"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
                                                 "service_name": "Exames Laboratoriais",
                                                 "prefix": "EL",
-                                                "daily_limit": 60,
-                                                "num_counters": 2,
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
                                                 "tags": ["Saúde", "Exames"]
                                             },
                                             {
@@ -756,11 +783,11 @@ def populate_initial_data(app):
                                 ]
                             },
                             {
-                                "name": "Unidade Cazenga",
-                                "location": "Rua dos Combatentes, Cazenga, Luanda",
-                                "neighborhood": "Cazenga",
-                                "latitude": -8.8500,
-                                "longitude": 13.2833,
+                                "name": "Unidade Maculusso",
+                                "location": "Rua do Hospital, Maculusso, Luanda",
+                                "neighborhood": "Maculusso",
+                                "latitude": -8.8180,
+                                "longitude": 13.2380,
                                 "departments": [
                                     {
                                         "name": "Clínica Geral",
@@ -771,15 +798,93 @@ def populate_initial_data(app):
                                                 "service_name": "Consulta Geral",
                                                 "prefix": "CG",
                                                 "daily_limit": 80,
-                                                "num_counters": 4,
+                                                "num_counters": 5,
                                                 "tags": ["Saúde", "Consulta", "24h"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
                                                 "service_name": "Exames Laboratoriais",
                                                 "prefix": "EL",
-                                                "daily_limit": 60,
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
                                                 "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Alvalade",
+                                "location": "Rua da Unidade, Alvalade, Luanda",
+                                "neighborhood": "Alvalade",
+                                "latitude": -8.8300,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 5,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Bairro Operário",
+                                "location": "Rua do Hospital, Bairro Operário, Luanda",
+                                "neighborhood": "Bairro Operário",
+                                "latitude": -8.8150,
+                                "longitude": 13.2500,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 5,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
                                                 "tags": ["Saúde", "Exames"]
                                             },
                                             {
@@ -799,22 +904,22 @@ def populate_initial_data(app):
                     {
                         "id": str(uuid.uuid4()),
                         "name": "Clínica Sagrada Esperança",
-                        "description": "Serviços de saúde privados em Luanda",
+                        "description": "Serviços de saúde privada em Luanda",
                         "institution_type_id": institution_type_map["Saúde"],
                         "services": [
                             {"name": "Consulta Especializada", "category_id": category_map["Consulta Médica"], "description": "Consultas com especialistas"},
-                            {"name": "Exames Diagnósticos", "category_id": category_map["Exames"], "description": "Exames avançados"},
-                            {"name": "Fisioterapia", "category_id": category_map["Fisioterapia"], "description": "Serviços de reabilitação física"},
+                            {"name": "Exames Diagnósticos", "category_id": category_map["Exames"], "description": "Exames de imagem"},
+                            {"name": "Fisioterapia", "category_id": category_map["Fisioterapia"], "description": "Reabilitação física"},
                             {"name": "Vacinação", "category_id": category_map["Vacinação"], "description": "Serviços de imunização"},
-                            {"name": "Odontologia", "category_id": category_map["Odontologia"], "description": "Atendimento odontológico"}
+                            {"name": "Odontologia", "category_id": category_map["Odontologia"], "description": "Cuidados dentários"}
                         ],
                         "branches": [
                             {
-                                "name": "Unidade Talatona",
-                                "location": "Rua Principal, Talatona, Luanda",
-                                "neighborhood": "Talatona",
-                                "latitude": -8.9167,
-                                "longitude": 13.1833,
+                                "name": "Unidade Bairro Azul",
+                                "location": "Rua da Clínica, Bairro Azul, Luanda",
+                                "neighborhood": "Bairro Azul",
+                                "latitude": -8.8100,
+                                "longitude": 13.2450,
                                 "departments": [
                                     {
                                         "name": "Clínica Especializada",
@@ -825,15 +930,15 @@ def populate_initial_data(app):
                                                 "service_name": "Consulta Especializada",
                                                 "prefix": "CE",
                                                 "daily_limit": 80,
-                                                "num_counters": 4,
+                                                "num_counters": 5,
                                                 "tags": ["Saúde", "Consulta", "24h"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
                                                 "service_name": "Exames Diagnósticos",
                                                 "prefix": "ED",
-                                                "daily_limit": 60,
-                                                "num_counters": 2,
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
                                                 "tags": ["Saúde", "Exames"]
                                             },
                                             {
@@ -849,11 +954,11 @@ def populate_initial_data(app):
                                 ]
                             },
                             {
-                                "name": "Unidade Ingombota",
-                                "location": "Avenida 4 de Fevereiro, Ingombota, Luanda",
-                                "neighborhood": "Ingombota",
-                                "latitude": -8.8167,
-                                "longitude": 13.2332,
+                                "name": "Unidade Patrice Lumumba",
+                                "location": "Rua da Saúde, Patrice Lumumba, Luanda",
+                                "neighborhood": "Patrice Lumumba",
+                                "latitude": -8.8200,
+                                "longitude": 13.2550,
                                 "departments": [
                                     {
                                         "name": "Clínica Especializada",
@@ -864,15 +969,15 @@ def populate_initial_data(app):
                                                 "service_name": "Consulta Especializada",
                                                 "prefix": "CE",
                                                 "daily_limit": 80,
-                                                "num_counters": 4,
+                                                "num_counters": 5,
                                                 "tags": ["Saúde", "Consulta", "24h"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
                                                 "service_name": "Exames Diagnósticos",
                                                 "prefix": "ED",
-                                                "daily_limit": 60,
-                                                "num_counters": 2,
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
                                                 "tags": ["Saúde", "Exames"]
                                             },
                                             {
@@ -888,11 +993,11 @@ def populate_initial_data(app):
                                 ]
                             },
                             {
-                                "name": "Unidade Maianga",
-                                "location": "Rua Joaquim Kapango, Maianga, Luanda",
-                                "neighborhood": "Maianga",
-                                "latitude": -8.8147,
-                                "longitude": 13.2302,
+                                "name": "Unidade Nova Vida",
+                                "location": "Avenida da Saúde, Nova Vida, Luanda",
+                                "neighborhood": "Nova Vida",
+                                "latitude": -8.9000,
+                                "longitude": 13.2600,
                                 "departments": [
                                     {
                                         "name": "Clínica Especializada",
@@ -903,15 +1008,93 @@ def populate_initial_data(app):
                                                 "service_name": "Consulta Especializada",
                                                 "prefix": "CE",
                                                 "daily_limit": 80,
-                                                "num_counters": 4,
+                                                "num_counters": 5,
                                                 "tags": ["Saúde", "Consulta", "24h"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
                                                 "service_name": "Exames Diagnósticos",
                                                 "prefix": "ED",
-                                                "daily_limit": 60,
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Fisioterapia",
+                                                "prefix": "FT",
+                                                "daily_limit": 50,
                                                 "num_counters": 2,
+                                                "tags": ["Saúde", "Fisioterapia"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Zango",
+                                "location": "Rua da Clínica, Zango, Luanda",
+                                "neighborhood": "Zango",
+                                "latitude": -8.9500,
+                                "longitude": 13.3500,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Especializada",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Especializada",
+                                                "prefix": "CE",
+                                                "daily_limit": 80,
+                                                "num_counters": 5,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Diagnósticos",
+                                                "prefix": "ED",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Fisioterapia",
+                                                "prefix": "FT",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Fisioterapia"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Camama",
+                                "location": "Rua do Hospital, Camama, Luanda",
+                                "neighborhood": "Camama",
+                                "latitude": -8.9200,
+                                "longitude": 13.2200,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Especializada",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Especializada",
+                                                "prefix": "CE",
+                                                "daily_limit": 80,
+                                                "num_counters": 5,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Diagnósticos",
+                                                "prefix": "ED",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
                                                 "tags": ["Saúde", "Exames"]
                                             },
                                             {
@@ -931,23 +1114,23 @@ def populate_initial_data(app):
                     {
                         "id": str(uuid.uuid4()),
                         "name": "SIAC",
-                        "description": "Serviços administrativos em Luanda",
+                        "description": "Serviços Integrados de Atendimento ao Cidadão",
                         "institution_type_id": institution_type_map["Administrativo"],
                         "services": [
                             {"name": "Emissão de BI", "category_id": category_map["Documentos"], "description": "Emissão de bilhete de identidade"},
-                            {"name": "Registo Civil", "category_id": category_map["Registros"], "description": "Registos civis"},
-                            {"name": "Renovação de Licenças", "category_id": category_map["Licenças"], "description": "Renovação de licenças administrativas"}
+                            {"name": "Registo Civil", "category_id": category_map["Registros"], "description": "Registos de nascimento e casamento"},
+                            {"name": "Renovação de Licenças", "category_id": category_map["Licenças"], "description": "Renovação de licenças diversas"}
                         ],
                         "branches": [
                             {
-                                "name": "SIAC Talatona",
-                                "location": "Rua Principal, Talatona, Luanda",
-                                "neighborhood": "Talatona",
-                                "latitude": -8.9167,
-                                "longitude": 13.1833,
+                                "name": "Unidade Benfica",
+                                "location": "Rua do SIAC, Benfica, Luanda",
+                                "neighborhood": "Benfica",
+                                "latitude": -8.9500,
+                                "longitude": 13.1800,
                                 "departments": [
                                     {
-                                        "name": "Atendimento Administrativo",
+                                        "name": "Atendimento ao Cidadão",
                                         "sector": "Administrativo",
                                         "queues": [
                                             {
@@ -955,14 +1138,14 @@ def populate_initial_data(app):
                                                 "service_name": "Emissão de BI",
                                                 "prefix": "BI",
                                                 "daily_limit": 120,
-                                                "num_counters": 6,
+                                                "num_counters": 5,
                                                 "tags": ["Administrativo", "Documentos", "24h"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
                                                 "service_name": "Registo Civil",
                                                 "prefix": "RC",
-                                                "daily_limit": 100,
+                                                "daily_limit": 120,
                                                 "num_counters": 4,
                                                 "tags": ["Administrativo", "Registros"]
                                             },
@@ -970,7 +1153,7 @@ def populate_initial_data(app):
                                                 "id": str(uuid.uuid4()),
                                                 "service_name": "Renovação de Licenças",
                                                 "prefix": "RL",
-                                                "daily_limit": 90,
+                                                "daily_limit": 100,
                                                 "num_counters": 3,
                                                 "tags": ["Administrativo", "Licenças"]
                                             }
@@ -979,14 +1162,14 @@ def populate_initial_data(app):
                                 ]
                             },
                             {
-                                "name": "SIAC Viana",
-                                "location": "Rua Principal, Viana, Luanda",
-                                "neighborhood": "Viana",
-                                "latitude": -8.9035,
-                                "longitude": 13.3741,
+                                "name": "Unidade Palanca",
+                                "location": "Rua do Cidadão, Palanca, Luanda",
+                                "neighborhood": "Palanca",
+                                "latitude": -8.8700,
+                                "longitude": 13.2700,
                                 "departments": [
                                     {
-                                        "name": "Atendimento Administrativo",
+                                        "name": "Atendimento ao Cidadão",
                                         "sector": "Administrativo",
                                         "queues": [
                                             {
@@ -994,14 +1177,14 @@ def populate_initial_data(app):
                                                 "service_name": "Emissão de BI",
                                                 "prefix": "BI",
                                                 "daily_limit": 120,
-                                                "num_counters": 6,
+                                                "num_counters": 5,
                                                 "tags": ["Administrativo", "Documentos", "24h"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
                                                 "service_name": "Registo Civil",
                                                 "prefix": "RC",
-                                                "daily_limit": 100,
+                                                "daily_limit": 120,
                                                 "num_counters": 4,
                                                 "tags": ["Administrativo", "Registros"]
                                             },
@@ -1009,7 +1192,7 @@ def populate_initial_data(app):
                                                 "id": str(uuid.uuid4()),
                                                 "service_name": "Renovação de Licenças",
                                                 "prefix": "RL",
-                                                "daily_limit": 90,
+                                                "daily_limit": 100,
                                                 "num_counters": 3,
                                                 "tags": ["Administrativo", "Licenças"]
                                             }
@@ -1018,14 +1201,14 @@ def populate_initial_data(app):
                                 ]
                             },
                             {
-                                "name": "SIAC Rangel",
-                                "location": "Rua do Rangel, Rangel, Luanda",
-                                "neighborhood": "Rangel",
-                                "latitude": -8.8300,
-                                "longitude": 13.2500,
+                                "name": "Unidade Morro Bento",
+                                "location": "Rua do SIAC, Morro Bento, Luanda",
+                                "neighborhood": "Morro Bento",
+                                "latitude": -8.9100,
+                                "longitude": 13.1900,
                                 "departments": [
                                     {
-                                        "name": "Atendimento Administrativo",
+                                        "name": "Atendimento ao Cidadão",
                                         "sector": "Administrativo",
                                         "queues": [
                                             {
@@ -1033,14 +1216,14 @@ def populate_initial_data(app):
                                                 "service_name": "Emissão de BI",
                                                 "prefix": "BI",
                                                 "daily_limit": 120,
-                                                "num_counters": 6,
+                                                "num_counters": 5,
                                                 "tags": ["Administrativo", "Documentos", "24h"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
                                                 "service_name": "Registo Civil",
                                                 "prefix": "RC",
-                                                "daily_limit": 100,
+                                                "daily_limit": 120,
                                                 "num_counters": 4,
                                                 "tags": ["Administrativo", "Registros"]
                                             },
@@ -1048,7 +1231,7 @@ def populate_initial_data(app):
                                                 "id": str(uuid.uuid4()),
                                                 "service_name": "Renovação de Licenças",
                                                 "prefix": "RL",
-                                                "daily_limit": 90,
+                                                "daily_limit": 100,
                                                 "num_counters": 3,
                                                 "tags": ["Administrativo", "Licenças"]
                                             }
@@ -1061,25 +1244,25 @@ def populate_initial_data(app):
                     {
                         "id": str(uuid.uuid4()),
                         "name": "Conservatória dos Registos",
-                        "description": "Serviços de registo civil e comercial em Luanda",
+                        "description": "Serviços de registo civil e comercial",
                         "institution_type_id": institution_type_map["Administrativo"],
                         "services": [
                             {"name": "Registo Comercial", "category_id": category_map["Registros"], "description": "Registo de empresas"},
                             {"name": "Registo Civil", "category_id": category_map["Registros"], "description": "Registos de nascimento e casamento"},
-                            {"name": "Renovação de Licenças", "category_id": category_map["Licenças"], "description": "Renovação de licenças comerciais"},
+                            {"name": "Renovação de Licenças", "category_id": category_map["Licenças"], "description": "Renovação de licenças"},
                             {"name": "Autenticação de Documentos", "category_id": category_map["Autenticação"], "description": "Autenticação de documentos oficiais"},
                             {"name": "Registo Predial", "category_id": category_map["Registros"], "description": "Registo de propriedades"},
                             {"name": "Certidão de Nascimento", "category_id": category_map["Documentos"], "description": "Emissão de certidões de nascimento"},
                             {"name": "Certidão de Casamento", "category_id": category_map["Documentos"], "description": "Emissão de certidões de casamento"},
-                            {"name": "Registo de Óbito", "category_id": category_map["Registros"], "description": "Registo de falecimentos"}
+                            {"name": "Registo de Óbito", "category_id": category_map["Registros"], "description": "Registo de óbitos"}
                         ],
                         "branches": [
                             {
-                                "name": "Conservatória Ingombota",
-                                "location": "Avenida Lenine, Ingombota, Luanda",
-                                "neighborhood": "Ingombota",
-                                "latitude": -8.8167,
-                                "longitude": 13.2332,
+                                "name": "Conservatória Coqueiros",
+                                "location": "Rua Major Kanhangulo, Coqueiros, Luanda",
+                                "neighborhood": "Coqueiros",
+                                "latitude": -8.8050,
+                                "longitude": 13.2300,
                                 "departments": [
                                     {
                                         "name": "Atendimento Registral",
@@ -1087,7 +1270,7 @@ def populate_initial_data(app):
                                         "queues": [
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Comercial",
+                                                "service_name": "Registo Civil",
                                                 "prefix": "RC",
                                                 "daily_limit": 100,
                                                 "num_counters": 5,
@@ -1095,18 +1278,18 @@ def populate_initial_data(app):
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RCOM",
                                                 "daily_limit": 100,
-                                                "num_counters": 4,
+                                                "num_counters": 3,
                                                 "tags": ["Administrativo", "Registros"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
                                                 "service_name": "Autenticação de Documentos",
                                                 "prefix": "AD",
-                                                "daily_limit": 90,
-                                                "num_counters": 3,
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
                                                 "tags": ["Administrativo", "Autenticação"]
                                             }
                                         ]
@@ -1114,11 +1297,167 @@ def populate_initial_data(app):
                                 ]
                             },
                             {
-                                "name": "Conservatória Cazenga",
-                                "location": "Rua dos Combatentes, Cazenga, Luanda",
-                                "neighborhood": "Cazenga",
+                                "name": "Conservatória Futungo de Belas",
+                                "location": "Rua dos Registos, Futungo de Belas, Luanda",
+                                "neighborhood": "Futungo de Belas",
+                                "latitude": -8.9700,
+                                "longitude": 13.1600,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Registral",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RCOM",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Autenticação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Lar do Patriota",
+                                "location": "Rua da Conservatória, Lar do Patriota, Luanda",
+                                "neighborhood": "Lar do Patriota",
+                                "latitude": -8.8900,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Registral",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RCOM",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Autenticação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Bairro Popular",
+                                "location": "Avenida da Justiça, Bairro Popular, Luanda",
+                                "neighborhood": "Bairro Popular",
+                                "latitude": -8.8350,
+                                "longitude": 13.2600,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Registral",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RCOM",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Autenticação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Hoji Ya Henda",
+                                "location": "Rua do Registo, Hoji Ya Henda, Luanda",
+                                "neighborhood": "Hoji Ya Henda",
+                                "latitude": -8.8400,
+                                "longitude": 13.2800,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Registral",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RCOM",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Autenticação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Ngola Kiluanji",
+                                "location": "Rua da Justiça, Ngola Kiluanji, Luanda",
+                                "neighborhood": "Ngola Kiluanji",
                                 "latitude": -8.8500,
-                                "longitude": 13.2833,
+                                "longitude": 13.2650,
                                 "departments": [
                                     {
                                         "name": "Atendimento Registral",
@@ -1126,7 +1465,7 @@ def populate_initial_data(app):
                                         "queues": [
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Comercial",
+                                                "service_name": "Registo Civil",
                                                 "prefix": "RC",
                                                 "daily_limit": 100,
                                                 "num_counters": 5,
@@ -1134,57 +1473,18 @@ def populate_initial_data(app):
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
-                                                "tags": ["Administrativo", "Registros"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Autenticação de Documentos",
-                                                "prefix": "AD",
-                                                "daily_limit": 90,
-                                                "num_counters": 3,
-                                                "tags": ["Administrativo", "Autenticação"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "Conservatória Talatona",
-                                "location": "Rua Principal, Talatona, Luanda",
-                                "neighborhood": "Talatona",
-                                "latitude": -8.9167,
-                                "longitude": 13.1833,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento Registral",
-                                        "sector": "Administrativo",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
                                                 "service_name": "Registo Comercial",
-                                                "prefix": "RC",
+                                                "prefix": "RCOM",
                                                 "daily_limit": 100,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
+                                                "num_counters": 3,
                                                 "tags": ["Administrativo", "Registros"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
                                                 "service_name": "Autenticação de Documentos",
                                                 "prefix": "AD",
-                                                "daily_limit": 90,
-                                                "num_counters": 3,
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
                                                 "tags": ["Administrativo", "Autenticação"]
                                             }
                                         ]
@@ -1192,89 +1492,11 @@ def populate_initial_data(app):
                                 ]
                             },
                             {
-                                "name": "Conservatória Kilamba",
-                                "location": "Avenida do Kilamba, Kilamba, Luanda",
-                                "neighborhood": "Kilamba",
-                                "latitude": -8.9333,
-                                "longitude": 13.2667,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento Registral",
-                                        "sector": "Administrativo",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Comercial",
-                                                "prefix": "RC",
-                                                "daily_limit": 100,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
-                                                "tags": ["Administrativo", "Registros"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Autenticação de Documentos",
-                                                "prefix": "AD",
-                                                "daily_limit": 90,
-                                                "num_counters": 3,
-                                                "tags": ["Administrativo", "Autenticação"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "Conservatória Viana",
-                                "location": "Rua Principal, Viana, Luanda",
-                                "neighborhood": "Viana",
-                                "latitude": -8.9035,
-                                "longitude": 13.3741,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento Registral",
-                                        "sector": "Administrativo",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Comercial",
-                                                "prefix": "RC",
-                                                "daily_limit": 100,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
-                                                "tags": ["Administrativo", "Registros"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Autenticação de Documentos",
-                                                "prefix": "AD",
-                                                "daily_limit": 90,
-                                                "num_counters": 3,
-                                                "tags": ["Administrativo", "Autenticação"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "Conservatória Rangel",
-                                "location": "Rua do Rangel, Rangel, Luanda",
-                                "neighborhood": "Rangel",
+                                "name": "Conservatória Cassenda",
+                                "location": "Rua do Registo, Cassenda, Luanda",
+                                "neighborhood": "Cassenda",
                                 "latitude": -8.8300,
-                                "longitude": 13.2500,
+                                "longitude": 13.2350,
                                 "departments": [
                                     {
                                         "name": "Atendimento Registral",
@@ -1282,7 +1504,7 @@ def populate_initial_data(app):
                                         "queues": [
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Comercial",
+                                                "service_name": "Registo Civil",
                                                 "prefix": "RC",
                                                 "daily_limit": 100,
                                                 "num_counters": 5,
@@ -1290,18 +1512,135 @@ def populate_initial_data(app):
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RCOM",
                                                 "daily_limit": 100,
-                                                "num_counters": 4,
+                                                "num_counters": 3,
                                                 "tags": ["Administrativo", "Registros"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
                                                 "service_name": "Autenticação de Documentos",
                                                 "prefix": "AD",
-                                                "daily_limit": 90,
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Autenticação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Rocha Pinto",
+                                "location": "Rua da Conservatória, Rocha Pinto, Luanda",
+                                "neighborhood": "Rocha Pinto",
+                                "latitude": -8.8400,
+                                "longitude": 13.2450,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Registral",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RCOM",
+                                                "daily_limit": 100,
                                                 "num_counters": 3,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Autenticação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Vila Estoril",
+                                "location": "Rua do Registo, Vila Estoril, Luanda",
+                                "neighborhood": "Vila Estoril",
+                                "latitude": -8.8200,
+                                "longitude": 13.2300,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Registral",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RCOM",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Autenticação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Kinaxixi",
+                                "location": "Rua da Justiça, Kinaxixi, Luanda",
+                                "neighborhood": "Kinaxixi",
+                                "latitude": -8.8170,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Registral",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RCOM",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
                                                 "tags": ["Administrativo", "Autenticação"]
                                             }
                                         ]
@@ -1313,798 +1652,988 @@ def populate_initial_data(app):
                 ]
 
                 # --------------------------------------
-                # Funções Auxiliares para Criação de Entidades
+                # Criar Instituições
                 # --------------------------------------
-                def create_institution_services(institution_id, services):
-                    for srv in services:
-                        if not exists(InstitutionService, institution_id=institution_id, name=srv["name"]):
-                            s = InstitutionService(
-                                id=str(uuid.uuid4()),
-                                institution_id=institution_id,
-                                name=srv["name"],
-                                category_id=srv["category_id"],
-                                description=srv["description"]
+                def create_institutions():
+                    institution_map = {}
+                    for inst_data in institutions_data:
+                        if not exists(Institution, name=inst_data["name"]):
+                            inst = Institution(
+                                id=inst_data["id"],
+                                name=inst_data["name"],
+                                description=inst_data["description"],
+                                institution_type_id=inst_data["institution_type_id"]
                             )
-                            db.session.add(s)
-                            app.logger.debug(f"Serviço criado: {srv['name']} para instituição {institution_id}")
-                    db.session.flush()
+                            db.session.add(inst)
+                            db.session.flush()
+                            app.logger.debug(f"Instituição criada: {inst_data['name']}")
+                        institution_map[inst_data["name"]] = Institution.query.filter_by(name=inst_data["name"]).first().id
+                    app.logger.info("Instituições criadas ou recuperadas com sucesso.")
+                    return institution_map
 
-                def create_branch_schedules(branch_id, institution_type, is_24h=False):
-                    weekdays = [Weekday.MONDAY, Weekday.TUESDAY, Weekday.WEDNESDAY, Weekday.THURSDAY, Weekday.FRIDAY, Weekday.SATURDAY, Weekday.SUNDAY]
-                    for day in weekdays:
-                        if not exists(BranchSchedule, branch_id=branch_id, weekday=day):
-                            if institution_type == "Saúde":
-                                open_time = time(0, 0) if is_24h else time(7, 0)
-                                end_time = time(23, 59) if is_24h else time(17, 0)
-                            elif institution_type == "Administrativo":
-                                open_time = time(0, 0) if is_24h else time(8, 0)
-                                end_time = time(23, 59) if is_24h else time(16, 0)
-                            else:  # Bancário
-                                open_time = time(0, 0) if is_24h else time(8, 30)
-                                end_time = time(23, 59) if is_24h else time(15, 30)
-                            bs = BranchSchedule(
-                                id=str(uuid.uuid4()),
-                                branch_id=branch_id,
-                                weekday=day,
-                                open_time=open_time,
-                                end_time=end_time,
-                                is_closed=False if is_24h or day in [Weekday.MONDAY, Weekday.TUESDAY, Weekday.WEDNESDAY, Weekday.THURSDAY, Weekday.FRIDAY] else True
-                            )
-                            db.session.add(bs)
-                            app.logger.debug(f"Horário de filial criado: {day} para filial {branch_id}")
-                    db.session.flush()
+                institution_map = create_institutions()
 
-                def create_queue(department_id, queue_data, service_id):
-                    if not exists(Queue, id=queue_data["id"]):
-                        is_24h = "24h" in queue_data["tags"]
-                        q = Queue(
-                            id=queue_data["id"],
-                            department_id=department_id,
-                            service_id=service_id,
-                            prefix=queue_data["prefix"],
-                            daily_limit=queue_data["daily_limit"],
-                            active_tickets=0,
-                            current_ticket=0,
-                            avg_wait_time=5.0,
-                            last_service_time=2.0,
-                            num_counters=queue_data["num_counters"],
-                            last_counter=0
-                        )
-                        db.session.add(q)
-                        db.session.flush()
-                        for tag in queue_data["tags"]:
-                            if not exists(ServiceTag, queue_id=q.id, tag=tag):
-                                st = ServiceTag(
+                # --------------------------------------
+                # Criar Serviços
+                # --------------------------------------
+                def create_services():
+                    service_map = {}
+                    for inst_data in institutions_data:
+                        inst_id = institution_map[inst_data["name"]]
+                        for service_data in inst_data["services"]:
+                            service_key = f"{inst_data['name']}_{service_data['name']}"
+                            if not exists(InstitutionService, institution_id=inst_id, name=service_data["name"]):
+                                service = InstitutionService(
                                     id=str(uuid.uuid4()),
-                                    queue_id=q.id,
-                                    tag=tag
+                                    institution_id=inst_id,
+                                    name=service_data["name"],
+                                    category_id=service_data["category_id"],
+                                    description=service_data["description"]
                                 )
-                                db.session.add(st)
-                                app.logger.debug(f"Tag criada: {tag} para fila {q.id}")
-                        return q
-                    return Queue.query.filter_by(id=queue_data["id"]).first()
+                                db.session.add(service)
+                                db.session.flush()
+                                app.logger.debug(f"Serviço criado: {service_data['name']} para {inst_data['name']}")
+                            service_map[service_key] = InstitutionService.query.filter_by(
+                                institution_id=inst_id, name=service_data["name"]
+                            ).first().id
+                    app.logger.info("Serviços criados ou recuperados com sucesso.")
+                    return service_map
 
-                def create_department(branch_id, dept_data):
-                    if not exists(Department, branch_id=branch_id, name=dept_data["name"]):
-                        d = Department(
-                            id=str(uuid.uuid4()),
-                            branch_id=branch_id,
-                            name=dept_data["name"],
-                            sector=dept_data["sector"]
-                        )
-                        db.session.add(d)
-                        db.session.flush()
-                        app.logger.debug(f"Departamento criado: {dept_data['name']} para filial {branch_id}")
-                        for queue_data in dept_data["queues"]:
-                            service = InstitutionService.query.filter_by(institution_id=Branch.query.get(branch_id).institution_id, name=queue_data["service_name"]).first()
-                            if service:
-                                create_queue(d.id, queue_data, service.id)
-                            else:
-                                app.logger.warning(f"Serviço {queue_data['service_name']} não encontrado para filial {branch_id}")
-                        return d
-                    d = Department.query.filter_by(branch_id=branch_id, name=dept_data["name"]).first()
-                    for queue_data in dept_data["queues"]:
-                        service = InstitutionService.query.filter_by(institution_id=Branch.query.get(branch_id).institution_id, name=queue_data["service_name"]).first()
-                        if service:
-                            create_queue(d.id, queue_data, service.id)
-                        else:
-                            app.logger.warning(f"Serviço {queue_data['service_name']} não encontrado para filial {branch_id}")
-                    return d
+                service_map = create_services()
 
-                def create_branch(institution_id, branch_data, institution_type):
-                    if not exists(Branch, institution_id=institution_id, name=branch_data["name"]):
-                        b = Branch(
-                            id=str(uuid.uuid4()),
-                            institution_id=institution_id,
-                            name=branch_data["name"],
-                            location=branch_data["location"],
-                            neighborhood=branch_data["neighborhood"],
-                            latitude=branch_data["latitude"],
-                            longitude=branch_data["longitude"]
-                        )
-                        db.session.add(b)
-                        db.session.flush()
-                        app.logger.debug(f"Filial criada: {branch_data['name']} para instituição {institution_id}")
-                        is_24h = any("24h" in queue_data["tags"] for dept in branch_data["departments"] for queue_data in dept["queues"])
-                        create_branch_schedules(b.id, institution_type, is_24h)
-                        for dept_data in branch_data["departments"]:
-                            create_department(b.id, dept_data)
-                        return b
-                    b = Branch.query.filter_by(institution_id=institution_id, name=branch_data["name"]).first()
-                    for dept_data in branch_data["departments"]:
-                        create_department(b.id, dept_data)
-                    return b
+                # --------------------------------------
+                # Criar Tags de Serviço
+                # --------------------------------------
+                def create_service_tags():
+                    tags = [
+                        "Bancário", "Atendimento", "Empréstimo", "Investimento",
+                        "Saúde", "Consulta", "Exames", "Internamento", "Fisioterapia",
+                        "Administrativo", "Documentos", "Registros", "Licenças", "Autenticação", "24h"
+                    ]
+                    for tag_name in tags:
+                        if not exists(ServiceTag, name=tag_name):
+                            tag = ServiceTag(
+                                id=str(uuid.uuid4()),
+                                name=tag_name
+                            )
+                            db.session.add(tag)
+                            db.session.flush()
+                            app.logger.debug(f"Tag de serviço criada: {tag_name}")
+                    app.logger.info("Tags de serviço criadas ou recuperadas com sucesso.")
 
-                def create_institution(inst_data):
-                    institution_type = InstitutionType.query.get(inst_data["institution_type_id"]).name
-                    if not exists(Institution, name=inst_data["name"]):
-                        i = Institution(
-                            id=inst_data["id"],
-                            name=inst_data["name"],
-                            description=inst_data["description"],
-                            institution_type_id=inst_data["institution_type_id"]
-                        )
-                        db.session.add(i)
-                        db.session.flush()
-                        app.logger.debug(f"Instituição criada: {inst_data['name']}")
-                        create_institution_services(i.id, inst_data["services"])
+                create_service_tags()
+
+                # --------------------------------------
+                # Criar Filiais
+                # --------------------------------------
+                def create_branches():
+                    branch_map = {}
+                    for inst_data in institutions_data:
+                        inst_id = institution_map[inst_data["name"]]
+                        inst_name = inst_data["name"]
                         for branch_data in inst_data["branches"]:
-                            create_branch(i.id, branch_data, institution_type)
-                        return i
-                    i = Institution.query.filter_by(name=inst_data["name"]).first()
-                    create_institution_services(i.id, inst_data["services"])
-                    for branch_data in inst_data["branches"]:
-                        create_branch(i.id, branch_data, institution_type)
-                    return i
+                            branch_key = f"{inst_name}_{branch_data['name']}"
+                            if not exists(Branch, institution_id=inst_id, name=branch_data["name"]):
+                                branch = Branch(
+                                    id=str(uuid.uuid4()),
+                                    institution_id=inst_id,
+                                    name=branch_data["name"],
+                                    location=branch_data["location"],
+                                    neighborhood=branch_data["neighborhood"],
+                                    latitude=branch_data["latitude"],
+                                    longitude=branch_data["longitude"]
+                                )
+                                db.session.add(branch)
+                                db.session.flush()
+                                app.logger.debug(f"Filial criada: {branch_data['name']} para {inst_name}")
+                            branch_map[branch_key] = Branch.query.filter_by(
+                                institution_id=inst_id, name=branch_data["name"]
+                            ).first().id
+                    app.logger.info("Filiais criadas ou recuperadas com sucesso.")
+                    return branch_map
 
-                # Criar instituições
-                for inst_data in institutions_data:
-                    create_institution(inst_data)
-                app.logger.info("Instituições, serviços, filiais, departamentos e filas criados ou atualizados com sucesso.")
+                branch_map = create_branches()
+
+                # --------------------------------------
+                # Criar Horários de Filiais
+                # --------------------------------------
+                
+                # --------------------------------------
+                # Criar Horários de Filiais
+                # --------------------------------------
+                def create_branch_schedules():
+                    for inst_data in institutions_data:
+                        inst_id = institution_map[inst_data["name"]]
+                        inst_type = InstitutionType.query.get(inst_data["institution_type_id"]).name
+                        for branch_data in inst_data["branches"]:
+                            branch_id = branch_map[f"{inst_data['name']}_{branch_data['name']}"]
+                            is_24h = any(
+                                "24h" in queue_data["tags"]
+                                for dept in branch_data["departments"]
+                                for queue_data in dept["queues"]
+                            )
+                            # Definir horários com base no tipo de instituição
+                            if inst_type == "Saúde":
+                                open_time = time(0, 0) if is_24h else time(6, 0)
+                                end_time = time(20, 59) if is_24h else time(17, 0)
+                                days_open = [1, 2, 3, 4, 5, 6] if not is_24h else [1, 2, 3, 4, 5, 6, 7]
+                            elif inst_type == "Administrativo":
+                                open_time = time(0, 0) if is_24h else time(8, 0)
+                                end_time = time(20, 59) if is_24h else time(15, 0)
+                                days_open = [1, 2, 3, 4, 5] if not is_24h else [1, 2, 3, 4, 5, 6, 7]
+                            else:  # Bancário
+                                open_time = time(0, 0) if is_24h else time(6, 0)
+                                end_time = time(20, 59) if is_24h else time(15, 0)
+                                days_open = [1, 2, 3, 4, 5] if not is_24h else [1, 2, 3, 4, 5, 6, 7]
+                            
+                            # Criar horários para cada dia da semana
+                            for day in range(1, 8):  # 1=Segunda, 7=Domingo
+                                if not exists(BranchSchedule, branch_id=branch_id, weekday_id=day):
+                                    schedule = BranchSchedule(
+                                        id=str(uuid.uuid4()),
+                                        branch_id=branch_id,
+                                        weekday_id=day,
+                                        open_time=open_time,
+                                        end_time=end_time,
+                                        is_closed=day not in days_open
+                                    )
+                                    db.session.add(schedule)
+                                    db.session.flush()
+                                    app.logger.debug(
+                                        f"Horário criado para filial {branch_data['name']} no dia {day}: "
+                                        f"{'Fechado' if schedule.is_closed else f'{open_time}–{end_time}'}"
+                                    )
+                    app.logger.info("Horários de filiais criados ou recuperados com sucesso.")
+
+                create_branch_schedules()
+
+                # --------------------------------------
+                # Criar Departamentos
+                # --------------------------------------
+                def create_departments():
+                    department_map = {}
+                    for inst_data in institutions_data:
+                        inst_name = inst_data["name"]
+                        for branch_data in inst_data["branches"]:
+                            branch_id = branch_map[f"{inst_name}_{branch_data['name']}"]
+                            for dept_data in branch_data["departments"]:
+                                dept_key = f"{inst_name}_{branch_data['name']}_{dept_data['name']}"
+                                if not exists(Department, branch_id=branch_id, name=dept_data["name"]):
+                                    dept = Department(
+                                        id=str(uuid.uuid4()),
+                                        branch_id=branch_id,
+                                        name=dept_data["name"],
+                                        sector=dept_data["sector"]
+                                    )
+                                    db.session.add(dept)
+                                    db.session.flush()
+                                    app.logger.debug(f"Departamento criado: {dept_data['name']} em {branch_data['name']}")
+                                department_map[dept_key] = Department.query.filter_by(
+                                    branch_id=branch_id, name=dept_data["name"]
+                                ).first().id
+                    app.logger.info("Departamentos criados ou recuperados com sucesso.")
+                    return department_map
+
+                department_map = create_departments()
+
+                # --------------------------------------
+                # Criar Filas
+                # --------------------------------------
+                def create_queues():
+                    queue_map = {}
+                    for inst_data in institutions_data:
+                        inst_name = inst_data["name"]
+                        for branch_data in inst_data["branches"]:
+                            branch_id = branch_map[f"{inst_name}_{branch_data['name']}"]
+                            for dept_data in branch_data["departments"]:
+                                dept_id = department_map[f"{inst_name}_{branch_data['name']}_{dept_data['name']}"]
+                                for queue_data in dept_data["queues"]:
+                                    queue_key = f"{inst_name}_{branch_data['name']}_{dept_data['name']}_{queue_data['service_name']}"
+                                    service_key = f"{inst_name}_{queue_data['service_name']}"
+                                    if not exists(Queue, id=queue_data["id"]):
+                                        queue = Queue(
+                                            id=queue_data["id"],
+                                            department_id=dept_id,
+                                            service_id=service_map[service_key],
+                                            prefix=queue_data["prefix"],
+                                            daily_limit=queue_data["daily_limit"],
+                                            num_counters=queue_data["num_counters"]
+                                        )
+                                        db.session.add(queue)
+                                        db.session.flush()
+                                        # Associar tags
+                                        for tag_name in queue_data["tags"]:
+                                            tag = ServiceTag.query.filter_by(name=tag_name).first()
+                                            if tag and tag not in queue.tags:
+                                                queue.tags.append(tag)
+                                                db.session.flush()
+                                        app.logger.debug(
+                                            f"Fila criada: {queue_data['service_name']} em {dept_data['name']}, "
+                                            f"filial {branch_data['name']}"
+                                        )
+                                    queue_map[queue_key] = queue_data["id"]
+                    app.logger.info("Filas criadas ou recuperadas com sucesso.")
+                    return queue_map
+
+                queue_map = create_queues()
 
                 # --------------------------------------
                 # Criar Usuários
                 # --------------------------------------
                 def create_users():
-                    users = []
-                    # Usuário de teste
-                    test_user_id = "nMSnRc8jpYQbnrxujg5JZcHzFKP2"
-                    test_user_email = "edmannews5@gmail.com"
-                    if not exists(User, id=test_user_id) and not exists(User, email=test_user_email):
-                        test_user = User(
-                            id=test_user_id,
-                            email=test_user_email,
-                            name="Edman Teste",
-                            password_hash=hash_password("test123"),
-                            user_role=UserRole.USER,
-                            created_at=datetime.utcnow(),
-                            active=True
-                        )
-                        db.session.add(test_user)
-                        users.append(test_user)
-                        app.logger.debug(f"Usuário de teste criado: {test_user_email}")
-
-                    # System Admin
-                    if not exists(User, email="sysadmin@queue.com"):
-                        admin = User(
-                            id=str(uuid.uuid4()),
-                            email="sysadmin@queue.com",
-                            name="Sistema Admin",
-                            password_hash=hash_password("sysadmin123"),
-                            user_role=UserRole.SYSTEM_ADMIN,
-                            created_at=datetime.utcnow(),
-                            active=True
-                        )
-                        db.session.add(admin)
-                        users.append(admin)
-                        app.logger.debug("Usuário criado: sysadmin@queue.com")
-
-                    # Institution Admins
-                    for inst in Institution.query.all():
-                        email = f"admin_{normalize_string(inst.name)}@queue.com"
-                        if not exists(User, email=email):
-                            admin = User(
-                                id=str(uuid.uuid4()),
-                                email=email,
-                                name=f"Admin {inst.name}",
-                                password_hash=hash_password("admin123"),
-                                user_role=UserRole.INSTITUTION_ADMIN,
-                                institution_id=inst.id,
-                                created_at=datetime.utcnow(),
-                                active=True
-                            )
-                            db.session.add(admin)
-                            users.append(admin)
-                            app.logger.debug(f"Usuário criado: {email}")
-
-                    # Branch Admins
-                    for branch in Branch.query.all():
-                        institution = Institution.query.get(branch.institution_id)
-                        if not institution:
-                            app.logger.warning(f"Instituição não encontrada para filial {branch.name}")
-                            continue
-                        email = f"branch_admin_{normalize_string(institution.name)}_{normalize_string(branch.name)}@queue.com"
-                        if not exists(User, email=email):
-                            admin = User(
-                                id=str(uuid.uuid4()),
-                                email=email,
-                                name=f"Gerente {branch.name}",
-                                password_hash=hash_password("branch123"),
-                                user_role=UserRole.BRANCH_ADMIN,
-                                branch_id=branch.id,
-                                institution_id=branch.institution_id,
-                                created_at=datetime.utcnow(),
-                                active=True
-                            )
-                            db.session.add(admin)
-                            users.append(admin)
-                            app.logger.debug(f"Usuário criado: {email}")
-
-                    # Attendants
-                    for dept in Department.query.all():
-                        branch = Branch.query.get(dept.branch_id)
-                        if not branch:
-                            app.logger.warning(f"Filial não encontrada para departamento {dept.name}")
-                            continue
-                        institution = Institution.query.get(branch.institution_id)
-                        if not institution:
-                            app.logger.warning(f"Instituição não encontrada para filial {branch.name}")
-                            continue
-                        email = f"attendant_{normalize_string(dept.name)}_{normalize_string(branch.name)}_{normalize_string(institution.name)}@queue.com"
-                        if not exists(User, email=email):
-                            attendant = User(
-                                id=str(uuid.uuid4()),
-                                email=email,
-                                name=f"Atendente {dept.name}",
-                                password_hash=hash_password("attendant123"),
-                                user_role=UserRole.ATTENDANT,
-                                branch_id=dept.branch_id,
-                                institution_id=dept.branch.institution_id,
-                                created_at=datetime.utcnow(),
-                                active=True
-                            )
-                            db.session.add(attendant)
-                            users.append(attendant)
-                            app.logger.debug(f"Usuário criado: {email}")
-
-                    # Regular Users
-                    user_count = User.query.filter_by(user_role=UserRole.USER).count()
-                    for i in range(20 - user_count):
-                        email = f"user_{i}@queue.com"
-                        if not exists(User, email=email):
+                    user_map = {}
+                    users_data = [
+                        {
+                            "id": "nMSnRc8jpYQbnrxujg5JZcHzFKP2",
+                            "email": "edmannews5@gmail.com",
+                            "password": "Teste@123",
+                            "first_name": "Edman",
+                            "last_name": "Silva",
+                            "phone_number": "+244923456789",
+                            "is_test_user": True
+                        },
+                        {
+                            "id": str(uuid.uuid4()),
+                            "email": "joao.silva@example.com",
+                            "password": "Senha@123",
+                            "first_name": "João",
+                            "last_name": "Silva",
+                            "phone_number": "+244912345678",
+                            "is_test_user": False
+                        },
+                        {
+                            "id": str(uuid.uuid4()),
+                            "email": "maria.santos@example.com",
+                            "password": "Senha@123",
+                            "first_name": "Maria",
+                            "last_name": "Santos",
+                            "phone_number": "+244923456780",
+                            "is_test_user": False
+                        },
+                        {
+                            "id": str(uuid.uuid4()),
+                            "email": "pedro.gomes@example.com",
+                            "password": "Senha@123",
+                            "first_name": "Pedro",
+                            "last_name": "Gomes",
+                            "phone_number": "+244934567891",
+                            "is_test_user": False
+                        },
+                        {
+                            "id": str(uuid.uuid4()),
+                            "email": "ana.ferreira@example.com",
+                            "password": "Senha@123",
+                            "first_name": "Ana",
+                            "last_name": "Ferreira",
+                            "phone_number": "+244945678902",
+                            "is_test_user": False
+                        }
+                    ]
+                    for user_data in users_data:
+                        if not exists(User, id=user_data["id"]):
                             user = User(
-                                id=str(uuid.uuid4()),
-                                email=email,
-                                name=f"Usuário {i+1}",
-                                password_hash=hash_password("user123"),
-                                user_role=UserRole.USER,
+                                id=user_data["id"],
+                                email=user_data["email"],
+                                password=hash_password(user_data["password"]),
+                                first_name=user_data["first_name"],
+                                last_name=user_data["last_name"],
+                                phone_number=user_data["phone_number"],
+                                is_active=True,
                                 created_at=datetime.utcnow(),
-                                active=True
+                                updated_at=datetime.utcnow()
                             )
                             db.session.add(user)
-                            users.append(user)
-                            app.logger.debug(f"Usuário criado: {email}")
+                            db.session.flush()
+                            # Associar papel de cliente
+                            client_role = UserRole.query.filter_by(name="client").first()
+                            if client_role:
+                                user.roles.append(client_role)
+                                db.session.flush()
+                            app.logger.debug(f"Usuário criado: {user_data['email']}")
+                        user_map[user_data["email"]] = user_data["id"]
+                    app.logger.info("Usuários criados ou recuperados com sucesso.")
+                    return user_map
 
-                    db.session.flush()
-                    app.logger.info("Usuários criados com sucesso.")
-                    return users
-
-                users = create_users()
+                user_map = create_users()
 
                 # --------------------------------------
-                # Criar Preferências de Usuário
+                # Criar Preferências de Usuários
                 # --------------------------------------
                 def create_user_preferences():
-                    now = datetime.utcnow()
-                    # Preferências para o usuário de teste
-                    test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
-                    if test_user:
-                        test_prefs = [
-                            {
-                                "institution_name": "Conservatória dos Registos",
-                                "neighborhood": "Ingombota",
-                                "is_client": True,
-                                "is_favorite": True,
-                                "visit_count": 15,
-                                "preference_score": 80
-                            },
-                            {
-                                "institution_name": "Hospital Josina Machel",
-                                "neighborhood": "Maianga",
-                                "is_client": True,
-                                "is_favorite": False,
-                                "visit_count": 10,
-                                "preference_score": 60
-                            },
-                            {
-                                "institution_name": "Banco BAI",
-                                "neighborhood": "Talatona",
-                                "is_client": True,
-                                "is_favorite": False,
-                                "visit_count": 5,
-                                "preference_score": 50
-                            }
-                        ]
-                        for pref in test_prefs:
-                            inst = Institution.query.filter_by(name=pref["institution_name"]).first()
-                            if not inst:
-                                app.logger.warning(f"Instituição {pref['institution_name']} não encontrada para preferência do usuário {test_user.id}")
-                                continue
-                            if not exists(UserPreference, user_id=test_user.id, institution_id=inst.id):
-                                up = UserPreference(
-                                    id=str(uuid.uuid4()),
-                                    user_id=test_user.id,
-                                    institution_id=inst.id,
-                                    institution_type_id=inst.institution_type_id,
-                                    neighborhood=pref["neighborhood"],
-                                    preference_score=pref["preference_score"],
-                                    is_client=pref["is_client"],
-                                    is_favorite=pref["is_favorite"],
-                                    visit_count=pref["visit_count"],
-                                    last_visited=now - timedelta(days=pref["visit_count"] % 5),
-                                    created_at=now,
-                                    updated_at=now
-                                )
-                                db.session.add(up)
-                                app.logger.debug(f"Preferência criada para usuário de teste {test_user.id} e instituição {inst.id}")
-
-                    # Preferências para outros usuários
-                    user_list = User.query.filter_by(user_role=UserRole.USER).limit(20).all()
-                    institutions = Institution.query.all()
-                    for i, user in enumerate(user_list):
-                        if user.id == "nMSnRc8jpYQbnrxujg5JZcHzFKP2":
-                            continue
-                        for j in range(3):
-                            inst = institutions[(i + j) % len(institutions)]
-                            neighborhood = neighborhoods[(i + j) % len(neighborhoods)]["name"]
-                            is_client = (i + j) % 2 == 0
-                            is_favorite = is_client and (i + j) % 3 == 0
-                            if not exists(UserPreference, user_id=user.id, institution_id=inst.id):
-                                pref = UserPreference(
-                                    id=str(uuid.uuid4()),
-                                    user_id=user.id,
-                                    institution_id=inst.id,
-                                    institution_type_id=inst.institution_type_id,
-                                    neighborhood=neighborhood,
-                                    preference_score=50 if is_client else 0,
-                                    is_client=is_client,
-                                    is_favorite=is_favorite,
-                                    visit_count=5 if is_client else 0,
-                                    last_visited=now if is_client else None,
-                                    created_at=now,
-                                    updated_at=now
-                                )
-                                db.session.add(pref)
-                                app.logger.debug(f"Preferência criada para usuário {user.id} e instituição {inst.id}")
-                    db.session.flush()
-                    app.logger.info("Preferências de usuário criadas com sucesso.")
+                    preferences_data = [
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "institution_id": institution_map["Conservatória dos Registos"],
+                            "is_favorite": True,
+                            "is_client": True
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "institution_id": institution_map["Hospital Josina Machel"],
+                            "is_favorite": True,
+                            "is_client": True
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "institution_id": institution_map["Banco BAI"],
+                            "is_favorite": False,
+                            "is_client": True
+                        },
+                        {
+                            "user_id": user_map["joao.silva@example.com"],
+                            "institution_id": institution_map["Banco BFA"],
+                            "is_favorite": True,
+                            "is_client": True
+                        },
+                        {
+                            "user_id": user_map["joao.silva@example.com"],
+                            "institution_id": institution_map["SIAC"],
+                            "is_favorite": False,
+                            "is_client": True
+                        },
+                        {
+                            "user_id": user_map["maria.santos@example.com"],
+                            "institution_id": institution_map["Clínica Sagrada Esperança"],
+                            "is_favorite": True,
+                            "is_client": True
+                        },
+                        {
+                            "user_id": user_map["maria.santos@example.com"],
+                            "institution_id": institution_map["Conservatória dos Registos"],
+                            "is_favorite": False,
+                            "is_client": True
+                        },
+                        {
+                            "user_id": user_map["pedro.gomes@example.com"],
+                            "institution_id": institution_map["Banco BIC"],
+                            "is_favorite": True,
+                            "is_client": True
+                        },
+                        {
+                            "user_id": user_map["pedro.gomes@example.com"],
+                            "institution_id": institution_map["Hospital Josina Machel"],
+                            "is_favorite": False,
+                            "is_client": True
+                        },
+                        {
+                            "user_id": user_map["ana.ferreira@example.com"],
+                            "institution_id": institution_map["Banco Keve"],
+                            "is_favorite": True,
+                            "is_client": True
+                        },
+                        {
+                            "user_id": user_map["ana.ferreira@example.com"],
+                            "institution_id": institution_map["SIAC"],
+                            "is_favorite": False,
+                            "is_client": True
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "branch_id": branch_map["Conservatória dos Registos_Conservatória Coqueiros"],
+                            "is_favorite": True,
+                            "is_client": True
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "branch_id": branch_map["Hospital Josina Machel_Unidade Prenda"],
+                            "is_favorite": True,
+                            "is_client": True
+                        }
+                    ]
+                    for pref_data in preferences_data:
+                        if not exists(
+                            UserPreference,
+                            user_id=pref_data["user_id"],
+                            institution_id=pref_data.get("institution_id"),
+                            branch_id=pref_data.get("branch_id")
+                        ):
+                            pref = UserPreference(
+                                id=str(uuid.uuid4()),
+                                user_id=pref_data["user_id"],
+                                institution_id=pref_data.get("institution_id"),
+                                branch_id=pref_data.get("branch_id"),
+                                is_favorite=pref_data["is_favorite"],
+                                is_client=pref_data["is_client"]
+                            )
+                            db.session.add(pref)
+                            db.session.flush()
+                            app.logger.debug(f"Preferência criada para usuário {pref_data['user_id']}")
+                    app.logger.info("Preferências de usuários criadas ou recuperadas com sucesso.")
 
                 create_user_preferences()
 
                 # --------------------------------------
-                # Criar Tickets
-                # --------------------------------------
-                # --------------------------------------
-                # Criar Tickets
-                # --------------------------------------
-                def create_tickets():
-                    now = datetime.utcnow()
-                    test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
-                    # Tickets para o usuário de teste
-                    if test_user:
-                        test_queues = [
-                            {"institution": "Conservatória dos Registos", "service": "Registo Civil", "branch": "Conservatória Ingombota", "count": 4},
-                            {"institution": "Hospital Josina Machel", "service": "Consulta Geral", "branch": "Unidade Central", "count": 3},
-                            {"institution": "Banco BAI", "service": "Atendimento Bancário", "branch": "Agência Central", "count": 3}
-                        ]
-                        for tq in test_queues:
-                            inst = Institution.query.filter_by(name=tq["institution"]).first()
-                            if not inst:
-                                app.logger.warning(f"Instituição {tq['institution']} não encontrada para tickets do usuário {test_user.id}")
-                                continue
-                            branch = Branch.query.filter_by(institution_id=inst.id, name=tq["branch"]).first()
-                            if not branch:
-                                app.logger.warning(f"Filial {tq['branch']} não encontrada para instituição {inst.name}")
-                                continue
-                            service = InstitutionService.query.filter_by(institution_id=inst.id, name=tq["service"]).first()
-                            if not service:
-                                app.logger.warning(f"Serviço {tq['service']} não encontrado para instituição {inst.name}")
-                                continue
-                            queue = Queue.query.join(Department).join(Branch).filter(
-                                Branch.id == branch.id, Queue.service_id == service.id
-                            ).first()
-                            if not queue:
-                                app.logger.warning(f"Fila para serviço {tq['service']} na filial {tq['branch']} não encontrada")
-                                continue
-                            existing_tickets = Ticket.query.filter_by(queue_id=queue.id, user_id=test_user.id).count()
-                            for i in range(tq["count"] - existing_tickets):
-                                # Obter o maior ticket_number existente para a fila
-                                last_ticket = Ticket.query.filter_by(queue_id=queue.id).order_by(Ticket.ticket_number.desc()).first()
-                                ticket_number = (last_ticket.ticket_number + 1) if last_ticket else 1
-                                branch_code = branch.id[-6:]  # Usar 6 caracteres para maior unicidade
-                                qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
-                                # Verificar unicidade do qr_code
-                                attempts = 0
-                                max_attempts = 10
-                                while Ticket.query.filter_by(qr_code=qr_code).first() and attempts < max_attempts:
-                                    app.logger.debug(f"qr_code duplicado detectado: {qr_code}. Incrementando ticket_number.")
-                                    ticket_number += 1
-                                    qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
-                                    attempts += 1
-                                if attempts >= max_attempts:
-                                    app.logger.error(f"Não foi possível gerar qr_code único para fila {queue.id} após {max_attempts} tentativas.")
-                                    continue
-                                status = "Atendido" if i % 2 == 0 else "Pendente"
-                                issued_at = now - timedelta(days=i % 30, hours=i % 24)
-                                ticket = Ticket(
-                                    id=str(uuid.uuid4()),
-                                    queue_id=queue.id,
-                                    user_id=test_user.id,
-                                    ticket_number=ticket_number,
-                                    qr_code=qr_code,
-                                    priority=1 if i % 2 == 0 else 0,  # 50% alta prioridade
-                                    is_physical=False,
-                                    status=status,
-                                    issued_at=issued_at,
-                                    expires_at=issued_at + timedelta(days=1),
-                                    attended_at=issued_at + timedelta(minutes=10) if status == "Atendido" else None,
-                                    counter=(i % queue.num_counters) + 1 if status == "Atendido" else None,
-                                    service_time=300.0 + (i % 26) * 60 if status == "Atendido" else None,
-                                    trade_available=False
-                                )
-                                db.session.add(ticket)
-                                db.session.flush()  # Inserir imediatamente para verificar unicidade
-                                app.logger.debug(f"Ticket de teste criado: {qr_code} para usuário {test_user.id}")
-
-                    # Tickets para outras filas
-                    user_list = User.query.filter_by(user_role=UserRole.USER).limit(20).all()
-                    for queue in Queue.query.all():
-                        existing_tickets = Ticket.query.filter_by(queue_id=queue.id).count()
-                        if existing_tickets >= 50:
-                            continue
-                        branch = Branch.query.join(Department).filter(Department.id == queue.department_id).first()
-                        if not branch:
-                            app.logger.warning(f"Filial não encontrada para departamento {queue.department_id}")
-                            continue
-                        branch_code = branch.id[-6:]  # Usar 6 caracteres para maior unicidade
-                        for i in range(50 - existing_tickets):
-                            user = user_list[i % len(user_list)] if i % 2 == 0 else None  # 50% dos tickets associados a usuários
-                            # Obter o maior ticket_number existente para a fila
-                            last_ticket = Ticket.query.filter_by(queue_id=queue.id).order_by(Ticket.ticket_number.desc()).first()
-                            ticket_number = (last_ticket.ticket_number + 1) if last_ticket else 1
-                            qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
-                            # Verificar unicidade do qr_code
-                            attempts = 0
-                            max_attempts = 10
-                            while Ticket.query.filter_by(qr_code=qr_code).first() and attempts < max_attempts:
-                                app.logger.debug(f"qr_code duplicado detectado: {qr_code}. Incrementando ticket_number.")
-                                ticket_number += 1
-                                qr_code = f"{queue.prefix}{ticket_number:03d}-{queue.id[:8]}-{branch_code}"
-                                attempts += 1
-                            if attempts >= max_attempts:
-                                app.logger.error(f"Não foi possível gerar qr_code único para fila {queue.id} após {max_attempts} tentativas.")
-                                continue
-                            status = "Atendido" if i % 3 == 0 else "Pendente"
-                            issued_at = now - timedelta(days=i % 30, hours=i % 24)
-                            ticket = Ticket(
-                                id=str(uuid.uuid4()),
-                                queue_id=queue.id,
-                                user_id=user.id if user else None,
-                                ticket_number=ticket_number,
-                                qr_code=qr_code,
-                                priority=1 if i % 4 == 0 else 0,  # 25% alta prioridade
-                                is_physical=i % 5 == 0,  # 20% tickets físicos
-                                status=status,
-                                issued_at=issued_at,
-                                expires_at=issued_at + timedelta(days=1),
-                                attended_at=issued_at + timedelta(minutes=15) if status == "Atendido" else None,
-                                counter=(i % queue.num_counters) + 1 if status == "Atendido" else None,
-                                service_time=300.0 + (i % 20) * 60 if status == "Atendido" else None,
-                                trade_available=i % 10 == 0  # 10% disponíveis para troca
-                            )
-                            db.session.add(ticket)
-                            db.session.flush()  # Inserir imediatamente para verificar unicidade
-                            app.logger.debug(f"Ticket criado: {qr_code} para fila {queue.id}")
-                    db.session.flush()
-                    app.logger.info("Tickets criados com sucesso.")
-
-                create_tickets()
-
-                # --------------------------------------
-                # Criar Comportamentos de Usuário
+                # Criar Comportamentos de Usuários
                 # --------------------------------------
                 def create_user_behaviors():
-                    """
-                    Cria comportamentos de usuário para o usuário de teste e outros usuários, usando UserRole.USER
-                    para filtrar usuários corretamente, respeitando o modelo UserBehavior com service_id.
-                    """
-                    now = datetime.utcnow()
-                    test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
+                    behaviors_data = [
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "service_id": service_map["Conservatória dos Registos_Registo Civil"],
+                            "interaction_count": 4,
+                            "last_interaction": datetime.utcnow() - timedelta(days=1)
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "service_id": service_map["Hospital Josina Machel_Consulta Geral"],
+                            "interaction_count": 3,
+                            "last_interaction": datetime.utcnow() - timedelta(days=2)
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "service_id": service_map["Banco BAI_Atendimento Bancário"],
+                            "interaction_count": 3,
+                            "last_interaction": datetime.utcnow() - timedelta(days=3)
+                        },
+                        {
+                            "user_id": user_map["joao.silva@example.com"],
+                            "service_id": service_map["Banco BFA_Atendimento Bancário"],
+                            "interaction_count": 2,
+                            "last_interaction": datetime.utcnow() - timedelta(days=4)
+                        },
+                        {
+                            "user_id": user_map["joao.silva@example.com"],
+                            "service_id": service_map["SIAC_Emissão de BI"],
+                            "interaction_count": 1,
+                            "last_interaction": datetime.utcnow() - timedelta(days=5)
+                        },
+                        {
+                            "user_id": user_map["maria.santos@example.com"],
+                            "service_id": service_map["Clínica Sagrada Esperança_Consulta Especializada"],
+                            "interaction_count": 2,
+                            "last_interaction": datetime.utcnow() - timedelta(days=6)
+                        },
+                        {
+                            "user_id": user_map["maria.santos@example.com"],
+                            "service_id": service_map["Conservatória dos Registos_Registo Comercial"],
+                            "interaction_count": 1,
+                            "last_interaction": datetime.utcnow() - timedelta(days=7)
+                        },
+                        {
+                            "user_id": user_map["pedro.gomes@example.com"],
+                            "service_id": service_map["Banco BIC_Empréstimos"],
+                            "interaction_count": 2,
+                            "last_interaction": datetime.utcnow() - timedelta(days=8)
+                        },
+                        {
+                            "user_id": user_map["pedro.gomes@example.com"],
+                            "service_id": service_map["Hospital Josina Machel_Exames Laboratoriais"],
+                            "interaction_count": 1,
+                            "last_interaction": datetime.utcnow() - timedelta(days=9)
+                        },
+                        {
+                            "user_id": user_map["ana.ferreira@example.com"],
+                            "service_id": service_map["Banco Keve_Investimentos"],
+                            "interaction_count": 2,
+                            "last_interaction": datetime.utcnow() - timedelta(days=10)
+                        },
+                        {
+                            "user_id": user_map["ana.ferreira@example.com"],
+                            "service_id": service_map["SIAC_Renovação de Licenças"],
+                            "interaction_count": 1,
+                            "last_interaction": datetime.utcnow() - timedelta(days=11)
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "branch_id": branch_map["Conservatória dos Registos_Conservatória Coqueiros"],
+                            "interaction_count": 4,
+                            "last_interaction": datetime.utcnow() - timedelta(days=1)
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "branch_id": branch_map["Hospital Josina Machel_Unidade Prenda"],
+                            "interaction_count": 3,
+                            "last_interaction": datetime.utcnow() - timedelta(days=2)
+                        }
+                    ]
+                    for behavior_data in behaviors_data:
+                        if not exists(
+                            UserBehavior,
+                            user_id=behavior_data["user_id"],
+                            service_id=behavior_data.get("service_id"),
+                            branch_id=behavior_data.get("branch_id")
+                        ):
+                            behavior = UserBehavior(
+                                id=str(uuid.uuid4()),
+                                user_id=behavior_data["user_id"],
+                                service_id=behavior_data.get("service_id"),
+                                branch_id=behavior_data.get("branch_id"),
+                                interaction_count=behavior_data["interaction_count"],
+                                last_interaction=behavior_data["last_interaction"]
+                            )
+                            db.session.add(behavior)
+                            db.session.flush()
+                            app.logger.debug(f"Comportamento criado para usuário {behavior_data['user_id']}")
+                    app.logger.info("Comportamentos de usuários criados ou recuperados com sucesso.")
 
-                    # Função auxiliar para verificar existência
-                    def exists(model, **kwargs):
-                        return model.query.filter_by(**kwargs).first() is not None
-
-                    # Comportamentos para o usuário de teste
-                    if test_user:
-                        test_behaviors = [
-                            {"institution": "Conservatória dos Registos", "service": "Registo Civil", "branch": "Conservatória Ingombota", "action": "issued_ticket", "days_ago": 5},
-                            {"institution": "Conservatória dos Registos", "service": "Registo Civil", "branch": "Conservatória Ingombota", "action": "viewed_queue", "days_ago": 4},
-                            {"institution": "Hospital Josina Machel", "service": "Consulta Geral", "branch": "Unidade Central", "action": "issued_ticket", "days_ago": 10},
-                            {"institution": "Hospital Josina Machel", "service": "Consulta Geral", "branch": "Unidade Central", "action": "viewed_queue", "days_ago": 9},
-                            {"institution": "Banco BAI", "service": "Atendimento Bancário", "branch": "Agência Central", "action": "issued_ticket", "days_ago": 15}
-                        ]
-                        for beh in test_behaviors:
-                            inst = Institution.query.filter_by(name=beh["institution"]).first()
-                            if not inst:
-                                app.logger.warning(f"Instituição {beh['institution']} não encontrada para comportamento do usuário {test_user.id}")
-                                continue
-                            branch = Branch.query.filter_by(institution_id=inst.id, name=beh["branch"]).first()
-                            if not branch:
-                                app.logger.warning(f"Filial {beh['branch']} não encontrada para instituição {inst.name}")
-                                continue
-                            service = InstitutionService.query.filter_by(institution_id=inst.id, name=beh["service"]).first()
-                            if not service:
-                                app.logger.warning(f"Serviço {beh['service']} não encontrado para instituição {inst.name}")
-                                continue
-                            
-                            # Verificar existência usando service_id
-                            if not exists(UserBehavior, user_id=test_user.id, service_id=service.id, action=beh["action"]):
-                                ub = UserBehavior(
-                                    id=str(uuid.uuid4()),
-                                    user_id=test_user.id,
-                                    institution_id=inst.id,
-                                    branch_id=branch.id,
-                                    service_id=service.id,
-                                    action=beh["action"],
-                                    timestamp=now - timedelta(days=beh["days_ago"])
-                                )
-                                db.session.add(ub)
-                                app.logger.debug(f"Comportamento de teste criado: {beh['action']} para usuário {test_user.id} no serviço {service.id}")
-
-                    # Comportamentos para outros usuários
-                    user_list = User.query.filter_by(user_role=UserRole.USER).limit(20).all()
-                    services = InstitutionService.query.all()
-                    if not services:
-                        app.logger.warning("Nenhum serviço encontrado para criar comportamentos de usuários regulares")
-                        return
-                    
-                    for i, user in enumerate(user_list):
-                        if user.id == "nMSnRc8jpYQbnrxujg5JZcHzFKP2":
-                            continue
-                        for j in range(3):
-                            service = services[(i + j) % len(services)]
-                            branch = Branch.query.filter_by(institution_id=service.institution_id).first()
-                            if not branch:
-                                app.logger.warning(f"Filial não encontrada para instituição {service.institution_id}")
-                                continue
-                            inst = Institution.query.get(service.institution_id)
-                            if not inst:
-                                app.logger.warning(f"Instituição não encontrada para serviço {service.id}")
-                                continue
-                            action = "issued_ticket" if j % 2 == 0 else "viewed_queue"
-                            
-                            # Verificar existência usando service_id
-                            if not exists(UserBehavior, user_id=user.id, service_id=service.id, action=action):
-                                ub = UserBehavior(
-                                    id=str(uuid.uuid4()),
-                                    user_id=user.id,
-                                    institution_id=inst.id,
-                                    branch_id=branch.id,
-                                    service_id=service.id,
-                                    action=action,
-                                    timestamp=now - timedelta(days=(i + j) % 7)
-                                )
-                                db.session.add(ub)
-                                app.logger.debug(f"Comportamento criado: {action} para usuário {user.id} no serviço {service.id}")
-                    
-                    db.session.flush()
-                    app.logger.info("Comportamentos de usuário criados com sucesso.")
                 create_user_behaviors()
 
                 # --------------------------------------
                 # Criar Logs de Auditoria
                 # --------------------------------------
                 def create_audit_logs():
-                    """
-                    Cria logs de auditoria para o usuário de teste e outros usuários, usando o campo 'details'
-                    em vez de 'description' para alinhar com o modelo AuditLog.
-                    """
-                    now = datetime.utcnow()
-                    test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
+                    audit_logs_data = [
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "action": "create_ticket",
+                            "description": "Usuário criou ticket para Registo Civil",
+                            "timestamp": datetime.utcnow() - timedelta(days=1)
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "action": "create_ticket",
+                            "description": "Usuário criou ticket para Consulta Geral",
+                            "timestamp": datetime.utcnow() - timedelta(days=2)
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "action": "create_ticket",
+                            "description": "Usuário criou ticket para Atendimento Bancário",
+                            "timestamp": datetime.utcnow() - timedelta(days=3)
+                        },
+                        {
+                            "user_id": user_map["joao.silva@example.com"],
+                            "action": "create_ticket",
+                            "description": "Usuário criou ticket para Atendimento Bancário",
+                            "timestamp": datetime.utcnow() - timedelta(days=4)
+                        },
+                        {
+                            "user_id": user_map["maria.santos@example.com"],
+                            "action": "create_ticket",
+                            "description": "Usuário criou ticket para Consulta Especializada",
+                            "timestamp": datetime.utcnow() - timedelta(days=5)
+                        },
+                        {
+                            "user_id": user_map["pedro.gomes@example.com"],
+                            "action": "create_ticket",
+                            "description": "Usuário criou ticket para Empréstimos",
+                            "timestamp": datetime.utcnow() - timedelta(days=6)
+                        },
+                        {
+                            "user_id": user_map["ana.ferreira@example.com"],
+                            "action": "create_ticket",
+                            "description": "Usuário criou ticket para Investimentos",
+                            "timestamp": datetime.utcnow() - timedelta(days=7)
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "action": "login",
+                            "description": "Usuário fez login no sistema",
+                            "timestamp": datetime.utcnow() - timedelta(days=1)
+                        },
+                        {
+                            "user_id": user_map["joao.silva@example.com"],
+                            "action": "login",
+                            "description": "Usuário fez login no sistema",
+                            "timestamp": datetime.utcnow() - timedelta(days=2)
+                        },
+                        {
+                            "user_id": user_map["maria.santos@example.com"],
+                            "action": "login",
+                            "description": "Usuário fez login no sistema",
+                            "timestamp": datetime.utcnow() - timedelta(days=3)
+                        },
+                        {
+                            "user_id": user_map["pedro.gomes@example.com"],
+                            "action": "login",
+                            "description": "Usuário fez login no sistema",
+                            "timestamp": datetime.utcnow() - timedelta(days=4)
+                        },
+                        {
+                            "user_id": user_map["ana.ferreira@example.com"],
+                            "action": "login",
+                            "description": "Usuário fez login no sistema",
+                            "timestamp": datetime.utcnow() - timedelta(days=5)
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "action": "update_profile",
+                            "description": "Usuário atualizou perfil",
+                            "timestamp": datetime.utcnow() - timedelta(days=6)
+                        },
+                        {
+                            "user_id": user_map["joao.silva@example.com"],
+                            "action": "update_profile",
+                            "description": "Usuário atualizou perfil",
+                            "timestamp": datetime.utcnow() - timedelta(days=7)
+                        },
+                        {
+                            "user_id": user_map["maria.santos@example.com"],
+                            "action": "update_profile",
+                            "description": "Usuário atualizou perfil",
+                            "timestamp": datetime.utcnow() - timedelta(days=8)
+                        },
+                        {
+                            "user_id": user_map["pedro.gomes@example.com"],
+                            "action": "update_profile",
+                            "description": "Usuário atualizou perfil",
+                            "timestamp": datetime.utcnow() - timedelta(days=9)
+                        },
+                        {
+                            "user_id": user_map["ana.ferreira@example.com"],
+                            "action": "update_profile",
+                            "description": "Usuário atualizou perfil",
+                            "timestamp": datetime.utcnow() - timedelta(days=10)
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "action": "view_queue",
+                            "description": "Usuário visualizou fila de Registo Civil",
+                            "timestamp": datetime.utcnow() - timedelta(days=1)
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "action": "view_queue",
+                            "description": "Usuário visualizou fila de Consulta Geral",
+                            "timestamp": datetime.utcnow() - timedelta(days=2)
+                        },
+                        {
+                            "user_id": user_map["joao.silva@example.com"],
+                            "action": "view_queue",
+                            "description": "Usuário visualizou fila de Atendimento Bancário",
+                            "timestamp": datetime.utcnow() - timedelta(days=3)
+                        },
+                        {
+                            "user_id": user_map["maria.santos@example.com"],
+                            "action": "view_queue",
+                            "description": "Usuário visualizou fila de Consulta Especializada",
+                            "timestamp": datetime.utcnow() - timedelta(days=4)
+                        },
+                        {
+                            "user_id": user_map["pedro.gomes@example.com"],
+                            "action": "view_queue",
+                            "description": "Usuário visualizou fila de Empréstimos",
+                            "timestamp": datetime.utcnow() - timedelta(days=5)
+                        }
+                    ]
+                    for log_data in audit_logs_data:
+                        if not exists(AuditLog, user_id=log_data["user_id"], action=log_data["action"], timestamp=log_data["timestamp"]):
+                            log = AuditLog(
+                                id=str(uuid.uuid4()),
+                                user_id=log_data["user_id"],
+                                action=log_data["action"],
+                                description=log_data["description"],
+                                timestamp=log_data["timestamp"]
+                            )
+                            db.session.add(log)
+                            db.session.flush()
+                            app.logger.debug(f"Log de auditoria criado: {log_data['action']} para usuário {log_data['user_id']}")
+                    app.logger.info("Logs de auditoria criados ou recuperados com sucesso.")
 
-                    # Função auxiliar para verificar existência
-                    def exists(model, **kwargs):
-                        return model.query.filter_by(**kwargs).first() is not None
-
-                    # Logs de auditoria para o usuário de teste
-                    if test_user:
-                        test_audit_logs = [
-                            {"action": "USER_LOGIN", "details": "Usuário autenticado via Firebase", "days_ago": 0},
-                            {"action": "TICKET_CREATED", "details": "Ticket emitido para Registo Civil", "days_ago": 5},
-                            {"action": "TICKET_CREATED", "details": "Ticket emitido para Consulta Geral", "days_ago": 10},
-                            {"action": "TICKET_CREATED", "details": "Ticket emitido para Atendimento Bancário", "days_ago": 15},
-                            {"action": "QUEUE_VIEWED", "details": "Fila Registo Civil visualizada", "days_ago": 4},
-                            {"action": "QUEUE_VIEWED", "details": "Fila Consulta Geral visualizada", "days_ago": 9},
-                            {"action": "USER_LOGIN", "details": "Usuário autenticado via Firebase", "days_ago": 7},
-                            {"action": "TICKET_CREATED", "details": "Ticket emitido para Registo Civil", "days_ago": 3},
-                            {"action": "USER_PROFILE_UPDATED", "details": "Perfil do usuário atualizado", "days_ago": 2},
-                            {"action": "NOTIFICATION_SENT", "details": "Notificação de ticket enviada", "days_ago": 5}
-                        ]
-                        for log in test_audit_logs:
-                            if not exists(AuditLog, user_id=test_user.id, action=log["action"], details=log["details"]):
-                                al = AuditLog(
-                                    id=str(uuid.uuid4()),
-                                    user_id=test_user.id,
-                                    action=log["action"],
-                                    details=log["details"],
-                                    timestamp=now - timedelta(days=log["days_ago"]),
-                                    resource_type="user_action",
-                                    resource_id=str(uuid.uuid4())
-                                )
-                                db.session.add(al)
-                                app.logger.debug(f"Log de auditoria de teste criado: {log['action']} para usuário {test_user.id}")
-
-                    # Logs de auditoria para outros usuários
-                    user_list = User.query.filter_by(user_role=UserRole.USER).limit(20).all()
-                    actions = ["USER_LOGIN", "TICKET_CREATED", "QUEUE_VIEWED", "USER_PROFILE_UPDATED", "NOTIFICATION_SENT"]
-                    for i, user in enumerate(user_list):
-                        if user.id == "nMSnRc8jpYQbnrxujg5JZcHzFKP2":
-                            continue
-                        for j in range(5):
-                            action = actions[j % len(actions)]
-                            details = f"{action.replace('_', ' ').title()} - Usuário {user.email}"
-                            if not exists(AuditLog, user_id=user.id, action=action, details=details):
-                                al = AuditLog(
-                                    id=str(uuid.uuid4()),
-                                    user_id=user.id,
-                                    action=action,
-                                    details=details,
-                                    timestamp=now - timedelta(days=(i + j) % 7),
-                                    resource_type="user_action",
-                                    resource_id=str(uuid.uuid4())
-                                )
-                                db.session.add(al)
-                                app.logger.debug(f"Log de auditoria criado: {action} para usuário {user.id}")
-                    
-                    db.session.flush()
-                    app.logger.info("Logs de auditoria criados com sucesso.")
-                
                 create_audit_logs()
 
                 # --------------------------------------
                 # Criar Logs de Notificação
                 # --------------------------------------
                 def create_notification_logs():
-                    """
-                    Cria logs de notificação para o usuário de teste e outros usuários, usando o campo 'status'
-                    em vez de 'notification_type' para alinhar com o modelo NotificationLog.
-                    """
-                    now = datetime.utcnow()
-                    test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
-
-                    # Função auxiliar para verificar existência
-                    def exists(model, **kwargs):
-                        return model.query.filter_by(**kwargs).first() is not None
-
-                    # Logs de notificação para o usuário de teste
-                    if test_user:
-                        test_notifications = [
-                            {"message": "Ticket emitido para Registo Civil", "days_ago": 5},
-                            {"message": "Fila Registo Civil atualizada", "days_ago": 4},
-                            {"message": "Ticket emitido para Consulta Geral", "days_ago": 10},
-                            {"message": "Fila Consulta Geral atualizada", "days_ago": 9},
-                            {"message": "Ticket emitido para Atendimento Bancário", "days_ago": 15}
-                        ]
-                        for notif in test_notifications:
-                            if not exists(NotificationLog, user_id=test_user.id, message=notif["message"]):
-                                nl = NotificationLog(
-                                    id=str(uuid.uuid4()),
-                                    user_id=test_user.id,
-                                    message=notif["message"],
-                                    status="Sent",
-                                    sent_at=now - timedelta(days=notif["days_ago"])
-                                )
-                                db.session.add(nl)
-                                app.logger.debug(f"Log de notificação de teste criado: {notif['message']} para usuário {test_user.id}")
-
-                    # Logs de notificação para outros usuários
-                    user_list = User.query.filter_by(user_role=UserRole.USER).limit(20).all()
-                    messages = [
-                        "Ticket emitido com sucesso",
-                        "Fila atualizada",
-                        "Sua vez está próxima"
+                    notification_logs_data = [
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "message": "Seu ticket para Registo Civil foi emitido",
+                            "sent_at": datetime.utcnow() - timedelta(days=1)
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "message": "Seu ticket para Consulta Geral foi emitido",
+                            "sent_at": datetime.utcnow() - timedelta(days=2)
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "message": "Seu ticket para Atendimento Bancário foi emitido",
+                            "sent_at": datetime.utcnow() - timedelta(days=3)
+                        },
+                        {
+                            "user_id": user_map["joao.silva@example.com"],
+                            "message": "Seu ticket para Atendimento Bancário foi emitido",
+                            "sent_at": datetime.utcnow() - timedelta(days=4)
+                        },
+                        {
+                            "user_id": user_map["maria.santos@example.com"],
+                            "message": "Seu ticket para Consulta Especializada foi emitido",
+                            "sent_at": datetime.utcnow() - timedelta(days=5)
+                        },
+                        {
+                            "user_id": user_map["pedro.gomes@example.com"],
+                            "message": "Seu ticket para Empréstimos foi emitido",
+                            "sent_at": datetime.utcnow() - timedelta(days=6)
+                        },
+                        {
+                            "user_id": user_map["ana.ferreira@example.com"],
+                            "message": "Seu ticket para Investimentos foi emitido",
+                            "sent_at": datetime.utcnow() - timedelta(days=7)
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "message": "Seu ticket para Registo Civil foi atendido",
+                            "sent_at": datetime.utcnow() - timedelta(days=1, minutes=10)
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "message": "Seu ticket para Consulta Geral foi atendido",
+                            "sent_at": datetime.utcnow() - timedelta(days=2, minutes=10)
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "message": "Seu ticket para Atendimento Bancário foi atendido",
+                            "sent_at": datetime.utcnow() - timedelta(days=3, minutes=10)
+                        },
+                        {
+                            "user_id": user_map["joao.silva@example.com"],
+                            "message": "Seu ticket para Atendimento Bancário foi atendido",
+                            "sent_at": datetime.utcnow() - timedelta(days=4, minutes=10)
+                        },
+                        {
+                            "user_id": user_map["maria.santos@example.com"],
+                            "message": "Seu ticket para Consulta Especializada foi atendido",
+                            "sent_at": datetime.utcnow() - timedelta(days=5, minutes=10)
+                        },
+                        {
+                            "user_id": user_map["ana.ferreira@example.com"],
+                            "message": "Seu ticket para Investimentos foi atendido",
+                            "sent_at": datetime.utcnow() - timedelta(days=7, minutes=10)
+                        }
                     ]
-                    for i, user in enumerate(user_list):
-                        if user.id == "nMSnRc8jpYQbnrxujg5JZcHzFKP2":
-                            continue
-                        for j in range(3):
-                            message = messages[j % len(messages)]
-                            if not exists(NotificationLog, user_id=user.id, message=message):
-                                nl = NotificationLog(
-                                    id=str(uuid.uuid4()),
-                                    user_id=user.id,
-                                    message=message,
-                                    status="Sent",
-                                    sent_at=now - timedelta(days=(i + j) % 7)
-                                )
-                                db.session.add(nl)
-                                app.logger.debug(f"Log de notificação criado: {message} para usuário {user.id}")
-                    
-                    db.session.flush()
-                    app.logger.info("Logs de notificação criados com sucesso.")
+                    for log_data in notification_logs_data:
+                        if not exists(NotificationLog, user_id=log_data["user_id"], message=log_data["message"], sent_at=log_data["sent_at"]):
+                            log = NotificationLog(
+                                id=str(uuid.uuid4()),
+                                user_id=log_data["user_id"],
+                                message=log_data["message"],
+                                sent_at=log_data["sent_at"]
+                            )
+                            db.session.add(log)
+                            db.session.flush()
+                            app.logger.debug(f"Log de notificação criado: {log_data['message']} para usuário {log_data['user_id']}")
+                    app.logger.info("Logs de notificação criados ou recuperados com sucesso.")
+
                 create_notification_logs()
 
                 # --------------------------------------
-                # Criar Localizações Alternativas de Usuário
+                # Criar Localizações Alternativas de Usuários
                 # --------------------------------------
                 def create_user_location_fallbacks():
-                    """
-                    Cria localizações alternativas para o usuário de teste e outros usuários, usando apenas
-                    o campo 'neighborhood' para alinhar com o modelo UserLocationFallback, removendo
-                    'latitude' e 'longitude'.
-                    """
-                    now = datetime.utcnow()
-                    test_user = User.query.filter_by(id="nMSnRc8jpYQbnrxujg5JZcHzFKP2").first()
-
-                    # Função auxiliar para verificar existência
-                    def exists(model, **kwargs):
-                        return model.query.filter_by(**kwargs).first() is not None
-
-                    # Lista de bairros
-                    neighborhoods = [
-                        {"name": "Ingombota"},
-                        {"name": "Talatona"},
-                        {"name": "Maianga"},
-                        {"name": "Rangel"}
+                    location_fallbacks_data = [
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "latitude": -8.8167,
+                            "longitude": 13.2332,
+                            "neighborhood": "Ingombota"
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "latitude": -8.8250,
+                            "longitude": 13.2300,
+                            "neighborhood": "Prenda"
+                        },
+                        {
+                            "user_id": user_map["joao.silva@example.com"],
+                            "latitude": -8.8147,
+                            "longitude": 13.2302,
+                            "neighborhood": "Maianga"
+                        },
+                        {
+                            "user_id": user_map["maria.santos@example.com"],
+                            "latitude": -8.8100,
+                            "longitude": 13.2450,
+                            "neighborhood": "Bairro Azul"
+                        },
+                        {
+                            "user_id": user_map["pedro.gomes@example.com"],
+                            "latitude": -8.8300,
+                            "longitude": 13.2500,
+                            "neighborhood": "Rangel"
+                        },
+                        {
+                            "user_id": user_map["ana.ferreira@example.com"],
+                            "latitude": -8.9333,
+                            "longitude": 13.2000,
+                            "neighborhood": "Belas"
+                        },
+                        {
+                            "user_id": user_map["edmannews5@gmail.com"],
+                            "latitude": -8.8050,
+                            "longitude": 13.2300,
+                            "neighborhood": "Coqueiros"
+                        },
+                        {
+                            "user_id": user_map["joao.silva@example.com"],
+                            "latitude": -8.9167,
+                            "longitude": 13.1833,
+                            "neighborhood": "Talatona"
+                        }
                     ]
+                    for loc_data in location_fallbacks_data:
+                        if not exists(
+                            UserLocationFallback,
+                            user_id=loc_data["user_id"],
+                            latitude=loc_data["latitude"],
+                            longitude=loc_data["longitude"]
+                        ):
+                            loc = UserLocationFallback(
+                                id=str(uuid.uuid4()),
+                                user_id=loc_data["user_id"],
+                                latitude=loc_data["latitude"],
+                                longitude=loc_data["longitude"],
+                                neighborhood=loc_data["neighborhood"]
+                            )
+                            db.session.add(loc)
+                            db.session.flush()
+                            app.logger.debug(f"Localização alternativa criada para usuário {loc_data['user_id']}: {loc_data['neighborhood']}")
+                    app.logger.info("Localizações alternativas de usuários criadas ou recuperadas com sucesso.")
 
-                    # Localizações alternativas para o usuário de teste
-                    if test_user:
-                        test_locations = [
-                            {"neighborhood": "Ingombota"},
-                            {"neighborhood": "Talatona"}
-                        ]
-                        for loc in test_locations:
-                            if not exists(UserLocationFallback, user_id=test_user.id, neighborhood=loc["neighborhood"]):
-                                ulf = UserLocationFallback(
-                                    id=str(uuid.uuid4()),
-                                    user_id=test_user.id,
-                                    neighborhood=loc["neighborhood"],
-                                    updated_at=now
-                                )
-                                db.session.add(ulf)
-                                app.logger.debug(f"Localização alternativa de teste criada: {loc['neighborhood']} para usuário {test_user.id}")
-
-                    # Localizações alternativas para outros usuários
-                    user_list = User.query.filter_by(user_role=UserRole.USER).limit(20).all()
-                    for i, user in enumerate(user_list):
-                        if user.id == "nMSnRc8jpYQbnrxujg5JZcHzFKP2":
-                            continue
-                        for j in range(2):
-                            loc = neighborhoods[(i + j) % len(neighborhoods)]
-                            if not exists(UserLocationFallback, user_id=user.id, neighborhood=loc["name"]):
-                                ulf = UserLocationFallback(
-                                    id=str(uuid.uuid4()),
-                                    user_id=user.id,
-                                    neighborhood=loc["name"],
-                                    updated_at=now
-                                )
-                                db.session.add(ulf)
-                                app.logger.debug(f"Localização alternativa criada: {loc['name']} para usuário {user.id}")
-                    
-                    db.session.flush()
-                    app.logger.info("Localizações alternativas de usuário criadas com sucesso.")
-                
                 create_user_location_fallbacks()
 
                 # --------------------------------------
-                # Commit das Alterações
+                # Criar Tickets
+                # --------------------------------------
+                def create_tickets():
+                    # Função auxiliar para gerar QR code único
+                    def generate_unique_qr_code():
+                        while True:
+                            qr_code = str(uuid.uuid4())[:8].upper()
+                            if not exists(Ticket, qr_code=qr_code):
+                                return qr_code
+
+                    # Função auxiliar para validar horário do ticket
+                    def get_valid_ticket_time(queue_id, base_date):
+                        queue = Queue.query.get(queue_id)
+                        branch = Branch.query.join(Department).filter(Department.id == queue.department_id).first()
+                        schedule = BranchSchedule.query.filter_by(
+                            branch_id=branch.id,
+                            weekday_id=base_date.isoweekday()
+                        ).first()
+                        if schedule.is_closed:
+                            # Tentar o dia anterior
+                            new_date = base_date - timedelta(days=1)
+                            while new_date.isoweekday() == base_date.isoweekday() or \
+                                  BranchSchedule.query.filter_by(
+                                      branch_id=branch.id,
+                                      weekday_id=new_date.isoweekday()
+                                  ).first().is_closed:
+                                new_date -= timedelta(days=1)
+                            base_date = new_date
+                            schedule = BranchSchedule.query.filter_by(
+                                branch_id=branch.id,
+                                weekday_id=base_date.isoweekday()
+                            ).first()
+                        open_time = schedule.open_time
+                        end_time = schedule.end_time
+                        # Gerar hora aleatória dentro do horário operacional
+                        open_minutes = open_time.hour * 60 + open_time.minute
+                        end_minutes = end_time.hour * 60 + end_time.minute
+                        random_minutes = random.randint(open_minutes, end_minutes - 10)
+                        ticket_time = datetime(
+                            base_date.year, base_date.month, base_date.day,
+                            random_minutes // 60, random_minutes % 60
+                        )
+                        return ticket_time
+
+                    # Criar tickets específicos para o usuário de teste
+                    test_user_tickets = [
+                        # 4 tickets para Registo Civil (Conservatória)
+                        {
+                            "queue_key": "Conservatória dos Registos_Conservatória Coqueiros_Atendimento Registral_Registo Civil",
+                            "count": 2
+                        },
+                        {
+                            "queue_key": "Conservatória dos Registos_Conservatória Futungo de Belas_Atendimento Registral_Registo Civil",
+                            "count": 2
+                        },
+                        # 3 tickets para Consulta Geral (Hospital Josina Machel)
+                        {
+                            "queue_key": "Hospital Josina Machel_Unidade Prenda_Clínica Geral_Consulta Geral",
+                            "count": 2
+                        },
+                        {
+                            "queue_key": "Hospital Josina Machel_Unidade Mutamba_Clínica Geral_Consulta Geral",
+                            "count": 1
+                        },
+                        # 3 tickets para Atendimento Bancário (Banco BAI)
+                        {
+                            "queue_key": "Banco BAI_Agência Ingombota_Atendimento ao Cliente_Atendimento Bancário",
+                            "count": 2
+                        },
+                        {
+                            "queue_key": "Banco BAI_Agência Talatona_Atendimento ao Cliente_Atendimento Bancário",
+                            "count": 1
+                        }
+                    ]
+
+                    test_user_id = user_map["edmannews5@gmail.com"]
+                    ticket_count = 0
+                    used_queues = set()
+
+                    for ticket_data in test_user_tickets:
+                        queue_id = queue_map[ticket_data["queue_key"]]
+                        if queue_id in used_queues:
+                            continue  # Evitar múltiplos tickets na mesma fila
+                        for i in range(ticket_data["count"]):
+                            base_date = datetime.utcnow() - timedelta(days=i + 1)
+                            issued_at = get_valid_ticket_time(queue_id, base_date)
+                            ticket = Ticket(
+                                id=str(uuid.uuid4()),
+                                queue_id=queue_id,
+                                user_id=test_user_id,
+                                ticket_number=f"{Queue.query.get(queue_id).prefix}{1000 + ticket_count:04d}",
+                                qr_code=generate_unique_qr_code(),
+                                issued_at=issued_at,
+                                attended_at=issued_at + timedelta(minutes=10),
+                                expires_at=issued_at.replace(hour=23, minute=59, second=59) + timedelta(days=1),
+                                status="Atendido",
+                                counter_number=random.randint(1, Queue.query.get(queue_id).num_counters)
+                            )
+                            db.session.add(ticket)
+                            db.session.flush()
+                            ticket_count += 1
+                            used_queues.add(queue_id)
+                            app.logger.debug(
+                                f"Ticket criado para usuário de teste: {ticket.ticket_number} em {ticket_data['queue_key']}"
+                            )
+
+                    # Criar 10 tickets por fila, distribuindo entre usuários
+                    for queue_key, queue_id in queue_map.items():
+                        existing_tickets = Ticket.query.filter_by(queue_id=queue_id).count()
+                        tickets_needed = 10 - existing_tickets
+                        if tickets_needed <= 0:
+                            continue
+                        user_ids = list(user_map.values())
+                        random.shuffle(user_ids)
+                        user_index = 0
+                        for i in range(tickets_needed):
+                            user_id = user_ids[user_index % len(user_ids)]
+                            # Verificar se o usuário já tem ticket nessa fila
+                            if Ticket.query.filter_by(queue_id=queue_id, user_id=user_id).count() > 0:
+                                user_index += 1
+                                continue
+                            base_date = datetime.utcnow() - timedelta(days=i + 1)
+                            issued_at = get_valid_ticket_time(queue_id, base_date)
+                            ticket = Ticket(
+                                id=str(uuid.uuid4()),
+                                queue_id=queue_id,
+                                user_id=user_id,
+                                ticket_number=f"{Queue.query.get(queue_id).prefix}{1000 + ticket_count:04d}",
+                                qr_code=generate_unique_qr_code(),
+                                issued_at=issued_at,
+                                attended_at=issued_at + timedelta(minutes=10),
+                                expires_at=issued_at.replace(hour=23, minute=59, second=59) + timedelta(days=1),
+                                status="Atendido",
+                                counter_number=random.randint(1, Queue.query.get(queue_id).num_counters)
+                            )
+                            db.session.add(ticket)
+                            db.session.flush()
+                            ticket_count += 1
+                            user_index += 1
+                            app.logger.debug(f"Ticket criado: {ticket.ticket_number} em {queue_key}")
+                    app.logger.info(f"Tickets criados com sucesso. Total: {ticket_count}")
+
+                create_tickets()
+
+                # --------------------------------------
+                # Commit Final
                 # --------------------------------------
                 db.session.commit()
                 app.logger.info("População de dados iniciais concluída com sucesso.")
-
         except Exception as e:
             db.session.rollback()
-            app.logger.error(f"Erro ao popular dados iniciais: {str(e)}")
+            app.logger.error(f"Erro durante população de dados: {str(e)}")
             raise
