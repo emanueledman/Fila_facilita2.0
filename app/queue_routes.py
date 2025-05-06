@@ -1508,7 +1508,6 @@ def init_queue_routes(app):
             logger.error(f"Erro ao obter logs de auditoria para queue_id={queue_id}: {str(e)}")
             return jsonify({'error': 'Erro ao obter logs de auditoria'}), 500
 
-    
     @app.route('/api/queues/<queue_id>/ticket', methods=['POST'])
     @require_auth
     def generate_ticket(queue_id):
@@ -1580,13 +1579,13 @@ def init_queue_routes(app):
             return jsonify({'error': 'Fila não disponível fora do horário de funcionamento'}), 400
 
         try:
-            # Chamar add_to_queue em vez de generate_virtual_ticket
+            # Chamar add_to_queue
             ticket, _ = QueueService.add_to_queue(
-                service=queue.service.name,  # Usar o nome do serviço associado à fila
+                service=queue.service.name,
                 user_id=user_id,
                 priority=priority,
                 is_physical=False,
-                fcm_token=user.fcm_token,  # Obter o fcm_token do usuário
+                fcm_token=user.fcm_token,
                 branch_id=branch.id,
                 user_lat=user_lat,
                 user_lon=user_lon
@@ -1632,7 +1631,7 @@ def init_queue_routes(app):
             db.session.rollback()
             logger.error(f"Erro inesperado ao gerar ticket para queue_id={queue_id}, user_id={user_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao gerar ticket'}), 500
-           
+    
     @app.route('/api/tickets/<ticket_id>/trade', methods=['POST'])
     @require_auth
     def trade_ticket(ticket_id):

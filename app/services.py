@@ -432,6 +432,7 @@ class QueueService:
             logger.error(f"Erro geral ao enviar notificação para user_id={user_id}: {str(e)}")
             db.session.rollback()
 
+
     @staticmethod
     def add_to_queue(service, user_id, priority=0, is_physical=False, fcm_token=None, branch_id=None, user_lat=None, user_lon=None):
         """Adiciona um ticket à fila, priorizando serviços semelhantes e preferências do usuário. Senhas físicas só via totem."""
@@ -516,7 +517,7 @@ class QueueService:
                 behavior = UserBehavior(
                     user_id=user_id,
                     service_id=service_id,
-                    interaction_type='ticket_emission',
+                    action='ticket_emission',  # Corrigido de interaction_type para action
                     timestamp=datetime.utcnow()
                 )
                 db.session.add(behavior)
@@ -543,8 +544,6 @@ class QueueService:
             db.session.rollback()
             logger.error(f"Erro ao adicionar ticket à fila {service}: {e}")
             raise
-
-
 
     @staticmethod
     def generate_physical_ticket_for_totem(service, branch_id, client_ip):
