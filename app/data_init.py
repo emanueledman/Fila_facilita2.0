@@ -1977,27 +1977,31 @@ def populate_initial_data(app):
                         if existing_tickets >= 10:
                             app.logger.debug(f"Fila {queue.id} já possui {existing_tickets} tickets. Pulando criação.")
                             continue
-
+                            
                         # Criar 10 tickets por fila
                         for i in range(10 - existing_tickets):
-                            ticket_number = f"{queue.prefix}{i+1:03d}"
-                            qr_code = f"QR_{ticket_number}_{queue.id[:8]}"  # Gerar QR code único
+                            # Armazenar apenas o número como inteiro
+                            ticket_number = i + 1
+                            # Usar o prefixo apenas para exibição/QR code
+                            display_number = f"{queue.prefix}{i+1:03d}"
+                            qr_code = f"QR_{display_number}_{queue.id[:8]}"
+                            
                             if not exists(Ticket, queue_id=queue.id, ticket_number=ticket_number):
                                 t = Ticket(
                                     id=str(uuid.uuid4()),
                                     queue_id=queue.id,
-                                    user_id=users[i % len(users)].id,  # Distribuir tickets entre usuários
-                                    ticket_number=ticket_number,
+                                    user_id=users[i % len(users)].id,
+                                    ticket_number=ticket_number,  # Número inteiro
                                     qr_code=qr_code,
                                     status="Atendido",
                                     issued_at=now - timedelta(days=1, hours=i),
-                                    attended_at=now - timedelta(days=1, hours=i, minutes=5),  # Substitui called_at e completed_at
-                                    counter=(i % queue.num_counters) + 1,  # Substitui counter_number
+                                    attended_at=now - timedelta(days=1, hours=i, minutes=5),
+                                    counter=(i % queue.num_counters) + 1,
                                     service_time=5.0,
                                     trade_available=False
                                 )
                                 db.session.add(t)
-                                app.logger.debug(f"Ticket criado: {ticket_number} para fila {queue.id}")
+                                app.logger.debug(f"Ticket criado: {display_number} para fila {queue.id}")
                         db.session.flush()
                     app.logger.info("Tickets criados ou recuperados com sucesso.")
                 create_tickets()

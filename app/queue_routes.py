@@ -1508,7 +1508,6 @@ def init_queue_routes(app):
             logger.error(f"Erro ao obter logs de auditoria para queue_id={queue_id}: {str(e)}")
             return jsonify({'error': 'Erro ao obter logs de auditoria'}), 500
 
-
     @app.route('/api/queues/<queue_id>/ticket', methods=['POST'])
     @require_auth
     def generate_ticket(queue_id):
@@ -1563,10 +1562,11 @@ def init_queue_routes(app):
         schedules = BranchSchedule.query.filter_by(branch_id=branch.id).all()
         local_tz = pytz.timezone('Africa/Luanda')
         current_time = datetime.now(local_tz).time()
-        current_weekday = datetime.now(local_tz).strftime('%A').upper()
+        current_weekday = datetime.now(local_tz).strftime('%A').upper()  # Ex.: 'TUESDAY'
         is_open = False
         for schedule in schedules:
             try:
+                # Comparar o Enum Weekday com o valor mapeado
                 if schedule.weekday == Weekday[current_weekday] and not schedule.is_closed:
                     if schedule.open_time <= current_time <= schedule.end_time:
                         is_open = True
@@ -1597,7 +1597,7 @@ def init_queue_routes(app):
                 queue_id=queue_id,
                 event_type='ticket_issued',
                 data={
-                    'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number:03d}",  # Usar prefixo na exibição
+                    'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
                     'timestamp': ticket.issued_at.isoformat()
                 }
             )
@@ -1607,12 +1607,12 @@ def init_queue_routes(app):
                 action="generate_ticket",
                 resource_type="ticket",
                 resource_id=ticket.id,
-                details=f"Ticket {ticket.queue.prefix}{ticket.ticket_number:03d} gerado na fila {queue_id}"
+                details=f"Ticket {ticket.queue.prefix}{ticket.ticket_number} gerado na fila {queue_id}"
             )
 
             response = {
                 'ticket_id': ticket.id,
-                'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number:03d}",  # Usar prefixo na exibição
+                'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
                 'queue_id': ticket.queue_id,
                 'status': ticket.status,
                 'priority': ticket.priority,
@@ -1621,7 +1621,7 @@ def init_queue_routes(app):
                 'estimated_wait_time': f"{int(queue.estimated_wait_time)} minutos" if queue.estimated_wait_time else "N/A"
             }
 
-            logger.info(f"Ticket gerado: {ticket.queue.prefix}{ticket.ticket_number:03d} (ticket_id={ticket.id}, user_id={user_id})")
+            logger.info(f"Ticket gerado: {ticket.queue.prefix}{ticket.ticket_number} (ticket_id={ticket.id}, user_id={user_id})")
             return jsonify(response), 201
         except ValueError as e:
             db.session.rollback()
@@ -1631,6 +1631,7 @@ def init_queue_routes(app):
             db.session.rollback()
             logger.error(f"Erro inesperado ao gerar ticket para queue_id={queue_id}, user_id={user_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao gerar ticket'}), 500
+
  
     @app.route('/api/tickets/<ticket_id>/trade', methods=['POST'])
     @require_auth

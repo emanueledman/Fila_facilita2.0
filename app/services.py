@@ -506,7 +506,7 @@ class QueueService:
             if Ticket.query.filter_by(user_id=user_id, queue_id=queue.id, status='Pendente').first():
                 logger.warning(f"Usuário {user_id} já possui senha ativa na fila {queue.id}")
                 raise ValueError("Você já possui uma senha ativa")
-            ticket_number = queue.active_tickets + 1  # Valor numérico
+            ticket_number = queue.active_tickets + 1
             qr_code = QueueService.generate_qr_code()
             expires_at = None
             ticket = Ticket(
@@ -539,14 +539,14 @@ class QueueService:
                 raise ValueError("Erro ao carregar a fila associada")
             wait_time = QueueService.calculate_wait_time(queue.id, ticket_number, priority, user_id, user_lat, user_lon)
             position = max(0, ticket.ticket_number - queue.current_ticket)
-            message = f"Senha {queue.prefix}{ticket_number:03d} emitida (virtual, via telefone) para {queue.service.name}. QR: {qr_code}. Espera: {wait_time if wait_time != 'N/A' else 'Aguardando início'} min"
+            message = f"Senha {queue.prefix}{ticket_number} emitida (virtual, via telefone) para {queue.service.name}. QR: {qr_code}. Espera: {wait_time if wait_time != 'N/A' else 'Aguardando início'} min"
             QueueService.send_notification(fcm_token, message, ticket.id, via_websocket=True, user_id=user_id)
             if socketio:
                 emit('queue_update', {
                     'queue_id': queue.id,
                     'active_tickets': queue.active_tickets,
                     'current_ticket': queue.current_ticket,
-                    'message': f"Nova senha emitida: {queue.prefix}{ticket_number:03d}"
+                    'message': f"Nova senha emitida: {queue.prefix}{ticket_number}"
                 }, namespace='/', room=str(queue.id))
             QueueService.update_queue_metrics(queue.id)
             logger.info(f"Ticket {ticket.id} (virtual) adicionado à fila {queue.service.name}")
@@ -555,7 +555,7 @@ class QueueService:
             db.session.rollback()
             logger.error(f"Erro ao adicionar ticket à fila {queue_id or service}: {e}")
             raise
-   
+        
     @staticmethod
     def generate_physical_ticket_for_totem(service, branch_id, client_ip):
         """Gera um ticket físico via totem para um usuário anônimo, baseado no serviço selecionado."""
