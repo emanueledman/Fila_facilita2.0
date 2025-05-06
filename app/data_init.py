@@ -1989,7 +1989,7 @@ def populate_initial_data(app):
                                     ticket_number=ticket_number,
                                     status="Atendido",
                                     issued_at=now - timedelta(days=1, hours=i),
-                                    called_at=now - timedelta(days=1, hours=i, minutes=5),
+                                    attended_at=now - timedelta(days=1, hours=i, minutes=5),
                                     completed_at=now - timedelta(days=1, hours=i, minutes=10),
                                     wait_time=5.0,
                                     service_time=5.0,
