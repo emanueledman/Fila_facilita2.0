@@ -1246,7 +1246,7 @@ def init_queue_reco(app):
             return jsonify({'error': 'Não autorizado'}), 403
 
         queue = ticket.queue
-        features = QueueService.get_wait_time_features(queue.id, ticket.ticket_number, ticket.priority)
+        features = QueueService.calculate_wait_time(queue.id, ticket.ticket_number, ticket.priority)
         wait_time = wait_time_predictor.predict(queue.id, features)
         return jsonify({
             'service': queue.service,
