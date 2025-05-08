@@ -1246,18 +1246,17 @@ def init_queue_reco(app):
             return jsonify({'error': 'Não autorizado'}), 403
 
         queue = ticket.queue
-        features = QueueService.calculate_wait_time(queue.id, ticket.ticket_number, ticket.priority)
-        wait_time = wait_time_predictor.predict(queue.id, features)
+        wait_time = QueueService.calculate_wait_time(queue.id, ticket.ticket_number, ticket.priority)
         return jsonify({
-            'service': queue.service,
-            'institution': queue.department.institution.name if queue.department and queue.department.institution else None,
-            'branch': queue.branch.name if queue.branch else None,
+            'service': queue.service.name if queue.service else "Desconhecido",
+            'institution': queue.department.branch.institution.name if queue.department and queue.department.branch and queue.department.branch.institution else None,
+            'branch': queue.department.branch.name if queue.department and queue.department.branch else None,
             'ticket_number': f"{queue.prefix}{ticket.ticket_number}",
             'qr_code': ticket.qr_code,
             'status': ticket.status,
             'counter': f"{ticket.counter:02d}" if ticket.counter else None,
             'position': max(0, ticket.ticket_number - queue.current_ticket),
-            'wait_time': f"{int(wait_time)} minutos" if wait_time is not None else "N/A",
+            'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else "N/A",
             'priority': ticket.priority,
             'is_physical': ticket.is_physical,
             'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None
