@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timedelta
 import io
 import json
+
 import pytz
 from .recommendation_service import RecommendationService
 import re
@@ -41,6 +42,59 @@ def init_queue_routes(app):
         except Exception as e:
             logger.error(f"Erro ao emitir atualização de painel: {str(e)}")
 
+    def emit_ticket_update(ticket):
+        try:
+            if not ticket or not ticket.user_id or ticket.user_id == 'PRESENCIAL' or ticket.is_physical:
+                logger.warning(f"Não é possível emitir atualização para ticket_id={ticket.id}: usuário inválido ou ticket presencial")
+                return
+
+            user = User.query.get(ticket.user_id)
+            if not user:
+                logger.warning(f"Usuário não encontrado para ticket_id={ticket.id}, user_id={ticket.user_id}")
+                return
+
+            ticket_data = {
+                'ticket_id': ticket.id,
+                'queue_id': ticket.queue_id,
+                'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
+                'status': ticket.status,
+                'priority': ticket.priority,
+                'is_physical': ticket.is_physical,
+                'issued_at': ticket.issued_at.isoformat(),
+                'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None,
+                'counter': ticket.counter
+            }
+
+            mensagens_status = {
+                'Pendente': f"Sua senha {ticket_data['ticket_number']} está aguardando atendimento.",
+                'Chamado': f"Sua senha {ticket_data['ticket_number']} foi chamada no guichê {ticket_data['counter']}. Dirija-se ao atendimento.",
+                'Atendido': f"Sua senha {ticket_data['ticket_number']} foi atendida com sucesso.",
+                'Cancelado': f"Sua senha {ticket_data['ticket_number']} foi cancelada."
+            }
+            mensagem = mensagens_status.get(ticket.status, f"Sua senha {ticket_data['ticket_number']} foi atualizada: {ticket.status}")
+
+            cache_key = f"notificacao:throttle:{ticket.user_id}:{ticket.id}"
+            if redis_client.get(cache_key):
+                logger.debug(f"Notificação suprimida para ticket_id={ticket.id} devido a throttling")
+                return
+            redis_client.setex(cache_key, 60, "1")
+
+            QueueService.send_notification(
+                fcm_token=user.fcm_token,
+                message=mensagem,
+                ticket_id=ticket.id,
+                via_websocket=True,
+                user_id=ticket.user_id
+            )
+
+            try:
+                socketio.emit('ticket_update', ticket_data, namespace='/', room=str(ticket.user_id))
+                logger.info(f"Atualização de ticket emitida via WebSocket: ticket_id={ticket.id}, user_id={ticket.user_id}")
+            except Exception as e:
+                logger.error(f"Erro ao emitir atualização WebSocket para ticket_id={ticket.id}: {str(e)}")
+        except Exception as e:
+            logger.error(f"Erro geral ao processar atualização de ticket_id={ticket.id}: {str(e)}")
+    
 
     @socketio.on('connect', namespace='/')
     def handle_connect():
@@ -1206,62 +1260,6 @@ def init_queue_routes(app):
             logger.error(f"Erro ao buscar instituição {institution_id}: {str(e)}")
             return jsonify({'error': 'Erro interno do servidor'}), 500
     
-    
-  
-    # Funções auxiliares
-    def emit_ticket_update(ticket):
-        try:
-            if not ticket or not ticket.user_id or ticket.user_id == 'PRESENCIAL' or ticket.is_physical:
-                logger.warning(f"Não é possível emitir atualização para ticket_id={ticket.id}: usuário inválido ou ticket presencial")
-                return
-
-            user = User.query.get(ticket.user_id)
-            if not user:
-                logger.warning(f"Usuário não encontrado para ticket_id={ticket.id}, user_id={ticket.user_id}")
-                return
-
-            ticket_data = {
-                'ticket_id': ticket.id,
-                'queue_id': ticket.queue_id,
-                'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
-                'status': ticket.status,
-                'priority': ticket.priority,
-                'is_physical': ticket.is_physical,
-                'issued_at': ticket.issued_at.isoformat(),
-                'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None,
-                'counter': ticket.counter
-            }
-
-            mensagens_status = {
-                'Pendente': f"Sua senha {ticket_data['ticket_number']} está aguardando atendimento.",
-                'Chamado': f"Sua senha {ticket_data['ticket_number']} foi chamada no guichê {ticket_data['counter']}. Dirija-se ao atendimento.",
-                'Atendido': f"Sua senha {ticket_data['ticket_number']} foi atendida com sucesso.",
-                'Cancelado': f"Sua senha {ticket_data['ticket_number']} foi cancelada."
-            }
-            mensagem = mensagens_status.get(ticket.status, f"Sua senha {ticket_data['ticket_number']} foi atualizada: {ticket.status}")
-
-            cache_key = f"notificacao:throttle:{ticket.user_id}:{ticket.id}"
-            if redis_client.get(cache_key):
-                logger.debug(f"Notificação suprimida para ticket_id={ticket.id} devido a throttling")
-                return
-            redis_client.setex(cache_key, 60, "1")
-
-            QueueService.send_notification(
-                fcm_token=user.fcm_token,
-                message=mensagem,
-                ticket_id=ticket.id,
-                via_websocket=True,
-                user_id=ticket.user_id
-            )
-
-            if socketio:
-                try:
-                    socketio.emit('ticket_update', ticket_data, namespace='/', room=str(ticket.user_id))
-                    logger.info(f"Atualização de ticket emitida via WebSocket: ticket_id={ticket.id}, user_id={ticket.user_id}")
-                except Exception as e:
-                    logger.error(f"Erro ao emitir atualização WebSocket para ticket_id={ticket.id}: {str(e)}")
-        except Exception as e:
-            logger.error(f"Erro geral ao processar atualização de ticket_id={ticket.id}: {str(e)}")
 
     @app.route('/api/tickets/trade_available', methods=['GET'])
     @require_auth
@@ -3032,3 +3030,107 @@ def init_queue_routes(app):
             return jsonify({'error': 'Erro interno ao obter dados do painel'}), 500
         
         
+        
+    @app.route('/api/tickets/<ticket_id>', methods=['GET'])
+    @require_auth
+    def get_ticket(ticket_id):
+        user_id = request.user_id
+        try:
+            cache_k = cache_key('get_ticket', ticket_id=ticket_id, user_id=user_id)
+            cached_result = redis_client.get(cache_k)
+            if cached_result:
+                logger.debug(f"Cache hit para get_ticket: {cache_k}")
+                return jsonify(json.loads(cached_result))
+
+            ticket = Ticket.query.get(ticket_id)
+            if not ticket:
+                logger.warning(f"Ticket não encontrado: ticket_id={ticket_id}")
+                return jsonify({'error': 'Ticket não encontrado'}), 404
+
+            if ticket.user_id != user_id:
+                logger.warning(f"Usuário {user_id} não é dono do ticket {ticket_id}")
+                return jsonify({'error': 'Você não é o dono deste ticket'}), 403
+
+            queue = Queue.query.get(ticket.queue_id)
+            if not queue:
+                logger.warning(f"Fila não encontrada: queue_id={ticket.queue_id}")
+                return jsonify({'error': 'Fila não encontrada'}), 404
+
+            service = InstitutionService.query.get(queue.service_id)
+            branch = Branch.query.get(queue.department.branch_id)
+            institution = Institution.query.get(branch.institution_id)
+            department = Department.query.get(queue.department_id)
+
+            local_tz = pytz.timezone('Africa/Luanda')
+            now = datetime.now(local_tz)
+            weekday_str = now.strftime('%A').upper()
+            try:
+                weekday_enum = Weekday[weekday_str]
+            except KeyError:
+                logger.error(f"Dia da semana inválido: {weekday_str}")
+                return jsonify({'error': 'Dia da semana inválido'}), 400
+
+            schedule = BranchSchedule.query.filter_by(
+                branch_id=branch.id,
+                weekday=weekday_enum
+            ).first()
+            is_open = bool(schedule and not schedule.is_closed and schedule.open_time <= now.time() <= schedule.end_time)
+
+            wait_time = QueueService.calculate_wait_time(queue.id, ticket.ticket_number, ticket.priority)
+            position = max(0, ticket.ticket_number - queue.current_ticket) if queue.current_ticket else ticket.ticket_number
+
+            response = {
+                'ticket_id': ticket.id,
+                'ticket_number': f"{queue.prefix}{ticket.ticket_number}",
+                'queue_id': ticket.queue_id,
+                'status': ticket.status,
+                'priority': ticket.priority,
+                'is_physical': ticket.is_physical,
+                'trade_available': ticket.trade_available,
+                'service': {
+                    'id': service.id,
+                    'name': service.name or 'Desconhecido'
+                },
+                'institution': {
+                    'id': institution.id,
+                    'name': institution.name or 'Desconhecida'
+                },
+                'branch': {
+                    'id': branch.id,
+                    'name': branch.name or 'Desconhecida',
+                    'latitude': float(branch.latitude) if branch.latitude else None,
+                    'longitude': float(branch.longitude) if branch.longitude else None
+                },
+                'department': {
+                    'id': department.id,
+                    'name': department.name or 'Desconhecido'
+                },
+                'wait_time': f"{int(wait_time)} minutos" if isinstance(wait_time, (int, float)) else 'Aguardando início',
+                'position': position,
+                'issued_at': ticket.issued_at.isoformat(),
+                'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None,
+                'active_tickets': queue.active_tickets or 0,
+                'is_open': is_open,
+                'current_ticket': f"{queue.prefix}{queue.current_ticket}" if queue.current_ticket else 'N/A'
+            }
+
+            redis_client.setex(cache_k, 60, json.dumps(response, default=str))
+            emit_ticket_update(ticket)
+
+            AuditLog.create(
+                user_id=user_id,
+                action="view_ticket",
+                resource_type="ticket",
+                resource_id=ticket_id,
+                details=f"Visualização do ticket {response['ticket_number']}"
+            )
+
+            logger.info(f"Ticket retornado: {response['ticket_number']} (ticket_id={ticket_id}, user_id={user_id})")
+            return jsonify(response), 200
+
+        except SQLAlchemyError as e:
+            logger.error(f"Erro no banco de dados ao buscar ticket {ticket_id}: {str(e)}")
+            return jsonify({'error': 'Erro no banco de dados'}), 500
+        except Exception as e:
+            logger.error(f"Erro ao buscar ticket {ticket_id}: {str(e)}")
+            return jsonify({'error': 'Erro interno do servidor'}), 500
