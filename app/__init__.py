@@ -96,11 +96,15 @@ def create_app():
     from .queue_routes import init_queue_routes
     from .user_routes import init_user_routes
     from .admin_routes import init_admin_routes
+    from .queue_reco import init_queue_reco
+    from .queue_filial import init_queue_filial
 
     init_routes(app)
     init_queue_routes(app)
     init_user_routes(app)
     init_admin_routes(app)
+    init_queue_reco(app)
+    init_queue_filial(app)
 
     # Rota para inicializar o banco de dados
     
