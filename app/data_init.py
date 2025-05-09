@@ -51,7 +51,10 @@ def populate_initial_data(app):
                     types = [
                         {"name": "Bancário", "description": "Serviços financeiros e bancários", "logo_url": "https://example.com/icons/bank.png"},
                         {"name": "Saúde", "description": "Serviços de saúde e atendimento médico", "logo_url": "https://image.similarpng.com/file/similarpng/very-thumbnail/2020/07/health-care-medical-concept-vector-PNG.png"},
-                        {"name": "Administrativo", "description": "Serviços administrativos e atendimento ao cidadão", "logo_url": "https://example.com/icons/admin.png"}
+                        {"name": "Administrativo", "description": "Serviços administrativos e atendimento ao cidadão", "logo_url": "https://example.com/icons/admin.png"},
+                        {"name": "Educação", "description": "Serviços educacionais e acadêmicos", "logo_url": "https://example.com/icons/education.png"},
+                        {"name": "Transportes", "description": "Serviços de transporte e logística", "logo_url": "https://example.com/icons/transport.png"},
+                        {"name": "Comercial", "description": "Serviços comerciais e varejo", "logo_url": "https://example.com/icons/commercial.png"}
                     ]
                     type_map = {}
                     for inst_type in types:
@@ -60,7 +63,7 @@ def populate_initial_data(app):
                                 id=str(uuid.uuid4()),
                                 name=inst_type["name"],
                                 description=inst_type["description"],
-                                logo_url=inst_type["logo_url"]  # Adicionado
+                                logo_url=inst_type["logo_url"]
                             )
                             db.session.add(it)
                             db.session.flush()
@@ -70,7 +73,6 @@ def populate_initial_data(app):
                     return type_map
 
                 institution_type_map = create_institution_types()
-
                 # --------------------------------------
                 # Criar Categorias de Serviço
                 # --------------------------------------
@@ -1130,89 +1132,362 @@ def populate_initial_data(app):
                         ],
                         "branches": [
                             {
-                                "name": "SIAC Talatona",
-                                "location": "Rua Principal, Talatona, Luanda",
-                                "neighborhood": "Talatona",
-                                "latitude": -8.9167,
-                                "longitude": 13.1833,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento Administrativo",
-                                        "sector": "Administrativo",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Emissão de BI",
-                                                "prefix": "BI",
-                                                "daily_limit": 120,
-                                                "num_counters": 6,
-                                                "tags": ["Administrativo", "Documentos", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RC",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
-                                                "tags": ["Administrativo", "Registros"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Renovação de Licenças",
-                                                "prefix": "RL",
-                                                "daily_limit": 90,
-                                                "num_counters": 3,
-                                                "tags": ["Administrativo", "Licenças"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "SIAC Viana",
-                                "location": "Rua Principal, Viana, Luanda",
-                                "neighborhood": "Viana",
-                                "latitude": -8.9035,
-                                "longitude": 13.3741,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento Administrativo",
-                                        "sector": "Administrativo",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Emissão de BI",
-                                                "prefix": "BI",
-                                                "daily_limit": 120,
-                                                "num_counters": 6,
-                                                "tags": ["Administrativo", "Documentos", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RC",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
-                                                "tags": ["Administrativo", "Registros"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Renovação de Licenças",
-                                                "prefix": "RL",
-                                                "daily_limit": 90,
-                                                "num_counters": 3,
-                                                "tags": ["Administrativo", "Licenças"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "SIAC Neves Bendinha",
-                                "location": "Rua Principal, Neves Bendinha, Luanda",
-                                "neighborhood": "Neves Bendinha",
-                                "latitude": -8.8100,
+                                "name": "SIAC Rangel",
+                                "location": "Rua do Rangel, Rangel, Luanda",
+                                "neighborhood": "Rangel",
+                                "latitude": -8.8300,
                                 "longitude": 13.2500,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Licenças",
+                                                "prefix": "RL",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Licenças"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Samba",
+                                "location": "Rua Principal, Samba, Luanda",
+                                "neighborhood": "Samba",
+                                "latitude": -8.8200,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Licenças",
+                                                "prefix": "RL",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Licenças"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Cacuaco",
+                                "location": "Rua Principal, Cacuaco, Luanda",
+                                "neighborhood": "Cacuaco",
+                                "latitude": -8.7767,
+                                "longitude": 13.3667,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Licenças",
+                                                "prefix": "RL",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Licenças"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Benfica",
+                                "location": "Rua Principal, Benfica, Luanda",
+                                "neighborhood": "Benfica",
+                                "latitude": -8.9500,
+                                "longitude": 13.1500,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Licenças",
+                                                "prefix": "RL",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Licenças"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Zango",
+                                "location": "Rua Principal, Zango, Luanda",
+                                "neighborhood": "Zango",
+                                "latitude": -8.9200,
+                                "longitude": 13.4000,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Licenças",
+                                                "prefix": "RL",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Licenças"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Patriota",
+                                "location": "Rua Principal, Patriota, Luanda",
+                                "neighborhood": "Patriota",
+                                "latitude": -8.9000,
+                                "longitude": 13.2000,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Licenças",
+                                                "prefix": "RL",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Licenças"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Golfe",
+                                "location": "Rua Principal, Golfe, Luanda",
+                                "neighborhood": "Golfe",
+                                "latitude": -8.8700,
+                                "longitude": 13.2700,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Licenças",
+                                                "prefix": "RL",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Licenças"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Camama",
+                                "location": "Rua Principal, Camama, Luanda",
+                                "neighborhood": "Camama",
+                                "latitude": -8.8900,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Licenças",
+                                                "prefix": "RL",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Licenças"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Prenda",
+                                "location": "Rua Principal, Prenda, Luanda",
+                                "neighborhood": "Prenda",
+                                "latitude": -8.8300,
+                                "longitude": 13.2300,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Licenças",
+                                                "prefix": "RL",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Licenças"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Vila Alice",
+                                "location": "Rua Principal, Vila Alice, Luanda",
+                                "neighborhood": "Vila Alice",
+                                "latitude": -8.8200,
+                                "longitude": 13.2600,
                                 "departments": [
                                     {
                                         "name": "Atendimento Administrativo",
@@ -1248,6 +1523,414 @@ def populate_initial_data(app):
                             }
                         ]
                     },
+                # Hospital Geral de Luanda
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Hospital Geral de Luanda",
+                        "description": "Serviços de saúde públicos em Luanda",
+                        "institution_type_id": institution_type_map["Saúde"],
+                        "logo_url": "https://www.hospitalgeralluanda.ao/images/logo.png",
+                        "services": [
+                            {"name": "Consulta Geral", "category_id": category_map["Consulta Médica"], "description": "Consultas médicas gerais"},
+                            {"name": "Exames Laboratoriais", "category_id": category_map["Exames"], "description": "Exames de diagnóstico"},
+                            {"name": "Triagem", "category_id": category_map["Triagem"], "description": "Atendimento inicial e triagem"},
+                            {"name": "Internamento", "category_id": category_map["Internamento"], "description": "Serviços de internamento hospitalar"},
+                            {"name": "Cirurgia de Urgência", "category_id": category_map["Cirurgia"], "description": "Cirurgias de emergência"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "Unidade Alvalade",
+                                "location": "Rua Principal, Alvalade, Luanda",
+                                "neighborhood": "Alvalade",
+                                "latitude": -8.8250,
+                                "longitude": 13.2300,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Miramar",
+                                "location": "Rua Principal, Miramar, Luanda",
+                                "neighborhood": "Miramar",
+                                "latitude": -8.8100,
+                                "longitude": 13.2200,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Bairro Operário",
+                                "location": "Rua Principal, Bairro Operário, Luanda",
+                                "neighborhood": "Bairro Operário",
+                                "latitude": -8.8200,
+                                "longitude": 13.2450,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Cassenda",
+                                "location": "Rua Principal, Cassenda, Luanda",
+                                "neighborhood": "Cassenda",
+                                "latitude": -8.8350,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Bairro Azul",
+                                "location": "Rua Principal, Bairro Azul, Luanda",
+                                "neighborhood": "Bairro Azul",
+                                "latitude": -8.8000,
+                                "longitude": 13.2300,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Hoji Ya Henda",
+                                "location": "Rua Principal, Hoji Ya Henda, Luanda",
+                                "neighborhood": "Hoji Ya Henda",
+                                "latitude": -8.8500,
+                                "longitude": 13.2900,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Palanca",
+                                "location": "Rua Principal, Palanca, Luanda",
+                                "neighborhood": "Palanca",
+                                "latitude": -8.8600,
+                                "longitude": 13.2800,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Tala Hady",
+                                "location": "Rua Principal, Tala Hady, Luanda",
+                                "neighborhood": "Tala Hady",
+                                "latitude": -8.8450,
+                                "longitude": 13.2750,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Kikolo",
+                                "location": "Rua Principal, Kikolo, Luanda",
+                                "neighborhood": "Kikolo",
+                                "latitude": -8.7800,
+                                "longitude": 13.3600,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Morro Bento",
+                                "location": "Rua Principal, Morro Bento, Luanda",
+                                "neighborhood": "Morro Bento",
+                                "latitude": -8.9100,
+                                "longitude": 13.1900,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                     
                     {
                         "id": str(uuid.uuid4()),
                         "name": "Conservatória dos Registos",
@@ -1256,24 +1939,19 @@ def populate_initial_data(app):
                         "logo_url": "https://www.conservatoriaregistros.gov.ao/images/logo.png",
                         "services": [
                             {"name": "Registo Comercial", "category_id": category_map["Registros"], "description": "Registo de empresas"},
-                            {"name": "Registo Civil", "category_id": category_map["Registros"], "description": "Registos de nascimento e casamento"},
-                            {"name": "Renovação de Licenças", "category_id": category_map["Licenças"], "description": "Renovação de licenças comerciais"},
-                            {"name": "Autenticação de Documentos", "category_id": category_map["Autenticação"], "description": "Autenticação de documentos oficiais"},
-                            {"name": "Registo Predial", "category_id": category_map["Registros"], "description": "Registo de propriedades"},
-                            {"name": "Certidão de Nascimento", "category_id": category_map["Documentos"], "description": "Emissão de certidões de nascimento"},
-                            {"name": "Certidão de Casamento", "category_id": category_map["Documentos"], "description": "Emissão de certidões de casamento"},
-                            {"name": "Registo de Óbito", "category_id": category_map["Registros"], "description": "Registo de falecimentos"}
+                            {"name": "Registo Civil", "category_id": category_map["Registros"], "description": "Registo de nascimento, casamento e óbito"},
+                            {"name": "Autenticação de Documentos", "category_id": category_map["Documentos"], "description": "Autenticação de documentos oficiais"}
                         ],
                         "branches": [
                             {
                                 "name": "Conservatória Ingombota",
-                                "location": "Avenida Lenine, Ingombota, Luanda",
+                                "location": "Rua Rainha Ginga, Ingombota, Luanda",
                                 "neighborhood": "Ingombota",
                                 "latitude": -8.8167,
                                 "longitude": 13.2332,
                                 "departments": [
                                     {
-                                        "name": "Atendimento Registral",
+                                        "name": "Atendimento Administrativo",
                                         "sector": "Administrativo",
                                         "queues": [
                                             {
@@ -1281,63 +1959,24 @@ def populate_initial_data(app):
                                                 "service_name": "Registo Comercial",
                                                 "prefix": "RC",
                                                 "daily_limit": 100,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 100,
                                                 "num_counters": 4,
                                                 "tags": ["Administrativo", "Registros"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Autenticação de Documentos",
-                                                "prefix": "AD",
-                                                "daily_limit": 90,
-                                                "num_counters": 3,
-                                                "tags": ["Administrativo", "Autenticação"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "Conservatória Cazenga",
-                                "location": "Rua dos Combatentes, Cazenga, Luanda",
-                                "neighborhood": "Cazenga",
-                                "latitude": -8.8500,
-                                "longitude": 13.2833,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento Registral",
-                                        "sector": "Administrativo",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Comercial",
-                                                "prefix": "RC",
-                                                "daily_limit": 100,
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
                                                 "num_counters": 5,
                                                 "tags": ["Administrativo", "Registros", "24h"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
-                                                "tags": ["Administrativo", "Registros"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
                                                 "service_name": "Autenticação de Documentos",
                                                 "prefix": "AD",
-                                                "daily_limit": 90,
+                                                "daily_limit": 80,
                                                 "num_counters": 3,
-                                                "tags": ["Administrativo", "Autenticação"]
+                                                "tags": ["Administrativo", "Documentos"]
                                             }
                                         ]
                                     }
@@ -1345,13 +1984,13 @@ def populate_initial_data(app):
                             },
                             {
                                 "name": "Conservatória Talatona",
-                                "location": "Rua Principal, Talatona, Luanda",
+                                "location": "Via Expressa, Talatona, Luanda",
                                 "neighborhood": "Talatona",
-                                "latitude": -8.9167,
-                                "longitude": 13.1833,
+                                "latitude": -8.9180,
+                                "longitude": 13.1840,
                                 "departments": [
                                     {
-                                        "name": "Atendimento Registral",
+                                        "name": "Atendimento Administrativo",
                                         "sector": "Administrativo",
                                         "queues": [
                                             {
@@ -1359,63 +1998,24 @@ def populate_initial_data(app):
                                                 "service_name": "Registo Comercial",
                                                 "prefix": "RC",
                                                 "daily_limit": 100,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 100,
                                                 "num_counters": 4,
                                                 "tags": ["Administrativo", "Registros"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Autenticação de Documentos",
-                                                "prefix": "AD",
-                                                "daily_limit": 90,
-                                                "num_counters": 3,
-                                                "tags": ["Administrativo", "Autenticação"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "Conservatória Kilamba",
-                                "location": "Avenida do Kilamba, Kilamba, Luanda",
-                                "neighborhood": "Kilamba",
-                                "latitude": -8.9333,
-                                "longitude": 13.2667,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento Registral",
-                                        "sector": "Administrativo",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Comercial",
-                                                "prefix": "RC",
-                                                "daily_limit": 100,
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
                                                 "num_counters": 5,
                                                 "tags": ["Administrativo", "Registros", "24h"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
-                                                "tags": ["Administrativo", "Registros"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
                                                 "service_name": "Autenticação de Documentos",
                                                 "prefix": "AD",
-                                                "daily_limit": 90,
+                                                "daily_limit": 80,
                                                 "num_counters": 3,
-                                                "tags": ["Administrativo", "Autenticação"]
+                                                "tags": ["Administrativo", "Documentos"]
                                             }
                                         ]
                                     }
@@ -1425,11 +2025,11 @@ def populate_initial_data(app):
                                 "name": "Conservatória Viana",
                                 "location": "Rua Principal, Viana, Luanda",
                                 "neighborhood": "Viana",
-                                "latitude": -8.9035,
-                                "longitude": 13.3741,
+                                "latitude": -8.9040,
+                                "longitude": 13.3750,
                                 "departments": [
                                     {
-                                        "name": "Atendimento Registral",
+                                        "name": "Atendimento Administrativo",
                                         "sector": "Administrativo",
                                         "queues": [
                                             {
@@ -1437,24 +2037,141 @@ def populate_initial_data(app):
                                                 "service_name": "Registo Comercial",
                                                 "prefix": "RC",
                                                 "daily_limit": 100,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
                                                 "service_name": "Registo Civil",
                                                 "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Kilamba",
+                                "location": "Avenida do Kilamba, Kilamba, Luanda",
+                                "neighborhood": "Kilamba",
+                                "latitude": -8.9340,
+                                "longitude": 13.2670,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
                                                 "daily_limit": 100,
                                                 "num_counters": 4,
                                                 "tags": ["Administrativo", "Registros"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
                                                 "service_name": "Autenticação de Documentos",
                                                 "prefix": "AD",
-                                                "daily_limit": 90,
+                                                "daily_limit": 80,
                                                 "num_counters": 3,
-                                                "tags": ["Administrativo", "Autenticação"]
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Cazenga",
+                                "location": "Avenida dos Combatentes, Cazenga, Luanda",
+                                "neighborhood": "Cazenga",
+                                "latitude": -8.8510,
+                                "longitude": 13.2840,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Maianga",
+                                "location": "Rua Joaquim Kapango, Maianga, Luanda",
+                                "neighborhood": "Maianga",
+                                "latitude": -8.8150,
+                                "longitude": 13.2310,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
                                             }
                                         ]
                                     }
@@ -1468,7 +2185,7 @@ def populate_initial_data(app):
                                 "longitude": 13.2500,
                                 "departments": [
                                     {
-                                        "name": "Atendimento Registral",
+                                        "name": "Atendimento Administrativo",
                                         "sector": "Administrativo",
                                         "queues": [
                                             {
@@ -1476,38 +2193,38 @@ def populate_initial_data(app):
                                                 "service_name": "Registo Comercial",
                                                 "prefix": "RC",
                                                 "daily_limit": 100,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 100,
                                                 "num_counters": 4,
                                                 "tags": ["Administrativo", "Registros"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
                                                 "service_name": "Autenticação de Documentos",
                                                 "prefix": "AD",
-                                                "daily_limit": 90,
+                                                "daily_limit": 80,
                                                 "num_counters": 3,
-                                                "tags": ["Administrativo", "Autenticação"]
+                                                "tags": ["Administrativo", "Documentos"]
                                             }
                                         ]
                                     }
                                 ]
                             },
                             {
-                                "name": "Conservatória Maculusso",
-                                "location": "Rua Principal, Maculusso, Luanda",
-                                "neighborhood": "Maculusso",
-                                "latitude": -8.8150,
-                                "longitude": 13.2350,
+                                "name": "Conservatória Samba",
+                                "location": "Rua Principal, Samba, Luanda",
+                                "neighborhood": "Samba",
+                                "latitude": -8.8200,
+                                "longitude": 13.2400,
                                 "departments": [
                                     {
-                                        "name": "Atendimento Registral",
+                                        "name": "Atendimento Administrativo",
                                         "sector": "Administrativo",
                                         "queues": [
                                             {
@@ -1515,38 +2232,272 @@ def populate_initial_data(app):
                                                 "service_name": "Registo Comercial",
                                                 "prefix": "RC",
                                                 "daily_limit": 100,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 100,
                                                 "num_counters": 4,
                                                 "tags": ["Administrativo", "Registros"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
                                                 "service_name": "Autenticação de Documentos",
                                                 "prefix": "AD",
-                                                "daily_limit": 90,
+                                                "daily_limit": 80,
                                                 "num_counters": 3,
-                                                "tags": ["Administrativo", "Autenticação"]
+                                                "tags": ["Administrativo", "Documentos"]
                                             }
                                         ]
                                     }
                                 ]
                             },
                             {
-                                "name": "Conservatória Alvalade",
-                                "location": "Rua Principal, Alvalade, Luanda",
-                                "neighborhood": "Alvalade",
-                                "latitude": -8.8250,
+                                "name": "Conservatória Cacuaco",
+                                "location": "Rua Principal, Cacuaco, Luanda",
+                                "neighborhood": "Cacuaco",
+                                "latitude": -8.7767,
+                                "longitude": 13.3667,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Benfica",
+                                "location": "Rua Principal, Benfica, Luanda",
+                                "neighborhood": "Benfica",
+                                "latitude": -8.9500,
+                                "longitude": 13.1500,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Zango",
+                                "location": "Rua Principal, Zango, Luanda",
+                                "neighborhood": "Zango",
+                                "latitude": -8.9200,
+                                "longitude": 13.4000,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Patriota",
+                                "location": "Rua Principal, Patriota, Luanda",
+                                "neighborhood": "Patriota",
+                                "latitude": -8.9000,
+                                "longitude": 13.2000,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Golfe",
+                                "location": "Rua Principal, Golfe, Luanda",
+                                "neighborhood": "Golfe",
+                                "latitude": -8.8700,
+                                "longitude": 13.2700,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Camama",
+                                "location": "Rua Principal, Camama, Luanda",
+                                "neighborhood": "Camama",
+                                "latitude": -8.8900,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Prenda",
+                                "location": "Rua Principal, Prenda, Luanda",
+                                "neighborhood": "Prenda",
+                                "latitude": -8.8300,
                                 "longitude": 13.2300,
                                 "departments": [
                                     {
-                                        "name": "Atendimento Registral",
+                                        "name": "Atendimento Administrativo",
                                         "sector": "Administrativo",
                                         "queues": [
                                             {
@@ -1554,102 +2505,24 @@ def populate_initial_data(app):
                                                 "service_name": "Registo Comercial",
                                                 "prefix": "RC",
                                                 "daily_limit": 100,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 100,
                                                 "num_counters": 4,
                                                 "tags": ["Administrativo", "Registros"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Autenticação de Documentos",
-                                                "prefix": "AD",
-                                                "daily_limit": 90,
-                                                "num_counters": 3,
-                                                "tags": ["Administrativo", "Autenticação"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "Conservatória Miramar",
-                                "location": "Rua Principal, Miramar, Luanda",
-                                "neighborhood": "Miramar",
-                                "latitude": -8.8100,
-                                "longitude": 13.2200,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento Registral",
-                                        "sector": "Administrativo",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Comercial",
-                                                "prefix": "RC",
-                                                "daily_limit": 100,
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
                                                 "num_counters": 5,
                                                 "tags": ["Administrativo", "Registros", "24h"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
-                                                "tags": ["Administrativo", "Registros"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
                                                 "service_name": "Autenticação de Documentos",
                                                 "prefix": "AD",
-                                                "daily_limit": 90,
+                                                "daily_limit": 80,
                                                 "num_counters": 3,
-                                                "tags": ["Administrativo", "Autenticação"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "Conservatória Bairro Operário",
-                                "location": "Rua Principal, Bairro Operário, Luanda",
-                                "neighborhood": "Bairro Operário",
-                                "latitude": -8.8200,
-                                "longitude": 13.2450,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento Registral",
-                                        "sector": "Administrativo",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Comercial",
-                                                "prefix": "RC",
-                                                "daily_limit": 100,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
-                                                "tags": ["Administrativo", "Registros"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Autenticação de Documentos",
-                                                "prefix": "AD",
-                                                "daily_limit": 90,
-                                                "num_counters": 3,
-                                                "tags": ["Administrativo", "Autenticação"]
+                                                "tags": ["Administrativo", "Documentos"]
                                             }
                                         ]
                                     }
@@ -1658,6 +2531,7 @@ def populate_initial_data(app):
                         ]
                     }
                 ]
+                
 
                 # --------------------------------------
                 # Funções Auxiliares para Criação de Entidades
