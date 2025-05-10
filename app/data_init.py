@@ -3559,12 +3559,13 @@ def populate_initial_data(app):
                         user = User(
                             id=str(uuid.uuid4()),
                             email=email,
-                            password=hash_password(password),
-                            role=role,
+                            name=f"{role.value} {email.split('@')[0]}",
+                            password_hash=hash_password(password),
+                            user_role=role,
                             institution_id=institution_id,
                             branch_id=branch_id,
-                    
-                            is_client=False
+                            created_at=datetime.utcnow(),
+                            active=True
                         )
                         db.session.add(user)
                         db.session.flush()
@@ -3612,7 +3613,6 @@ def populate_initial_data(app):
                                 institution_id=inst.id,
                                 branch_id=branch.id
                             )
-
                 # --------------------------------------
                 # Commit das alterações
                 # --------------------------------------
