@@ -1,10 +1,11 @@
 from flask import jsonify, request, make_response
 from . import db
-from .models import User, UserRole, Queue, Department, Institution, Branch
+from .models import User, UserRole, Queue, Department, Institution, Branch, BranchSchedule, Weekday
 import logging
 import jwt
 import os
 from datetime import datetime, timedelta
+import pytz
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -68,24 +69,50 @@ def init_user_routes(app):
                 "email": user.email
             }
 
+            # Função auxiliar para obter horários da filial
+            def get_branch_schedule(branch_id, now=None):
+                if not now:
+                    local_tz = pytz.timezone('Africa/Luanda')
+                    now = datetime.now(local_tz)
+                weekday_str = now.strftime('%A').upper()
+                try:
+                    weekday_enum = Weekday[weekday_str]
+                except KeyError:
+                    logger.error(f"Dia da semana inválido: {weekday_str}")
+                    return None, None
+                schedule = BranchSchedule.query.filter_by(
+                    branch_id=branch_id,
+                    weekday=weekday_enum
+                ).first()
+                if schedule and not schedule.is_closed:
+                    return (
+                        schedule.open_time.strftime('%H:%M') if schedule.open_time else None,
+                        schedule.end_time.strftime('%H:%M') if schedule.end_time else None
+                    )
+                return None, None
+
             if user.user_role == UserRole.ATTENDANT:
                 if not user.branch_id:
                     logger.warning(f"Atendente {user.id} não vinculado a filial")
                     return jsonify({"error": "Atendente não vinculado a uma filial"}), 403
                 # Buscar filas da filial
                 queues = Queue.query.join(Department).filter(Department.branch_id == user.branch_id).all()
-                response_data["queues"] = [{
-                    'id': q.id,
-                    'service': q.service.name if q.service else 'N/A',
-                    'prefix': q.prefix,
-                    'department': q.department.name if q.department else 'N/A',
-                    'active_tickets': q.active_tickets,
-                    'daily_limit': q.daily_limit,
-                    'current_ticket': q.current_ticket,
-                    'status': 'Aberto' if q.active_tickets < q.daily_limit else 'Lotado',
-                    'open_time': q.open_time.strftime('%H:%M') if q.open_time else None,
-                    'end_time': q.end_time.strftime('%H:%M') if q.end_time else None
-                } for q in queues]
+                response_data["queues"] = []
+                for q in queues:
+                    # Obter horários da filial
+                    open_time, end_time = get_branch_schedule(user.branch_id)
+                    response_data["queues"].append({
+                        'id': q.id,
+                        'service': q.service.name if q.service else 'N/A',
+                        'prefix': q.prefix,
+                        'department': q.department.name if q.department else 'N/A',
+                        'active_tickets': q.active_tickets,
+                        'daily_limit': q.daily_limit,
+                        'current_ticket': q.current_ticket,
+                        'status': 'Aberto' if q.active_tickets < q.daily_limit else 'Lotado',
+                        'open_time': open_time,
+                        'end_time': end_time
+                    })
 
             elif user.user_role == UserRole.BRANCH_ADMIN:
                 if not user.branch_id:
@@ -99,18 +126,22 @@ def init_user_routes(app):
                     'sector': d.sector
                 } for d in departments]
                 queues = Queue.query.join(Department).filter(Department.branch_id == user.branch_id).all()
-                response_data["queues"] = [{
-                    'id': q.id,
-                    'service': q.service.name if q.service else 'N/A',
-                    'prefix': q.prefix,
-                    'department': q.department.name if q.department else 'N/A',
-                    'active_tickets': q.active_tickets,
-                    'daily_limit': q.daily_limit,
-                    'current_ticket': q.current_ticket,
-                    'status': 'Aberto' if q.active_tickets < q.daily_limit else 'Lotado',
-                    'open_time': q.open_time.strftime('%H:%M') if q.open_time else None,
-                    'end_time': q.end_time.strftime('%H:%M') if q.end_time else None
-                } for q in queues]
+                response_data["queues"] = []
+                for q in queues:
+                    # Obter horários da filial
+                    open_time, end_time = get_branch_schedule(user.branch_id)
+                    response_data["queues"].append({
+                        'id': q.id,
+                        'service': q.service.name if q.service else 'N/A',
+                        'prefix': q.prefix,
+                        'department': q.department.name if q.department else 'N/A',
+                        'active_tickets': q.active_tickets,
+                        'daily_limit': q.daily_limit,
+                        'current_ticket': q.current_ticket,
+                        'status': 'Aberto' if q.active_tickets < q.daily_limit else 'Lotado',
+                        'open_time': open_time,
+                        'end_time': end_time
+                    })
                 # Buscar atendentes da filial
                 attendants = User.query.filter_by(branch_id=user.branch_id, user_role=UserRole.ATTENDANT).all()
                 response_data["attendants"] = [{
