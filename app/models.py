@@ -148,6 +148,7 @@ class Queue(db.Model):
     department = relationship('Department', backref=db.backref('queues', lazy='dynamic'))
     service = relationship('InstitutionService', backref=db.backref('queues', lazy='dynamic'))
     default_attendant = relationship('User', backref=db.backref('default_queues', lazy='dynamic'))
+    attendants = relationship('User', secondary='attendant_queue', backref=db.backref('queues', lazy='dynamic'))
     
     def update_estimated_wait_time(self):
         from .ml_models import wait_time_predictor
@@ -219,6 +220,15 @@ class User(db.Model):
     
     def __repr__(self):
         return f'<User {self.email} ({self.user_role.value})>'
+
+# Tabela de associação entre atendentes e filas
+class AttendantQueue(db.Model):
+    __tablename__ = 'attendant_queue'
+    user_id = Column(String(36), ForeignKey('user.id'), primary_key=True)
+    queue_id = Column(String(36), ForeignKey('queue.id'), primary_key=True)
+    
+    def __repr__(self):
+        return f'<AttendantQueue user_id={self.user_id} queue_id={self.queue_id}>'
 
 # Tabela para logs de auditoria
 class AuditLog(db.Model):
