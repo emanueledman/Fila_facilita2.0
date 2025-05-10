@@ -83,6 +83,7 @@ def populate_initial_data(app):
                         {"name": "Saúde", "description": "Serviços de saúde e atendimento médico", "parent_id": None},
                         {"name": "Consulta Médica", "description": "Consultas gerais e especializadas", "parent_id": None},
                         {"name": "Exames", "description": "Exames laboratoriais e diagnósticos", "parent_id": None},
+                        {"name": "Licenças", "description": "Renovação de Licenças", "parent_id": None},
                         {"name": "Triagem", "description": "Triagem e atendimento inicial", "parent_id": None},
                         {"name": "Internamento", "description": "Serviços de internamento hospitalar", "parent_id": None},
                         {"name": "Cirurgia", "description": "Procedimentos cirúrgicos", "parent_id": None},
