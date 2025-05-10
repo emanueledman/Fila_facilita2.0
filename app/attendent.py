@@ -34,7 +34,7 @@ def init_attendant_routes(app):
         if not user:
             logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
             return jsonify({'error': 'Usuário não encontrado'}), 404
-        if user.user_role != 'ATTENDANT':
+        if user.user_role != 'attendant':
             logger.warning(f"Tentativa não autorizada de acessar /api/attendant/user por user_id={request.user_id}, role={user.user_role}")
             return jsonify({'error': 'Acesso restrito a atendentes'}), 403
 
@@ -63,7 +63,7 @@ def init_attendant_routes(app):
         if not user:
             logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
             return jsonify({'error': 'Usuário não encontrado'}), 404
-        if user.user_role != 'ATTENDANT':
+        if user.user_role != 'attendant':
             logger.warning(f"Tentativa não autorizada de acessar /api/attendant/queues por user_id={request.user_id}, role={user.user_role}")
             return jsonify({'error': 'Acesso restrito a atendentes'}), 403
 
@@ -113,7 +113,7 @@ def init_attendant_routes(app):
         if not user:
             logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
             return jsonify({'error': 'Usuário não encontrado'}), 404
-        if user.user_role != 'ATTENDANT':
+        if user.user_role != 'attendant':
             logger.warning(f"Tentativa não autorizada de acessar /api/attendant/tickets por user_id={request.user_id}, role={user.user_role}")
             return jsonify({'error': 'Acesso restrito a atendentes'}), 403
 
@@ -167,7 +167,7 @@ def init_attendant_routes(app):
         if not user:
             logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
             return jsonify({'error': 'Usuário não encontrado'}), 404
-        if user.user_role != 'ATTENDANT':
+        if user.user_role != 'attendant':
             logger.warning(f"Tentativa não autorizada de acessar /api/attendant/recent-calls por user_id={request.user_id}, role={user.user_role}")
             return jsonify({'error': 'Acesso restrito a atendentes'}), 403
 
