@@ -1,6 +1,6 @@
 from flask import jsonify, request, send_file
 from . import db, socketio, redis_client
-from .models import User, Queue, Ticket, Department, Institution, UserRole, Branch, ServiceCategory, ServiceTag, UserPreference
+from .models import AuditLog, InstitutionType, User, Queue, Ticket, Department, Institution, UserRole, Branch, ServiceCategory, ServiceTag, UserPreference
 from .auth import require_auth
 from .services import QueueService
 from .ml_models import wait_time_predictor
@@ -39,25 +39,32 @@ def init_admin_routes(app):
             return jsonify({'error': 'Acesso restrito a super administradores'}), 403
 
         data = request.get_json()
-        required = ['name']
+        required = ['name', 'institution_type_id', 'max_branches']
         if not data or not all(f in data for f in required):
             logger.warning("Campos obrigatórios faltando na criação de instituição")
-            return jsonify({'error': 'Campos obrigatórios faltando: name'}), 400
+            return jsonify({'error': 'Campos obrigatórios faltando: name, institution_type_id, max_branches'}), 400
 
         # Validações
         if not re.match(r'^[A-Za-zÀ-ÿ\s0-9.,-]{1,100}$', data['name']):
             logger.warning(f"Nome inválido para instituição: {data['name']}")
             return jsonify({'error': 'Nome da instituição inválido'}), 400
-
         if Institution.query.filter_by(name=data['name']).first():
             logger.warning(f"Instituição com nome {data['name']} já existe")
             return jsonify({'error': 'Instituição com este nome já existe'}), 400
+        if not InstitutionType.query.get(data['institution_type_id']):
+            logger.warning(f"Tipo de instituição {data['institution_type_id']} não encontrado")
+            return jsonify({'error': 'Tipo de instituição inválido'}), 400
+        if not isinstance(data['max_branches'], int) or data['max_branches'] < 1:
+            logger.warning(f"Limite de filiais inválido: {data['max_branches']}")
+            return jsonify({'error': 'O limite de filiais deve ser um número inteiro maior que 0'}), 400
 
         try:
             institution = Institution(
                 id=str(uuid.uuid4()),
                 name=data['name'],
-                description=data.get('description')
+                institution_type_id=data['institution_type_id'],
+                description=data.get('description'),
+                max_branches=data['max_branches']
             )
             db.session.add(institution)
             db.session.commit()
@@ -65,16 +72,26 @@ def init_admin_routes(app):
             socketio.emit('institution_created', {
                 'institution_id': institution.id,
                 'name': institution.name,
-                'description': institution.description
+                'description': institution.description,
+                'max_branches': institution.max_branches
             }, namespace='/admin')
+            AuditLog.create(
+                user_id=user.id,
+                action='create_institution',
+                resource_type='institution',
+                resource_id=institution.id,
+                details=f"Criada instituição {institution.name} com limite de {institution.max_branches} filiais"
+            )
             logger.info(f"Instituição {institution.name} criada por user_id={user.id}")
-            redis_client.delete(f"cache:search:*")  # Invalida cache de busca
+            redis_client.delete(f"cache:search:*")
             return jsonify({
                 'message': 'Instituição criada com sucesso',
                 'institution': {
                     'id': institution.id,
                     'name': institution.name,
-                    'description': institution.description
+                    'description': institution.description,
+                    'institution_type_id': institution.institution_type_id,
+                    'max_branches': institution.max_branches
                 }
             }), 201
         except Exception as e:
@@ -104,29 +121,55 @@ def init_admin_routes(app):
         if 'name' in data and not re.match(r'^[A-Za-zÀ-ÿ\s0-9.,-]{1,100}$', data['name']):
             logger.warning(f"Nome inválido para instituição: {data['name']}")
             return jsonify({'error': 'Nome da instituição inválido'}), 400
+        if 'name' in data and data['name'] != institution.name and Institution.query.filter_by(name=data['name']).first():
+            logger.warning(f"Instituição com nome {data['name']} já existe")
+            return jsonify({'error': 'Instituição com este nome já existe'}), 400
+        if 'institution_type_id' in data and not InstitutionType.query.get(data['institution_type_id']):
+            logger.warning(f"Tipo de instituição {data['institution_type_id']} não encontrado")
+            return jsonify({'error': 'Tipo de instituição inválido'}), 400
+        if 'max_branches' in data:
+            if not isinstance(data['max_branches'], int) or data['max_branches'] < 1:
+                logger.warning(f"Limite de filiais inválido: {data['max_branches']}")
+                return jsonify({'error': 'O limite de filiais deve ser um número inteiro maior que 0'}), 400
+            current_branches = Branch.query.filter_by(institution_id=institution_id).count()
+            if data['max_branches'] < current_branches:
+                logger.warning(f"Limite de filiais {data['max_branches']} menor que o número atual de filiais ({current_branches})")
+                return jsonify({'error': f'O limite de filiais não pode ser menor que o número atual de filiais ({current_branches})'}), 400
 
         try:
-            if 'name' in data and data['name'] != institution.name:
-                if Institution.query.filter_by(name=data['name']).first():
-                    logger.warning(f"Instituição com nome {data['name']} já existe")
-                    return jsonify({'error': 'Instituição com este nome já existe'}), 400
+            if 'name' in data:
                 institution.name = data['name']
+            if 'institution_type_id' in data:
+                institution.institution_type_id = data['institution_type_id']
             institution.description = data.get('description', institution.description)
+            if 'max_branches' in data:
+                institution.max_branches = data['max_branches']
             db.session.commit()
 
             socketio.emit('institution_updated', {
                 'institution_id': institution.id,
                 'name': institution.name,
-                'description': institution.description
+                'description': institution.description,
+                'institution_type_id': institution.institution_type_id,
+                'max_branches': institution.max_branches
             }, namespace='/admin')
+            AuditLog.create(
+                user_id=user.id,
+                action='update_institution',
+                resource_type='institution',
+                resource_id=institution.id,
+                details=f"Atualizada instituição {institution.name} com limite de {institution.max_branches} filiais"
+            )
             logger.info(f"Instituição {institution.name} atualizada por user_id={user.id}")
-            redis_client.delete(f"cache:search:*")  # Invalida cache de busca
+            redis_client.delete(f"cache:search:*")
             return jsonify({
                 'message': 'Instituição atualizada com sucesso',
                 'institution': {
                     'id': institution.id,
                     'name': institution.name,
-                    'description': institution.description
+                    'description': institution.description,
+                    'institution_type_id': institution.institution_type_id,
+                    'max_branches': institution.max_branches
                 }
             }), 200
         except Exception as e:
@@ -159,29 +202,111 @@ def init_admin_routes(app):
                 'institution_id': institution_id,
                 'name': institution.name
             }, namespace='/admin')
+            AuditLog.create(
+                user_id=user.id,
+                action='delete_institution',
+                resource_type='institution',
+                resource_id=institution_id,
+                details=f"Excluída instituição {institution.name}"
+            )
             logger.info(f"Instituição {institution.name} excluída por user_id={user.id}")
-            redis_client.delete(f"cache:search:*")  # Invalida cache de busca
+            redis_client.delete(f"cache:search:*")
             return jsonify({'message': 'Instituição excluída com sucesso'}), 200
         except Exception as e:
             db.session.rollback()
             logger.error(f"Erro ao excluir instituição {institution_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao excluir instituição'}), 500
 
-    @app.route('/api/admin/institutions/<institution_id>/branches', methods=['POST'])
+    @app.route('/api/admin/institutions/<institution_id>/admin', methods=['POST'])
     @require_auth
-    def create_branch(institution_id):
+    def create_institution_admin(institution_id):
         user = User.query.get(request.user_id)
-        if not user or not (
-            user.user_role == UserRole.SYSTEM_ADMIN or
-            (user.user_role == UserRole.INSTITUTION_ADMIN and user.institution_id == institution_id)
-        ):
-            logger.warning(f"Tentativa não autorizada de criar filial por user_id={request.user_id}")
-            return jsonify({'error': 'Acesso restrito a super admins ou admins da instituição'}), 403
+        if not user or user.user_role != UserRole.SYSTEM_ADMIN:
+            logger.warning(f"Tentativa não autorizada de criar admin de instituição por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a super administradores'}), 403
 
         institution = Institution.query.get(institution_id)
         if not institution:
             logger.warning(f"Instituição {institution_id} não encontrada")
             return jsonify({'error': 'Instituição não encontrada'}), 404
+
+        data = request.get_json()
+        required = ['email', 'name', 'password']
+        if not data or not all(f in data for f in required):
+            logger.warning("Campos obrigatórios faltando na criação de admin de instituição")
+            return jsonify({'error': 'Campos obrigatórios faltando: email, name, password'}), 400
+
+        # Validações
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', data['email']):
+            logger.warning(f"Email inválido: {data['email']}")
+            return jsonify({'error': 'Email inválido'}), 400
+        if len(data['password']) < 8:
+            logger.warning("Senha muito curta fornecida na criação de admin")
+            return jsonify({'error': 'A senha deve ter pelo menos 8 caracteres'}), 400
+
+        if User.query.filter_by(email=data['email']).first():
+            logger.warning(f"Usuário com email {data['email']} já existe")
+            return jsonify({'error': 'Usuário com este email já existe'}), 400
+
+        try:
+            admin = User(
+                id=str(uuid.uuid4()),
+                email=data['email'],
+                name=data['name'],
+                user_role=UserRole.INSTITUTION_ADMIN,
+                institution_id=institution_id,
+                active=True
+            )
+            admin.set_password(data['password'])
+            db.session.add(admin)
+            db.session.commit()
+
+            socketio.emit('user_created', {
+                'user_id': admin.id,
+                'email': admin.email,
+                'role': admin.user_role.value,
+                'institution_id': institution_id
+            }, namespace='/admin')
+            QueueService.send_fcm_notification(admin.id, f"Bem-vindo ao Facilita 2.0 como administrador da instituição {institution.name}")
+            AuditLog.create(
+                user_id=user.id,
+                action='create_institution_admin',
+                resource_type='user',
+                resource_id=admin.id,
+                details=f"Criado admin {admin.email} para instituição {institution.name}"
+            )
+            logger.info(f"Admin de instituição {admin.email} criado para {institution.name} por user_id={user.id}")
+            return jsonify({
+                'message': 'Administrador de instituição criado com sucesso',
+                'user': {
+                    'id': admin.id,
+                    'email': admin.email,
+                    'name': admin.name,
+                    'role': admin.user_role.value
+                }
+            }), 201
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao criar admin de instituição: {str(e)}")
+            return jsonify({'error': 'Erro interno ao criar administrador'}), 500
+
+    @app.route('/api/admin/institutions/<institution_id>/branches', methods=['POST'])
+    @require_auth
+    def create_branch(institution_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.INSTITUTION_ADMIN or user.institution_id != institution_id:
+            logger.warning(f"Tentativa não autorizada de criar filial por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores da instituição'}), 403
+
+        institution = Institution.query.get(institution_id)
+        if not institution:
+            logger.warning(f"Instituição {institution_id} não encontrada")
+            return jsonify({'error': 'Instituição não encontrada'}), 404
+
+        current_branches = Branch.query.filter_by(institution_id=institution_id).count()
+        if current_branches >= institution.max_branches:
+            logger.warning(f"Limite de filiais atingido para instituição {institution_id}: {current_branches}/{institution.max_branches}")
+            return jsonify({'error': f'Limite de filiais atingido ({institution.max_branches})'}), 400
 
         data = request.get_json()
         required = ['name', 'location', 'neighborhood', 'latitude', 'longitude']
@@ -230,6 +355,13 @@ def init_admin_routes(app):
                 'institution_id': institution_id
             }, namespace='/admin')
             QueueService.send_fcm_notification(user.id, f"Filial {branch.name} criada com sucesso na instituição {institution.name}")
+            AuditLog.create(
+                user_id=user.id,
+                action='create_branch',
+                resource_type='branch',
+                resource_id=branch.id,
+                details=f"Criada filial {branch.name} na instituição {institution.name}"
+            )
             logger.info(f"Filial {branch.name} criada por user_id={user.id}")
             redis_client.delete(f"cache:search:*")
             return jsonify({
@@ -364,71 +496,6 @@ def init_admin_routes(app):
             logger.error(f"Erro ao listar filiais para user_id={user.id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao listar filiais'}), 500
 
-    @app.route('/api/admin/institutions/<institution_id>/admin', methods=['POST'])
-    @require_auth
-    def create_institution_admin(institution_id):
-        user = User.query.get(request.user_id)
-        if not user or user.user_role != UserRole.SYSTEM_ADMIN:
-            logger.warning(f"Tentativa não autorizada de criar admin de instituição por user_id={request.user_id}")
-            return jsonify({'error': 'Acesso restrito a super administradores'}), 403
-
-        institution = Institution.query.get(institution_id)
-        if not institution:
-            logger.warning(f"Instituição {institution_id} não encontrada")
-            return jsonify({'error': 'Instituição não encontrada'}), 404
-
-        data = request.get_json()
-        required = ['email', 'name', 'password']
-        if not data or not all(f in data for f in required):
-            logger.warning("Campos obrigatórios faltando na criação de admin de instituição")
-            return jsonify({'error': 'Campos obrigatórios faltando: email, name, password'}), 400
-
-        # Validações
-        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', data['email']):
-            logger.warning(f"Email inválido: {data['email']}")
-            return jsonify({'error': 'Email inválido'}), 400
-        if len(data['password']) < 8:
-            logger.warning("Senha muito curta fornecida na criação de admin")
-            return jsonify({'error': 'A senha deve ter pelo menos 8 caracteres'}), 400
-
-        if User.query.filter_by(email=data['email']).first():
-            logger.warning(f"Usuário com email {data['email']} já existe")
-            return jsonify({'error': 'Usuário com este email já existe'}), 400
-
-        try:
-            admin = User(
-                id=str(uuid.uuid4()),
-                email=data['email'],
-                name=data['name'],
-                user_role=UserRole.INSTITUTION_ADMIN,
-                institution_id=institution_id,
-                active=True
-            )
-            admin.set_password(data['password'])
-            db.session.add(admin)
-            db.session.commit()
-
-            socketio.emit('user_created', {
-                'user_id': admin.id,
-                'email': admin.email,
-                'role': admin.user_role.value,
-                'institution_id': institution_id
-            }, namespace='/admin')
-            QueueService.send_fcm_notification(admin.id, f"Bem-vindo ao Facilita 2.0 como administrador da instituição {institution.name}")
-            logger.info(f"Admin de instituição {admin.email} criado para {institution.name} por user_id={user.id}")
-            return jsonify({
-                'message': 'Administrador de instituição criado com sucesso',
-                'user': {
-                    'id': admin.id,
-                    'email': admin.email,
-                    'name': admin.name,
-                    'role': admin.user_role.value
-                }
-            }), 201
-        except Exception as e:
-            db.session.rollback()
-            logger.error(f"Erro ao criar admin de instituição: {str(e)}")
-            return jsonify({'error': 'Erro interno ao criar administrador'}), 500
 
     @app.route('/api/admin/institutions/<institution_id>/users/<user_id>', methods=['PUT'])
     @require_auth

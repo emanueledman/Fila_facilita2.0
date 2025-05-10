@@ -80,6 +80,9 @@ class Institution(db.Model):
     institution_type_id = Column(String(36), ForeignKey('institution_type.id'), nullable=False, index=True)
     description = Column(Text, nullable=True)
     logo_url = Column(String(255), nullable=True)
+    max_branches = Column(Integer, nullable=False, default=5)  # Novo campo: limite de filiais
+    created_at = Column(DateTime, default=datetime.utcnow)  # Para auditoria
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     def __repr__(self):
         return f'<Institution {self.name} ({self.type.name})>'
