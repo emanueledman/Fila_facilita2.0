@@ -3473,36 +3473,38 @@ def populate_initial_data(app):
                         department = Department.query.filter_by(branch_id=branch.id, name=dept_data["name"]).first()
                     return department
 
-                def create_queue(department, queue_data):
-                    if not exists(Queue, department_id=department.id, service_name=queue_data["service_name"]):
-                        queue = Queue(
+
+                def create_queue(department_id, queue_data, service_id):
+                    if not exists(Queue, id=queue_data["id"]):
+                        is_24h = "24h" in queue_data["tags"]
+                        q = Queue(
                             id=queue_data["id"],
-                            department_id=department.id,
-                            service_id=InstitutionService.query.filter_by(institution_id=department.branch.institution_id, name=queue_data["service_name"]).first().id,
+                            department_id=department_id,
+                            service_id=service_id,
                             prefix=queue_data["prefix"],
                             daily_limit=queue_data["daily_limit"],
-                            num_counters=queue_data["num_counters"],
                             active_tickets=0,
                             current_ticket=0,
                             avg_wait_time=5.0,
                             last_service_time=2.0,
+                            num_counters=queue_data["num_counters"],
                             last_counter=0
                         )
-                        db.session.add(queue)
+                        db.session.add(q)
                         db.session.flush()
                         for tag in queue_data["tags"]:
-                            if not exists(ServiceTag, queue_id=queue.id, tag=tag):
-                                service_tag = ServiceTag(
+                            if not exists(ServiceTag, queue_id=q.id, tag=tag):
+                                st = ServiceTag(
                                     id=str(uuid.uuid4()),
-                                    queue_id=queue.id,
+                                    queue_id=q.id,
                                     tag=tag
                                 )
-                                db.session.add(service_tag)
-                                db.session.flush()
-                        app.logger.debug(f"Fila criada: {queue_data['service_name']} para {department.name}")
-                    else:
-                        queue = Queue.query.filter_by(department_id=department.id, service_name=queue_data["service_name"]).first()
-                    return queue
+                                db.session.add(st)
+                                app.logger.debug(f"Tag criada: {tag} para fila {q.id}")
+                        return q
+                    return Queue.query.filter_by(id=queue_data["id"]).first()
+
+                
                 def create_tickets(queue):
                     for i in range(10):
                         ticket_number = f"{queue.prefix}{i+1:03d}"
