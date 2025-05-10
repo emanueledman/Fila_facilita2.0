@@ -914,7 +914,7 @@ class QueueService:
                     distance_msg = f" Você está a {distance:.2f} km." if distance else ""
                     message = (
                         f"Sua vez está próxima! {ticket.queue.service.name}, Senha {ticket.queue.prefix}{ticket.ticket_number}. "
-                        f"Prepare-se em {wait_time} min. Demanda prevista: {predicted_demand:.1f} tickets/h.{distance_msg}"
+                        f"Prepare-se em {wait_time} min. Demanda prevista: {predicted_demand:.1f} senhas/h.{distance_msg}"
                     )
                     QueueService.send_notification(None, message, ticket.id, via_websocket=True, user_id=ticket.user_id)
                 if ticket.user_id != 'PRESENCIAL':

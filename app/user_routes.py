@@ -43,10 +43,10 @@ def init_user_routes(app):
                 logger.warning(f"Senha inválida para email={email}")
                 return jsonify({"error": "Credenciais inválidas"}), 401
 
-            # Verificar se o usuário é dept_admin ou inst_admin
-            if user.user_role not in [UserRole.DEPARTMENT_ADMIN, UserRole.INSTITUTION_ADMIN]:
+            # Permitir ATTENDANT, INSTITUTION_ADMIN e SYSTEM_ADMIN
+            if user.user_role not in [UserRole.ATTENDANT, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
                 logger.warning(f"Usuário {email} tem papel inválido: {user.user_role.value}")
-                return jsonify({"error": "Acesso restrito a administradores de departamento ou instituição"}), 403
+                return jsonify({"error": "Acesso restrito a atendentes, administradores de instituição ou sistema"}), 403
 
             secret_key = os.getenv('JWT_SECRET_KEY', '1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0')
             token = jwt.encode({
@@ -64,20 +64,19 @@ def init_user_routes(app):
                 "user_id": user.id,
                 "user_role": user.user_role.value,
                 "institution_id": user.institution_id,
-                "department_id": user.department_id,
+                "branch_id": user.branch_id,
                 "email": user.email
             }
 
-            if user.user_role == UserRole.DEPARTMENT_ADMIN:
-                if not user.department_id:
-                    logger.warning(f"Gestor {user.id} não vinculado a departamento")
-                    return jsonify({"error": "Gestor não vinculado a um departamento"}), 403
-
-                # Buscar filas do departamento
-                queues = Queue.query.filter_by(department_id=user.department_id).all()
+            if user.user_role == UserRole.ATTENDANT:
+                if not user.branch_id:
+                    logger.warning(f"Atendente {user.id} não vinculado a filial")
+                    return jsonify({"error": "Atendente não vinculado a uma filial"}), 403
+                # Buscar filas da filial
+                queues = Queue.query.join(Department).filter(Department.branch_id == user.branch_id).all()
                 response_data["queues"] = [{
                     'id': q.id,
-                    'service': q.service,
+                    'service': q.service.name,
                     'prefix': q.prefix,
                     'department': q.department.name if q.department else 'N/A',
                     'active_tickets': q.active_tickets,
@@ -92,27 +91,35 @@ def init_user_routes(app):
                 if not user.institution_id:
                     logger.warning(f"Admin {user.id} não vinculado a instituição")
                     return jsonify({"error": "Admin não vinculado a uma instituição"}), 403
-
-                # Buscar departamentos e gestores
+                # Buscar departamentos
                 departments = Department.query.filter_by(institution_id=user.institution_id).all()
                 response_data["departments"] = [{
                     'id': d.id,
                     'name': d.name,
                     'sector': d.sector
                 } for d in departments]
-
-                # Buscar gestores (dept_admin) da instituição
-                managers = User.query.filter_by(
+                # Buscar atendentes da instituição
+                attendants = User.query.filter_by(
                     institution_id=user.institution_id,
-                    user_role=UserRole.DEPARTMENT_ADMIN
+                    user_role=UserRole.ATTENDANT
                 ).all()
-                response_data["managers"] = [{
-                    'id': m.id,
-                    'email': m.email,
-                    'name': m.name,
-                    'department_id': m.department_id,
-                    'department_name': m.department.name if m.department else 'N/A'
-                } for m in managers]
+                response_data["attendants"] = [{
+                    'id': a.id,
+                    'email': a.email,
+                    'name': a.name,
+                    'branch_id': a.branch_id,
+                    'branch_name': a.branch.name if a.branch else 'N/A'
+                } for a in attendants]
+
+            elif user.user_role == UserRole.SYSTEM_ADMIN:
+                # Buscar todas as instituições
+                from .models import Institution
+                institutions = Institution.query.all()
+                response_data["institutions"] = [{
+                    'id': i.id,
+                    'name': i.name,
+                    'type': i.type.name if i.type else 'N/A'
+                } for i in institutions]
 
             response = jsonify(response_data)
             response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
