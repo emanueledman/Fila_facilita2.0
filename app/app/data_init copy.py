@@ -1,3122 +1,20 @@
 import uuid
-from datetime import time, datetime, timedelta
-from .models import AuditLog, Institution, Queue, User, Ticket, Department, UserPreference, UserRole, QueueSchedule, Weekday, Branch, ServiceCategory, ServiceTag
-from . import db
-import os
-from sqlalchemy.exc import SQLAlchemyError
+from datetime import datetime, time, timedelta
+import bcrypt
+from app import db
+from app.models import (
+    InstitutionType, Institution, Branch, BranchSchedule, Department, Queue,
+    InstitutionService, ServiceCategory, ServiceTag, User, UserRole, Ticket, UserPreference,
+    UserBehavior, UserLocationFallback, NotificationLog, AuditLog, Weekday
+)
 
-# Dados de teste fornecidos
-import uuid
-from datetime import time, datetime, timedelta
-from .models import AuditLog, Institution, Queue, User, Ticket, Department, UserPreference, UserRole, QueueSchedule, Weekday, Branch, ServiceCategory, ServiceTag
-from . import db
-import os
-from sqlalchemy.exc import SQLAlchemyError
-
-# Dados de teste expandidos
-institutions_data = [
-    # 1. Hospital Josina Machel (Saúde)
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd094",
-        "name": "Hospital Josina Machel",
-        "description": "Hospital público de referência em Luanda",
-        "branches": [
-            {
-                "name": "Unidade Ingombota",
-                "location": "Rua dos Hospitais, Ingombota, Luanda",
-                "neighborhood": "Ingombota",
-                "latitude": -8.8167,
-                "longitude": 13.2332,
-                "departments": [
-                    {
-                        "name": "Consulta Geral",
-                        "sector": "Saúde",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd095",
-                                "service": "Consulta Geral",
-                                "category_id": None,
-                                "prefix": "CG",
-                                "open_time": time(8, 0),
-                                "end_time": time(17, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Consulta", "Geral", "Saúde"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd105",
-                                "service": "Exames Laboratoriais",
-                                "category_id": None,
-                                "prefix": "EL",
-                                "open_time": time(7, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 15,
-                                "num_counters": 2,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(7, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(7, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(7, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(7, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(7, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Exames", "Laboratório", "Saúde"]
-                            }
-                        ]
-                    },
-                    {
-                        "name": "Emergência",
-                        "sector": "Saúde",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd096",
-                                "service": "Emergência",
-                                "category_id": None,
-                                "prefix": "EM",
-                                "open_time": time(0, 0),
-                                "end_time": time(23, 59),
-                                "daily_limit": 30,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
-                                ],
-                                "tags": ["Emergência", "Saúde"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Unidade Talatona",
-                "location": "Via Expressa, Talatona, Luanda",
-                "neighborhood": "Talatona",
-                "latitude": -8.9167,
-                "longitude": 13.1833,
-                "departments": [
-                    {
-                        "name": "Consulta Geral",
-                        "sector": "Saúde",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd098",
-                                "service": "Consulta Geral",
-                                "category_id": None,
-                                "prefix": "CG",
-                                "open_time": time(8, 0),
-                                "end_time": time(17, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Consulta", "Geral", "Saúde"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Unidade Cazenga",
-                "location": "Rua Principal, Cazenga, Luanda",
-                "neighborhood": "Cazenga",
-                "latitude": -8.8500,
-                "longitude": 13.2833,
-                "departments": [
-                    {
-                        "name": "Consulta Geral",
-                        "sector": "Saúde",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd106",
-                                "service": "Consulta Geral",
-                                "category_id": None,
-                                "prefix": "CG",
-                                "open_time": time(8, 0),
-                                "end_time": time(17, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Consulta", "Geral", "Saúde"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    # 2. Banco de Fomento Angola (Bancário)
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd099",
-        "name": "Banco de Fomento Angola",
-        "description": "Banco comercial em Luanda",
-        "branches": [
-            {
-                "name": "Agência Ingombota",
-                "location": "Avenida 4 de Fevereiro, Ingombota, Luanda",
-                "neighborhood": "Ingombota",
-                "latitude": -8.8167,
-                "longitude": 13.2332,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd100",
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Bancário"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd107",
-                                "service": "Abertura de Conta",
-                                "category_id": None,
-                                "prefix": "AC",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 15,
-                                "num_counters": 2,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Conta", "Bancário"]
-                            }
-                        ]
-                    },
-                    {
-                        "name": "Caixa",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd101",
-                                "service": "Caixa",
-                                "category_id": None,
-                                "prefix": "CX",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 25,
-                                "num_counters": 6,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Caixa", "Bancário"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Talatona",
-                "location": "Condomínio Belas Business Park, Talatona, Luanda",
-                "neighborhood": "Talatona",
-                "latitude": -8.9167,
-                "longitude": 13.1833,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd103",
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Bancário"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Viana",
-                "location": "Estrada de Viana, Viana, Luanda",
-                "neighborhood": "Viana",
-                "latitude": -8.9035,
-                "longitude": 13.3741,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd108",
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Bancário"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    # 3. Unitel Angola (Telecomunicações)
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd109",
-        "name": "Unitel Angola",
-        "description": "Operadora de telecomunicações líder em Angola",
-        "branches": [
-            {
-                "name": "Loja Ingombota",
-                "location": "Avenida Lenine, Ingombota, Luanda",
-                "neighborhood": "Ingombota",
-                "latitude": -8.8167,
-                "longitude": 13.2332,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Telecomunicações",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd110",
-                                "service": "Suporte ao Cliente",
-                                "category_id": None,
-                                "prefix": "SC",
-                                "open_time": time(8, 0),
-                                "end_time": time(18, 0),
-                                "daily_limit": 25,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(13, 0)},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Suporte", "Telecomunicações"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd111",
-                                "service": "Aquisição de Linha",
-                                "category_id": None,
-                                "prefix": "AL",
-                                "open_time": time(8, 0),
-                                "end_time": time(18, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(13, 0)},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Linha", "Telecomunicações"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Loja Talatona",
-                "location": "Belas Shopping, Talatona, Luanda",
-                "neighborhood": "Talatona",
-                "latitude": -8.9167,
-                "longitude": 13.1833,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Telecomunicações",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd112",
-                                "service": "Suporte ao Cliente",
-                                "category_id": None,
-                                "prefix": "SC",
-                                "open_time": time(8, 0),
-                                "end_time": time(18, 0),
-                                "daily_limit": 25,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(13, 0)},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Suporte", "Telecomunicações"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Loja Huambo",
-                "location": "Avenida da Independência, Huambo",
-                "neighborhood": "Cidade Alta",
-                "latitude": -12.7761,
-                "longitude": 15.7392,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Telecomunicações",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd113",
-                                "service": "Suporte ao Cliente",
-                                "category_id": None,
-                                "prefix": "SC",
-                                "open_time": time(8, 0),
-                                "end_time": time(18, 0),
-                                "daily_limit": 25,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(13, 0)},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Suporte", "Telecomunicações"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Loja Lobito",
-                "location": "Rua 15 de Agosto, Lobito, Benguela",
-                "neighborhood": "Comercial",
-                "latitude": -12.3487,
-                "longitude": 13.5465,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Telecomunicações",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd114",
-                                "service": "Suporte ao Cliente",
-                                "category_id": None,
-                                "prefix": "SC",
-                                "open_time": time(8, 0),
-                                "end_time": time(18, 0),
-                                "daily_limit": 25,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(13, 0)},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Suporte", "Telecomunicações"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    # 4. Administração Municipal de Luanda (Administração Pública)
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd115",
-        "name": "Administração Municipal de Luanda",
-        "description": "Serviços administrativos municipais em Luanda",
-        "branches": [
-            {
-                "name": "Sede Ingombota",
-                "location": "Rua Amílcar Cabral, Ingombota, Luanda",
-                "neighborhood": "Ingombota",
-                "latitude": -8.8167,
-                "longitude": 13.2332,
-                "departments": [
-                    {
-                        "name": "Registos",
-                        "sector": "Administração Pública",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd116",
-                                "service": "Emissão de Bilhete de Identidade",
-                                "category_id": None,
-                                "prefix": "BI",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 30,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Bilhete", "Registos", "Administração"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd117",
-                                "service": "Registo de Nascimento",
-                                "category_id": None,
-                                "prefix": "RN",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Nascimento", "Registos", "Administração"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Posto Cazenga",
-                "location": "Rua do Comércio, Cazenga, Luanda",
-                "neighborhood": "Cazenga",
-                "latitude": -8.8500,
-                "longitude": 13.2833,
-                "departments": [
-                    {
-                        "name": "Registos",
-                        "sector": "Administração Pública",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd118",
-                                "service": "Emissão de Bilhete de Identidade",
-                                "category_id": None,
-                                "prefix": "BI",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 30,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Bilhete", "Registos", "Administração"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Posto Viana",
-                "location": "Estrada de Viana, Viana, Luanda",
-                "neighborhood": "Viana",
-                "latitude": -8.9035,
-                "longitude": 13.3741,
-                "departments": [
-                    {
-                        "name": "Registos",
-                        "sector": "Administração Pública",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd119",
-                                "service": "Emissão de Bilhete de Identidade",
-                                "category_id": None,
-                                "prefix": "BI",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 30,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Bilhete", "Registos", "Administração"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    # 5. Shoprite Angola (Varejo)
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd120",
-        "name": "Shoprite Angola",
-        "description": "Supermercado de varejo em Angola",
-        "branches": [
-            {
-                "name": "Loja Talatona",
-                "location": "Belas Shopping, Talatona, Luanda",
-                "neighborhood": "Talatona",
-                "latitude": -8.9167,
-                "longitude": 13.1833,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Varejo",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd121",
-                                "service": "Devoluções",
-                                "category_id": None,
-                                "prefix": "DV",
-                                "open_time": time(9, 0),
-                                "end_time": time(20, 0),
-                                "daily_limit": 15,
-                                "num_counters": 2,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(9, 0), "end_time": time(18, 0)}
-                                ],
-                                "tags": ["Devolução", "Varejo"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd122",
-                                "service": "Reclamações",
-                                "category_id": None,
-                                "prefix": "RC",
-                                "open_time": time(9, 0),
-                                "end_time": time(20, 0),
-                                "daily_limit": 10,
-                                "num_counters": 1,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(9, 0), "end_time": time(18, 0)}
-                                ],
-                                "tags": ["Reclamação", "Varejo"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Loja Kilamba",
-                "location": "Avenida Comandante Gika, Kilamba, Luanda",
-                "neighborhood": "Kilamba",
-                "latitude": -8.9333,
-                "longitude": 13.2667,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Varejo",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd123",
-                                "service": "Devoluções",
-                                "category_id": None,
-                                "prefix": "DV",
-                                "open_time": time(9, 0),
-                                "end_time": time(20, 0),
-                                "daily_limit": 15,
-                                "num_counters": 2,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(9, 0), "end_time": time(18, 0)}
-                                ],
-                                "tags": ["Devolução", "Varejo"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Loja Benguela",
-                "location": "Avenida 10 de Fevereiro, Benguela",
-                "neighborhood": "Centro",
-                "latitude": -12.5905,
-                "longitude": 13.4167,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Varejo",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd124",
-                                "service": "Devoluções",
-                                "category_id": None,
-                                "prefix": "DV",
-                                "open_time": time(9, 0),
-                                "end_time": time(20, 0),
-                                "daily_limit": 15,
-                                "num_counters": 2,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(9, 0), "end_time": time(18, 0)}
-                                ],
-                                "tags": ["Devolução", "Varejo"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    # 6. Universidade Agostinho Neto (Educação)
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd125",
-        "name": "Universidade Agostinho Neto",
-        "description": "Principal universidade pública de Angola",
-        "branches": [
-            {
-                "name": "Campus Camama",
-                "location": "Estrada de Camama, Luanda",
-                "neighborhood": "Camama",
-                "latitude": -8.9233,
-                "longitude": 13.2333,
-                "departments": [
-                    {
-                        "name": "Secretaria Acadêmica",
-                        "sector": "Educação",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd126",
-                                "service": "Matrícula",
-                                "category_id": None,
-                                "prefix": "MT",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Matrícula", "Educação"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd127",
-                                "service": "Declarações",
-                                "category_id": None,
-                                "prefix": "DC",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 15,
-                                "num_counters": 2,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Declaração", "Educação"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Campus Huambo",
-                "location": "Cidade Universitária, Huambo",
-                "neighborhood": "Académico",
-                "latitude": -12.7761,
-                "longitude": 15.7392,
-                "departments": [
-                    {
-                        "name": "Secretaria Acadêmica",
-                        "sector": "Educação",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd128",
-                                "service": "Matrícula",
-                                "category_id": None,
-                                "prefix": "MT",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Matrícula", "Educação"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Campus Benguela",
-                "location": "Avenida Dr. Fausto Frazão, Benguela",
-                "neighborhood": "Universitário",
-                "latitude": -12.5905,
-                "longitude": 13.4167,
-                "departments": [
-                    {
-                        "name": "Secretaria Acadêmica",
-                        "sector": "Educação",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd129",
-                                "service": "Matrícula",
-                                "category_id": None,
-                                "prefix": "MT",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Matrícula", "Educação"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    # 7. Banco BAI (Bancário)
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd130",
-        "name": "Banco Angolano de Investimentos",
-        "description": "Banco comercial líder em Angola",
-        "branches": [
-            {
-                "name": "Agência Maianga",
-                "location": "Rua Che Guevara, Maianga, Luanda",
-                "neighborhood": "Maianga",
-                "latitude": -8.8147,
-                "longitude": 13.2302,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd131",
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Bancário"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd132",
-                                "service": "Crédito Pessoal",
-                                "category_id": None,
-                                "prefix": "CP",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 10,
-                                "num_counters": 2,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Crédito", "Bancário"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Talatona",
-                "location": "Via Expressa, Talatona, Luanda",
-                "neighborhood": "Talatona",
-                "latitude": -8.9167,
-                "longitude": 13.1833,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd133",
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Bancário"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Huambo",
-                "location": "Avenida Norton de Matos, Huambo",
-                "neighborhood": "Cidade Alta",
-                "latitude": -12.7761,
-                "longitude": 15.7392,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd134",
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Bancário"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    # 8. Movicel Angola (Telecomunicações)
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd135",
-        "name": "Movicel Angola",
-        "description": "Operadora de telecomunicações em Angola",
-        "branches": [
-            {
-                "name": "Loja Ingombota",
-                "location": "Avenida 4 de Fevereiro, Ingombota, Luanda",
-                "neighborhood": "Ingombota",
-                "latitude": -8.8167,
-                "longitude": 13.2332,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Telecomunicações",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd136",
-                                "service": "Suporte ao Cliente",
-                                "category_id": None,
-                                "prefix": "SC",
-                                "open_time": time(8, 0),
-                                "end_time": time(18, 0),
-                                "daily_limit": 25,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(13, 0)},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Suporte", "Telecomunicações"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd137",
-                                "service": "Aquisição de Linha",
-                                "category_id": None,
-                                "prefix": "AL",
-                                "open_time": time(8, 0),
-                                "end_time": time(18, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(13, 0)},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Linha", "Telecomunicações"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Loja Kilamba",
-                "location": "Avenida Comandante Gika, Kilamba, Luanda",
-                "neighborhood": "Kilamba",
-                "latitude": -8.9333,
-                "longitude": 13.2667,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Telecomunicações",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd138",
-                                "service": "Suporte ao Cliente",
-                                "category_id": None,
-                                "prefix": "SC",
-                                "open_time": time(8, 0),
-                                "end_time": time(18, 0),
-                                "daily_limit": 25,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(13, 0)},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Suporte", "Telecomunicações"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Loja Benguela",
-                "location": "Rua Monsenhor Keiling, Benguela",
-                "neighborhood": "Centro",
-                "latitude": -12.5905,
-                "longitude": 13.4167,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Telecomunicações",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd139",
-                                "service": "Suporte ao Cliente",
-                                "category_id": None,
-                                "prefix": "SC",
-                                "open_time": time(8, 0),
-                                "end_time": time(18, 0),
-                                "daily_limit": 25,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(13, 0)},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Suporte", "Telecomunicações"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    # 9. Hospital Divina Providência (Saúde)
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd140",
-        "name": "Hospital Divina Providência",
-        "description": "Hospital privado em Luanda",
-        "branches": [
-            {
-                "name": "Unidade Talatona",
-                "location": "Rua Principal, Talatona, Luanda",
-                "neighborhood": "Talatona",
-                "latitude": -8.9167,
-                "longitude": 13.1833,
-                "departments": [
-                    {
-                        "name": "Consulta Geral",
-                        "sector": "Saúde",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd141",
-                                "service": "Consulta Geral",
-                                "category_id": None,
-                                "prefix": "CG",
-                                "open_time": time(8, 0),
-                                "end_time": time(17, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Consulta", "Geral", "Saúde"]
-                            }
-                        ]
-                    },
-                    {
-                        "name": "Emergência",
-                        "sector": "Saúde",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd142",
-                                "service": "Emergência",
-                                "category_id": None,
-                                "prefix": "EM",
-                                "open_time": time(0, 0),
-                                "end_time": time(23, 59),
-                                "daily_limit": 30,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
-                                ],
-                                "tags": ["Emergência", "Saúde"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Unidade Kilamba",
-                "location": "Avenida Central, Kilamba, Luanda",
-                "neighborhood": "Kilamba",
-                "latitude": -8.9333,
-                "longitude": 13.2667,
-                "departments": [
-                    {
-                        "name": "Consulta Geral",
-                        "sector": "Saúde",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd143",
-                                "service": "Consulta Geral",
-                                "category_id": None,
-                                "prefix": "CG",
-                                "open_time": time(8, 0),
-                                "end_time": time(17, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Consulta", "Geral", "Saúde"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    # 10. ENDE - Empresa Nacional de Distribuição de Electricidade (Serviços Públicos)
-
-    # 10. ENDE - Empresa Nacional de Distribuição de Electricidade (Serviços Públicos)
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd144",
-        "name": "ENDE Angola",
-        "description": "Empresa de distribuição de electricidade em Angola",
-        "branches": [
-            {
-                "name": "Agência Ingombota",
-                "location": "Rua Rainha Ginga, Ingombota, Luanda",
-                "neighborhood": "Ingombota",
-                "latitude": -8.8167,
-                "longitude": 13.2332,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Serviços Públicos",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd145",
-                                "service": "Nova Ligação",
-                                "category_id": None,
-                                "prefix": "NL",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Ligação", "Electricidade", "Serviços Públicos"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd146",
-                                "service": "Reclamações",
-                                "category_id": None,
-                                "prefix": "RC",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 15,
-                                "num_counters": 2,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Reclamação", "Electricidade", "Serviços Públicos"]
-                            }
-                        ]
-                    },
-                    {
-                        "name": "Pagamentos",
-                        "sector": "Serviços Públicos",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd147",
-                                "service": "Pagamento de Faturas",
-                                "category_id": None,
-                                "prefix": "PF",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 30,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Pagamento", "Fatura", "Serviços Públicos"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Talatona",
-                "location": "Via Expressa, Talatona, Luanda",
-                "neighborhood": "Talatona",
-                "latitude": -8.9167,
-                "longitude": 13.1833,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Serviços Públicos",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd148",
-                                "service": "Nova Ligação",
-                                "category_id": None,
-                                "prefix": "NL",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Ligação", "Electricidade", "Serviços Públicos"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Huambo",
-                "location": "Avenida Norton de Matos, Huambo",
-                "neighborhood": "Cidade Alta",
-                "latitude": -12.7761,
-                "longitude": 15.7392,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Serviços Públicos",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd149",
-                                "service": "Nova Ligação",
-                                "category_id": None,
-                                "prefix": "NL",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Ligação", "Electricidade", "Serviços Públicos"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Benguela",
-                "location": "Rua 31 de Janeiro, Benguela",
-                "neighborhood": "Centro",
-                "latitude": -12.5905,
-                "longitude": 13.4167,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Serviços Públicos",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd150",
-                                "service": "Nova Ligação",
-                                "category_id": None,
-                                "prefix": "NL",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Ligação", "Electricidade", "Serviços Públicos"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    # 11. EPAL - Empresa Pública de Águas de Luanda (Serviços Públicos)
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd151",
-        "name": "EPAL Angola",
-        "description": "Empresa de distribuição de água em Luanda",
-        "branches": [
-            {
-                "name": "Agência Maianga",
-                "location": "Rua Joaquim Kapango, Maianga, Luanda",
-                "neighborhood": "Maianga",
-                "latitude": -8.8147,
-                "longitude": 13.2302,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Serviços Públicos",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd152",
-                                "service": "Nova Ligação de Água",
-                                "category_id": None,
-                                "prefix": "NA",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Ligação", "Água", "Serviços Públicos"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd153",
-                                "service": "Reclamações",
-                                "category_id": None,
-                                "prefix": "RC",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 15,
-                                "num_counters": 2,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Reclamação", "Água", "Serviços Públicos"]
-                            }
-                        ]
-                    },
-                    {
-                        "name": "Pagamentos",
-                        "sector": "Serviços Públicos",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd154",
-                                "service": "Pagamento de Faturas",
-                                "category_id": None,
-                                "prefix": "PF",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 30,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Pagamento", "Fatura", "Serviços Públicos"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Cazenga",
-                "location": "Rua do Comércio, Cazenga, Luanda",
-                "neighborhood": "Cazenga",
-                "latitude": -8.8500,
-                "longitude": 13.2833,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Serviços Públicos",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd155",
-                                "service": "Nova Ligação de Água",
-                                "category_id": None,
-                                "prefix": "NA",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Ligação", "Água", "Serviços Públicos"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Viana",
-                "location": "Estrada de Viana, Viana, Luanda",
-                "neighborhood": "Viana",
-                "latitude": -8.9035,
-                "longitude": 13.3741,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Serviços Públicos",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd156",
-                                "service": "Nova Ligação de Água",
-                                "category_id": None,
-                                "prefix": "NA",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Ligação", "Água", "Serviços Públicos"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    # 12. Banco Económico Angola (Bancário)
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd157",
-        "name": "Banco Económico Angola",
-        "description": "Banco comercial com serviços financeiros em Angola",
-        "branches": [
-            {
-                "name": "Agência Ingombota",
-                "location": "Avenida Lenine, Ingombota, Luanda",
-                "neighborhood": "Ingombota",
-                "latitude": -8.8167,
-                "longitude": 13.2332,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd158",
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Bancário"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd159",
-                                "service": "Abertura de Conta",
-                                "category_id": None,
-                                "prefix": "AC",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 15,
-                                "num_counters": 2,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Conta", "Bancário"]
-                            }
-                        ]
-                    },
-                    {
-                        "name": "Caixa",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd160",
-                                "service": "Caixa",
-                                "category_id": None,
-                                "prefix": "CX",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 25,
-                                "num_counters": 6,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Caixa", "Bancário"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Kilamba",
-                "location": "Avenida Comandante Gika, Kilamba, Luanda",
-                "neighborhood": "Kilamba",
-                "latitude": -8.9333,
-                "longitude": 13.2667,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd161",
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Bancário"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Lobito",
-                "location": "Avenida da Independência, Lobito, Benguela",
-                "neighborhood": "Comercial",
-                "latitude": -12.3487,
-                "longitude": 13.5465,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd162",
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Bancário"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    # 13. Instituto Nacional de Segurança Social (Administração Pública)
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd163",
-        "name": "INSS Angola",
-        "description": "Instituto de segurança social em Angola",
-        "branches": [
-            {
-                "name": "Sede Ingombota",
-                "location": "Rua Amílcar Cabral, Ingombota, Luanda",
-                "neighborhood": "Ingombota",
-                "latitude": -8.8167,
-                "longitude": 13.2332,
-                "departments": [
-                    {
-                        "name": "Registos",
-                        "sector": "Administração Pública",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd164",
-                                "service": "Inscrição de Contribuinte",
-                                "category_id": None,
-                                "prefix": "IC",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 25,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Inscrição", "Segurança Social", "Administração"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd165",
-                                "service": "Consulta de Contribuições",
-                                "category_id": None,
-                                "prefix": "CC",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Contribuições", "Segurança Social", "Administração"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Posto Talatona",
-                "location": "Rua Principal, Talatona, Luanda",
-                "neighborhood": "Talatona",
-                "latitude": -8.9167,
-                "longitude": 13.1833,
-                "departments": [
-                    {
-                        "name": "Registos",
-                        "sector": "Administração Pública",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd166",
-                                "service": "Inscrição de Contribuinte",
-                                "category_id": None,
-                                "prefix": "IC",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 25,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Inscrição", "Segurança Social", "Administração"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Posto Huambo",
-                "location": "Avenida da República, Huambo",
-                "neighborhood": "Cidade Alta",
-                "latitude": -12.7761,
-                "longitude": 15.7392,
-                "departments": [
-                    {
-                        "name": "Registos",
-                        "sector": "Administração Pública",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd167",
-                                "service": "Inscrição de Contribuinte",
-                                "category_id": None,
-                                "prefix": "IC",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 25,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Inscrição", "Segurança Social", "Administração"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    # 14. Kero Hipermercado (Varejo)
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd168",
-        "name": "Kero Hipermercado",
-        "description": "Cadeia de hipermercados em Angola",
-        "branches": [
-            {
-                "name": "Loja Kilamba",
-                "location": "Avenida Comandante Gika, Kilamba, Luanda",
-                "neighborhood": "Kilamba",
-                "latitude": -8.9333,
-                "longitude": 13.2667,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Varejo",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd169",
-                                "service": "Devoluções",
-                                "category_id": None,
-                                "prefix": "DV",
-                                "open_time": time(9, 0),
-                                "end_time": time(20, 0),
-                                "daily_limit": 15,
-                                "num_counters": 2,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(9, 0), "end_time": time(18, 0)}
-                                ],
-                                "tags": ["Devolução", "Varejo"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd170",
-                                "service": "Reclamações",
-                                "category_id": None,
-                                "prefix": "RC",
-                                "open_time": time(9, 0),
-                                "end_time": time(20, 0),
-                                "daily_limit": 10,
-                                "num_counters": 1,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(9, 0), "end_time": time(18, 0)}
-                                ],
-                                "tags": ["Reclamação", "Varejo"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Loja Talatona",
-                "location": "Belas Shopping, Talatona, Luanda",
-                "neighborhood": "Talatona",
-                "latitude": -8.9167,
-                "longitude": 13.1833,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Varejo",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd171",
-                                "service": "Devoluções",
-                                "category_id": None,
-                                "prefix": "DV",
-                                "open_time": time(9, 0),
-                                "end_time": time(20, 0),
-                                "daily_limit": 15,
-                                "num_counters": 2,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(9, 0), "end_time": time(18, 0)}
-                                ],
-                                "tags": ["Devolução", "Varejo"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Loja Huambo",
-                "location": "Avenida da Independência, Huambo",
-                "neighborhood": "Cidade Alta",
-                "latitude": -12.7761,
-                "longitude": 15.7392,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Varejo",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd172",
-                                "service": "Devoluções",
-                                "category_id": None,
-                                "prefix": "DV",
-                                "open_time": time(9, 0),
-                                "end_time": time(20, 0),
-                                "daily_limit": 15,
-                                "num_counters": 2,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(9, 0), "end_time": time(18, 0)}
-                                ],
-                                "tags": ["Devolução", "Varejo"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Loja Benguela",
-                "location": "Avenida 10 de Fevereiro, Benguela",
-                "neighborhood": "Centro",
-                "latitude": -12.5905,
-                "longitude": 13.4167,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Varejo",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd173",
-                                "service": "Devoluções",
-                                "category_id": None,
-                                "prefix": "DV",
-                                "open_time": time(9, 0),
-                                "end_time": time(20, 0),
-                                "daily_limit": 15,
-                                "num_counters": 2,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(20, 0)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(9, 0), "end_time": time(18, 0)}
-                                ],
-                                "tags": ["Devolução", "Varejo"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    # 15. Ministério das Finanças - Serviço de Impostos (Administração Pública)
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd174",
-        "name": "Ministério das Finanças - Serviço de Impostos",
-        "description": "Serviços fiscais e de tributação em Angola",
-        "branches": [
-            {
-                "name": "Sede Ingombota",
-                "location": "Avenida 4 de Fevereiro, Ingombota, Luanda",
-                "neighborhood": "Ingombota",
-                "latitude": -8.8167,
-                "longitude": 13.2332,
-                "departments": [
-                    {
-                        "name": "Atendimento Fiscal",
-                        "sector": "Administração Pública",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd175",
-                                "service": "Declaração de Impostos",
-                                "category_id": None,
-                                "prefix": "DI",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Impostos", "Fiscal", "Administração"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd176",
-                                "service": "Pagamento de Impostos",
-                                "category_id": None,
-                                "prefix": "PI",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 25,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Pagamento", "Impostos", "Administração"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Posto Cazenga",
-                "location": "Rua Principal, Cazenga, Luanda",
-                "neighborhood": "Cazenga",
-                "latitude": -8.8500,
-                "longitude": 13.2833,
-                "departments": [
-                    {
-                        "name": "Atendimento Fiscal",
-                        "sector": "Administração Pública",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd177",
-                                "service": "Declaração de Impostos",
-                                "category_id": None,
-                                "prefix": "DI",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Impostos", "Fiscal", "Administração"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Posto Huambo",
-                "location": "Avenida da República, Huambo",
-                "neighborhood": "Cidade Alta",
-                "latitude": -12.7761,
-                "longitude": 15.7392,
-                "departments": [
-                    {
-                        "name": "Atendimento Fiscal",
-                        "sector": "Administração Pública",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd178",
-                                "service": "Declaração de Impostos",
-                                "category_id": None,
-                                "prefix": "DI",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Impostos", "Fiscal", "Administração"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    # 16. Clínica Sagrada Esperança (Saúde)
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd179",
-        "name": "Clínica Sagrada Esperança",
-        "description": "Clínica privada de saúde em Angola",
-        "branches": [
-            {
-                "name": "Unidade Ingombota",
-                "location": "Avenida Murtala Mohammed, Ingombota, Luanda",
-                "neighborhood": "Ingombota",
-                "latitude": -8.8167,
-                "longitude": 13.2332,
-                "departments": [
-                    {
-                        "name": "Consulta Geral",
-                        "sector": "Saúde",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd180",
-                                "service": "Consulta Geral",
-                                "category_id": None,
-                                "prefix": "CG",
-                                "open_time": time(8, 0),
-                                "end_time": time(17, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Consulta", "Geral", "Saúde"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd181",
-                                "service": "Exames Laboratoriais",
-                                "category_id": None,
-                                "prefix": "EL",
-                                "open_time": time(7, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 15,
-                                "num_counters": 2,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(7, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(7, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(7, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(7, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(7, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Exames", "Laboratório", "Saúde"]
-                            }
-                        ]
-                    },
-                    {
-                        "name": "Emergência",
-                        "sector": "Saúde",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd182",
-                                "service": "Emergência",
-                                "category_id": None,
-                                "prefix": "EM",
-                                "open_time": time(0, 0),
-                                "end_time": time(23, 59),
-                                "daily_limit": 30,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(0, 0), "end_time": time(23, 59)},
-                                    {"weekday": Weekday.SUNDAY, "open_time": time(0, 0), "end_time": time(23, 59)}
-                                ],
-                                "tags": ["Emergência", "Saúde"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Unidade Talatona",
-                "location": "Via Expressa, Talatona, Luanda",
-                "neighborhood": "Talatona",
-                "latitude": -8.9167,
-                "longitude": 13.1833,
-                "departments": [
-                    {
-                        "name": "Consulta Geral",
-                        "sector": "Saúde",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd183",
-                                "service": "Consulta Geral",
-                                "category_id": None,
-                                "prefix": "CG",
-                                "open_time": time(8, 0),
-                                "end_time": time(17, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Consulta", "Geral", "Saúde"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Unidade Benguela",
-                "location": "Rua 31 de Janeiro, Benguela",
-                "neighborhood": "Centro",
-                "latitude": -12.5905,
-                "longitude": 13.4167,
-                "departments": [
-                    {
-                        "name": "Consulta Geral",
-                        "sector": "Saúde",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd184",
-                                "service": "Consulta Geral",
-                                "category_id": None,
-                                "prefix": "CG",
-                                "open_time": time(8, 0),
-                                "end_time": time(17, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(17, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Consulta", "Geral", "Saúde"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    # 17. Banco de Poupança e Crédito (Bancário)
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd185",
-        "name": "Banco de Poupança e Crédito",
-        "description": "Banco estatal com serviços financeiros em Angola",
-        "branches": [
-            {
-                "name": "Agência Maianga",
-                "location": "Rua Che Guevara, Maianga, Luanda",
-                "neighborhood": "Maianga",
-                "latitude": -8.8147,
-                "longitude": 13.2302,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd186",
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Bancário"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd187",
-                                "service": "Crédito Pessoal",
-                                "category_id": None,
-                                "prefix": "CP",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 10,
-                                "num_counters": 2,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Crédito", "Bancário"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Cazenga",
-                "location": "Rua do Comércio, Cazenga, Luanda",
-                "neighborhood": "Cazenga",
-                "latitude": -8.8500,
-                "longitude": 13.2833,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd188",
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Bancário"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Huambo",
-                "location": "Avenida Norton de Matos, Huambo",
-                "neighborhood": "Cidade Alta",
-                "latitude": -12.7761,
-                "longitude": 15.7392,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd189",
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Bancário"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Agência Benguela",
-                "location": "Rua 31 de Janeiro, Benguela",
-                "neighborhood": "Centro",
-                "latitude": -12.5905,
-                "longitude": 13.4167,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Bancário",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd190",
-                                "service": "Atendimento Geral",
-                                "category_id": None,
-                                "prefix": "AG",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Atendimento", "Bancário"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    # 18. Universidade Católica de Angola (Educação)
-
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd191",
-        "name": "Universidade Católica de Angola",
-        "description": "Universidade privada em Angola",
-        "branches": [
-            {
-                "name": "Campus Palanca",
-                "location": "Rua do Palanca, Luanda",
-                "neighborhood": "Palanca",
-                "latitude": -8.8333,
-                "longitude": 13.2500,
-                "departments": [
-                    {
-                        "name": "Secretaria Acadêmica",
-                        "sector": "Educação",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd192",
-                                "service": "Matrícula",
-                                "category_id": None,
-                                "prefix": "MT",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Matrícula", "Educação", "Universidade"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd193",
-                                "service": "Emissão de Certificados",
-                                "category_id": None,
-                                "prefix": "EC",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 15,
-                                "num_counters": 2,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Certificado", "Educação", "Universidade"]
-                            }
-                        ]
-                    },
-                    {
-                        "name": "Tesouraria",
-                        "sector": "Educação",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd194",
-                                "service": "Pagamento de Propinas",
-                                "category_id": None,
-                                "prefix": "PP",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 25,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Pagamento", "Propinas", "Educação"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Campus Talatona",
-                "location": "Via Expressa, Talatona, Luanda",
-                "neighborhood": "Talatona",
-                "latitude": -8.9167,
-                "longitude": 13.1833,
-                "departments": [
-                    {
-                        "name": "Secretaria Acadêmica",
-                        "sector": "Educação",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd195",
-                                "service": "Matrícula",
-                                "category_id": None,
-                                "prefix": "MT",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Matrícula", "Educação", "Universidade"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Campus Huambo",
-                "location": "Avenida Norton de Matos, Huambo",
-                "neighborhood": "Cidade Alta",
-                "latitude": -12.7761,
-                "longitude": 15.7392,
-                "departments": [
-                    {
-                        "name": "Secretaria Acadêmica",
-                        "sector": "Educação",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd196",
-                                "service": "Matrícula",
-                                "category_id": None,
-                                "prefix": "MT",
-                                "open_time": time(8, 0),
-                                "end_time": time(16, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(16, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Matrícula", "Educação", "Universidade"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    # 19. Unitel Angola (Telecomunicações)
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd197",
-        "name": "Unitel Angola",
-        "description": "Operadora de telecomunicações líder em Angola",
-        "branches": [
-            {
-                "name": "Loja Ingombota",
-                "location": "Avenida 4 de Fevereiro, Ingombota, Luanda",
-                "neighborhood": "Ingombota",
-                "latitude": -8.8167,
-                "longitude": 13.2332,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Telecomunicações",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd198",
-                                "service": "Nova Linha",
-                                "category_id": None,
-                                "prefix": "NL",
-                                "open_time": time(8, 0),
-                                "end_time": time(18, 0),
-                                "daily_limit": 30,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(14, 0)},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Linha", "Telecomunicações", "Atendimento"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd199",
-                                "service": "Reclamações",
-                                "category_id": None,
-                                "prefix": "RC",
-                                "open_time": time(8, 0),
-                                "end_time": time(18, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(14, 0)},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Reclamação", "Telecomunicações", "Atendimento"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd200",
-                                "service": "Suporte Técnico",
-                                "category_id": None,
-                                "prefix": "ST",
-                                "open_time": time(8, 0),
-                                "end_time": time(18, 0),
-                                "daily_limit": 15,
-                                "num_counters": 2,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(14, 0)},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Suporte", "Técnico", "Telecomunicações"]
-                            }
-                        ]
-                    },
-                    {
-                        "name": "Vendas",
-                        "sector": "Telecomunicações",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd201",
-                                "service": "Venda de Planos",
-                                "category_id": None,
-                                "prefix": "VP",
-                                "open_time": time(8, 0),
-                                "end_time": time(18, 0),
-                                "daily_limit": 25,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(14, 0)},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Planos", "Vendas", "Telecomunicações"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Loja Talatona",
-                "location": "Belas Shopping, Talatona, Luanda",
-                "neighborhood": "Talatona",
-                "latitude": -8.9167,
-                "longitude": 13.1833,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Telecomunicações",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd202",
-                                "service": "Nova Linha",
-                                "category_id": None,
-                                "prefix": "NL",
-                                "open_time": time(8, 0),
-                                "end_time": time(18, 0),
-                                "daily_limit": 30,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(14, 0)},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Linha", "Telecomunicações", "Atendimento"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Loja Benguela",
-                "location": "Avenida 10 de Fevereiro, Benguela",
-                "neighborhood": "Centro",
-                "latitude": -12.5905,
-                "longitude": 13.4167,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Telecomunicações",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd203",
-                                "service": "Nova Linha",
-                                "category_id": None,
-                                "prefix": "NL",
-                                "open_time": time(8, 0),
-                                "end_time": time(18, 0),
-                                "daily_limit": 30,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(14, 0)},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Linha", "Telecomunicações", "Atendimento"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Loja Huambo",
-                "location": "Avenida da Independência, Huambo",
-                "neighborhood": "Cidade Alta",
-                "latitude": -12.7761,
-                "longitude": 15.7392,
-                "departments": [
-                    {
-                        "name": "Atendimento ao Cliente",
-                        "sector": "Telecomunicações",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd204",
-                                "service": "Nova Linha",
-                                "category_id": None,
-                                "prefix": "NL",
-                                "open_time": time(8, 0),
-                                "end_time": time(18, 0),
-                                "daily_limit": 30,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(18, 0)},
-                                    {"weekday": Weekday.SATURDAY, "open_time": time(9, 0), "end_time": time(14, 0)},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Linha", "Telecomunicações", "Atendimento"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    # 20. Serviço de Identificação Civil e Criminal (Administração Pública)
-    {
-        "id": "018d6313-5bf1-7062-a3bd-0e99679fd205",
-        "name": "Serviço de Identificação Civil e Criminal",
-        "description": "Serviço de emissão de documentos de identificação em Angola",
-        "branches": [
-            {
-                "name": "Posto Ingombota",
-                "location": "Rua Amílcar Cabral, Ingombota, Luanda",
-                "neighborhood": "Ingombota",
-                "latitude": -8.8167,
-                "longitude": 13.2332,
-                "departments": [
-                    {
-                        "name": "Emissão de Documentos",
-                        "sector": "Administração Pública",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd206",
-                                "service": "Emissão de Bilhete de Identidade",
-                                "category_id": None,
-                                "prefix": "BI",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 25,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Bilhete", "Identidade", "Administração"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd207",
-                                "service": "Registo Criminal",
-                                "category_id": None,
-                                "prefix": "RC",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 3,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Registo", "Criminal", "Administração"]
-                            },
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd208",
-                                "service": "Renovação de Bilhete",
-                                "category_id": None,
-                                "prefix": "RB",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 20,
-                                "num_counters": 4,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Renovação", "Bilhete", "Administração"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Posto Cazenga",
-                "location": "Rua Principal, Cazenga, Luanda",
-                "neighborhood": "Cazenga",
-                "latitude": -8.8500,
-                "longitude": 13.2833,
-                "departments": [
-                    {
-                        "name": "Emissão de Documentos",
-                        "sector": "Administração Pública",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd209",
-                                "service": "Emissão de Bilhete de Identidade",
-                                "category_id": None,
-                                "prefix": "BI",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 25,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Bilhete", "Identidade", "Administração"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Posto Huambo",
-                "location": "Avenida da República, Huambo",
-                "neighborhood": "Cidade Alta",
-                "latitude": -12.7761,
-                "longitude": 15.7392,
-                "departments": [
-                    {
-                        "name": "Emissão de Documentos",
-                        "sector": "Administração Pública",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd210",
-                                "service": "Emissão de Bilhete de Identidade",
-                                "category_id": None,
-                                "prefix": "BI",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 25,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Bilhete", "Identidade", "Administração"]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                "name": "Posto Benguela",
-                "location": "Rua 31 de Janeiro, Benguela",
-                "neighborhood": "Centro",
-                "latitude": -12.5905,
-                "longitude": 13.4167,
-                "departments": [
-                    {
-                        "name": "Emissão de Documentos",
-                        "sector": "Administração Pública",
-                        "queues": [
-                            {
-                                "id": "018d6313-5bf1-7062-a3bd-0e99679fd211",
-                                "service": "Emissão de Bilhete de Identidade",
-                                "category_id": None,
-                                "prefix": "BI",
-                                "open_time": time(8, 0),
-                                "end_time": time(15, 0),
-                                "daily_limit": 25,
-                                "num_counters": 5,
-                                "schedules": [
-                                    {"weekday": Weekday.MONDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.TUESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.WEDNESDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.THURSDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.FRIDAY, "open_time": time(8, 0), "end_time": time(15, 0)},
-                                    {"weekday": Weekday.SATURDAY, "is_closed": True},
-                                    {"weekday": Weekday.SUNDAY, "is_closed": True}
-                                ],
-                                "tags": ["Bilhete", "Identidade", "Administração"]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    }
-]
-
-
-def initial_data(app):
+def populate_initial_data(app):
     """
-    Popula o banco de dados com dados iniciais para testes, incluindo instituições, filiais, departamentos e filas.
-    Cada instituição tem filiais em diferentes bairros de Luanda, com 15 senhas por fila.
-    Mantém idempotência, logs em português, IDs fixos para filas principais, e compatibilidade com models.py.
-    Usa bcrypt para senhas e respeita todos os relacionamentos.
-    Suporta modelos de ML com dados suficientes para treinamento inicial.
+    Popula o banco de dados com dados iniciais para testes, mantendo Hospital Geral de Luanda e Conservatória dos Registos,
+    adicionando 7 bancos (BAI, BFA, BPC, BIC, Banco Económico, Millenium Atlântico, Banco Sol) e 2 hospitais
+    (Josina Machel, Sagrada Esperança). Inclui usuários administrativos (1 SYSTEM_ADMIN, 1 INSTITUTION_ADMIN por instituição,
+    1 BRANCH_ADMIN por filial, 2 ATTENDANT por filial). Cada filial tem 1 departamento com filas específicas.
+    Cada fila tem 10 tickets 'Atendido'. Usa bairros únicos de Luanda. Mantém idempotência e logs em português.
     """
     with app.app_context():
         try:
@@ -3125,182 +23,3665 @@ def initial_data(app):
                 app.logger.info("Iniciando população de dados iniciais...")
 
                 # --------------------------------------
+                # Função auxiliar para verificar existência
+                # --------------------------------------
+                def exists(model, **kwargs):
+                    return model.query.filter_by(**kwargs).first() is not None
+
+                # --------------------------------------
+                # Função auxiliar para hashear senhas
+                # --------------------------------------
+                def hash_password(password):
+                    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+                # --------------------------------------
+                # Função auxiliar para normalizar strings
+                # --------------------------------------
+                from unidecode import unidecode
+                def normalize_string(s):
+                    return unidecode(s.lower().replace(' ', '_'))[:50]
+
+                # --------------------------------------
+                # Criar Tipos de Instituição
+                # --------------------------------------
+                def create_institution_types():
+                    types = [
+                        {"name": "Bancário", "description": "Serviços financeiros e bancários", "logo_url": "https://example.com/icons/bank.png"},
+                        {"name": "Saúde", "description": "Serviços de saúde e atendimento médico", "logo_url": "https://image.similarpng.com/file/similarpng/very-thumbnail/2020/07/health-care-medical-concept-vector-PNG.png"},
+                        {"name": "Administrativo", "description": "Serviços administrativos e atendimento ao cidadão", "logo_url": "https://example.com/icons/admin.png"},
+                        {"name": "Educação", "description": "Serviços educacionais e acadêmicos", "logo_url": "https://img.freepik.com/vetores-premium/design-de-logotipo-da-escola-de-educacao_586739-1339.jpg?w=360"},
+                        {"name": "Transportes", "description": "Serviços de transporte e logística", "logo_url": "https://www.pensamentoverde.com.br/wp-content/uploads/2022/08/quais-sao-os-meios-de-transportes-mais-sustentaveis-1.png"},
+                        {"name": "Comercial", "description": "Serviços comerciais e varejo", "logo_url": "https://example.com/icons/commercial.png"}
+                    ]
+                    type_map = {}
+                    for inst_type in types:
+                        if not exists(InstitutionType, name=inst_type["name"]):
+                            it = InstitutionType(
+                                id=str(uuid.uuid4()),
+                                name=inst_type["name"],
+                                description=inst_type["description"],
+                                logo_url=inst_type["logo_url"]
+                            )
+                            db.session.add(it)
+                            db.session.flush()
+                            app.logger.debug(f"Tipo de instituição criado: {inst_type['name']}")
+                        type_map[inst_type["name"]] = InstitutionType.query.filter_by(name=inst_type["name"]).first().id
+                    app.logger.info("Tipos de instituição criados ou recuperados com sucesso.")
+                    return type_map
+
+                institution_type_map = create_institution_types()
+
+                # --------------------------------------
                 # Criar Categorias de Serviço
                 # --------------------------------------
                 def create_service_categories():
-                    """
-                    Cria categorias de serviço necessárias (Saúde, Consulta Médica, Bancário).
-                    Retorna um mapa de nomes para IDs.
-                    """
-                    categories = []
-                    for inst in institutions_data:
-                        for branch in inst['branches']:
-                            for dept in branch['departments']:
-                                for queue in dept['queues']:
-                                    if queue.get('category_id') is not None:
-                                        category_name = queue['category_id']
-                                        if category_name not in [cat['name'] for cat in categories]:
-                                            categories.append({'name': category_name, 'description': f'Serviços de {category_name}', 'parent_id': None})
-
+                    categories = [
+                        {"name": "Bancário", "description": "Serviços financeiros e bancários", "parent_id": None},
+                        {"name": "Conta", "description": "Abertura e gestão de contas bancárias", "parent_id": None},
+                        {"name": "Crédito", "description": "Solicitação e gestão de empréstimos", "parent_id": None},
+                        {"name": "Atendimento", "description": "Suporte e esclarecimentos gerais", "parent_id": None},
+                        {"name": "Saúde", "description": "Serviços de saúde e atendimento médico", "parent_id": None},
+                        {"name": "Consulta Médica", "description": "Consultas gerais e especializadas", "parent_id": None},
+                        {"name": "Exames", "description": "Exames laboratoriais e diagnósticos", "parent_id": None},
+                        {"name": "Triagem", "description": "Triagem e atendimento inicial", "parent_id": None},
+                        {"name": "Internamento", "description": "Serviços de internamento hospitalar", "parent_id": None},
+                        {"name": "Cirurgia", "description": "Procedimentos cirúrgicos", "parent_id": None},
+                        {"name": "Vacinação", "description": "Serviços de imunização", "parent_id": None},
+                        {"name": "Administrativo", "description": "Serviços administrativos e atendimento ao cidadão", "parent_id": None},
+                        {"name": "Documentos", "description": "Emissão e renovação de documentos", "parent_id": None},
+                        {"name": "Registros", "description": "Registros civis e comerciais", "parent_id": None},
+                    ]
                     category_map = {}
                     for cat in categories:
-                        existing_cat = ServiceCategory.query.filter_by(name=cat['name']).first()
-                        if existing_cat:
-                            category_map[cat['name']] = existing_cat.id
-                            continue
-                        category = ServiceCategory(
-                            id=str(uuid.uuid4()),
-                            name=cat['name'],
-                            description=cat['description'],
-                            parent_id=cat['parent_id']
-                        )
-                        db.session.add(category)
-                        db.session.flush()
-                        category_map[cat['name']] = category.id
-
-                    app.logger.info("Categorias de serviço criadas com sucesso.")
+                        if not exists(ServiceCategory, name=cat["name"]):
+                            sc = ServiceCategory(
+                                id=str(uuid.uuid4()),
+                                name=cat["name"],
+                                description=cat["description"],
+                                parent_id=cat["parent_id"]
+                            )
+                            db.session.add(sc)
+                            db.session.flush()
+                            app.logger.debug(f"Categoria de serviço criada: {cat['name']}")
+                        category_map[cat["name"]] = ServiceCategory.query.filter_by(name=cat["name"]).first().id
+                    # Definir hierarquia
+                    for cat_name, parent_name in [
+                        ("Conta", "Bancário"), ("Crédito", "Bancário"), ("Atendimento", "Bancário"),
+                        ("Consulta Médica", "Saúde"), ("Exames", "Saúde"), ("Triagem", "Saúde"),
+                        ("Internamento", "Saúde"), ("Cirurgia", "Saúde"), ("Vacinação", "Saúde"),
+                        ("Documentos", "Administrativo"), ("Registros", "Administrativo"),
+                    ]:
+                        cat = ServiceCategory.query.filter_by(name=cat_name).first()
+                        if cat and not cat.parent_id:
+                            cat.parent_id = category_map[parent_name]
+                            db.session.flush()
+                    app.logger.info("Categorias de serviço criadas ou recuperadas com sucesso.")
                     return category_map
 
                 category_map = create_service_categories()
 
                 # --------------------------------------
-                # Funções Auxiliares para Criação de Entidades
+                # Bairros de Luanda
                 # --------------------------------------
-                def create_queue(department_id, queue_data):
-                    """
-                    Cria uma fila com agendamentos e tags, conforme models.py.
-                    """
-                    existing_queue = Queue.query.filter_by(id=queue_data['id']).first()
-                    if existing_queue:
-                        app.logger.info(f"Fila {queue_data['service']} já existe com ID {queue_data['id']}, pulando.")
-                        return existing_queue
+                neighborhoods = [
+                    {"name": "Ingombota", "latitude": -8.8167, "longitude": 13.2332},
+                    {"name": "Maianga", "latitude": -8.8147, "longitude": 13.2302},
+                    {"name": "Talatona", "latitude": -8.9167, "longitude": 13.1833},
+                    {"name": "Kilamba", "latitude": -8.9333, "longitude": 13.2667},
+                    {"name": "Cazenga", "latitude": -8.8500, "longitude": 13.2833},
+                    {"name": "Viana", "latitude": -8.9035, "longitude": 13.3741},
+                    {"name": "Rangel", "latitude": -8.8300, "longitude": 13.2500},
+                    {"name": "Samba", "latitude": -8.8200, "longitude": 13.2400},
+                    {"name": "Cacuaco", "latitude": -8.7767, "longitude": 13.3667},
+                    {"name": "Benfica", "latitude": -8.9500, "longitude": 13.1500},
+                    {"name": "Zango", "latitude": -8.9200, "longitude": 13.4000},
+                    {"name": "Patriota", "latitude": -8.9000, "longitude": 13.2000},
+                    {"name": "Golfe", "latitude": -8.8700, "longitude": 13.2700},
+                    {"name": "Camama", "latitude": -8.8900, "longitude": 13.2400},
+                    {"name": "Prenda", "latitude": -8.8300, "longitude": 13.2300},
+                    {"name": "Vila Alice", "latitude": -8.8200, "longitude": 13.2600},
+                    {"name": "Rocha Pinto", "latitude": -8.8400, "longitude": 13.2500},
+                    {"name": "Sambizanga", "latitude": -8.8000, "longitude": 13.2400},
+                    {"name": "Neves Bendinha", "latitude": -8.8100, "longitude": 13.2500},
+                    {"name": "Maculusso", "latitude": -8.8150, "longitude": 13.2350},
+                    {"name": "Alvalade", "latitude": -8.8250, "longitude": 13.2300},
+                    {"name": "Miramar", "latitude": -8.8100, "longitude": 13.2200},
+                    {"name": "Bairro Operário", "latitude": -8.8200, "longitude": 13.2450},
+                    {"name": "Cassenda", "latitude": -8.8350, "longitude": 13.2400},
+                    {"name": "Bairro Azul", "latitude": -8.8000, "longitude": 13.2300},
+                    {"name": "Hoji Ya Henda", "latitude": -8.8500, "longitude": 13.2900},
+                    {"name": "Palanca", "latitude": -8.8600, "longitude": 13.2800},
+                    {"name": "Tala Hady", "latitude": -8.8450, "longitude": 13.2750},
+                    {"name": "Kikolo", "latitude": -8.7800, "longitude": 13.3600},
+                    {"name": "Morro Bento", "latitude": -8.9100, "longitude": 13.1900},
+                ]
 
-                    queue = Queue(
-                        id=queue_data['id'],
-                        department_id=department_id,
-                        service=queue_data['service'],
-                        category_id=category_map.get(queue_data['category_id'], None),  # Usando o mapeamento de categorias
-                        prefix=queue_data['prefix'],
-                        open_time=queue_data['open_time'],
-                        end_time=queue_data['end_time'],
-                        daily_limit=queue_data['daily_limit'],
-                        active_tickets=0,
-                        current_ticket=0,
-                        avg_wait_time=0.0,
-                        last_service_time=0.0,
-                        num_counters=queue_data['num_counters'],
-                        last_counter=0
-                    )
-                    db.session.add(queue)
-                    db.session.flush()
+                # --------------------------------------
+                # Dados de Instituições
+                # --------------------------------------
+                institutions_data = [
+                    # Hospital Geral de Luanda (do código original)
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Hospital Geral de Luanda",
+                        "description": "Serviços de saúde públicos em Luanda",
+                        "institution_type_id": institution_type_map["Saúde"],
+                        "logo_url": "https://www.hospitalgeralluanda.ao/images/logo.png",
+                        "services": [
+                            {"name": "Consulta Geral", "category_id": category_map["Consulta Médica"], "description": "Consultas médicas gerais"},
+                            {"name": "Exames Laboratoriais", "category_id": category_map["Exames"], "description": "Exames de diagnóstico"},
+                            {"name": "Triagem", "category_id": category_map["Triagem"], "description": "Atendimento inicial e triagem"},
+                            {"name": "Internamento", "category_id": category_map["Internamento"], "description": "Serviços de internamento hospitalar"},
+                            {"name": "Cirurgia de Urgência", "category_id": category_map["Cirurgia"], "description": "Cirurgias de emergência"},
+                            {"name": "Vacinação", "category_id": category_map["Vacinação"], "description": "Serviços de imunização"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "Unidade Alvalade",
+                                "location": "Rua Principal, Alvalade, Luanda",
+                                "neighborhood": "Alvalade",
+                                "latitude": -8.8250,
+                                "longitude": 13.2300,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Miramar",
+                                "location": "Rua Principal, Miramar, Luanda",
+                                "neighborhood": "Miramar",
+                                "latitude": -8.8100,
+                                "longitude": 13.2200,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Bairro Operário",
+                                "location": "Rua Principal, Bairro Operário, Luanda",
+                                "neighborhood": "Bairro Operário",
+                                "latitude": -8.8200,
+                                "longitude": 13.2450,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Cassenda",
+                                "location": "Rua Principal, Cassenda, Luanda",
+                                "neighborhood": "Cassenda",
+                                "latitude": -8.8350,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Bairro Azul",
+                                "location": "Rua Principal, Bairro Azul, Luanda",
+                                "neighborhood": "Bairro Azul",
+                                "latitude": -8.8000,
+                                "longitude": 13.2300,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Hoji Ya Henda",
+                                "location": "Rua Principal, Hoji Ya Henda, Luanda",
+                                "neighborhood": "Hoji Ya Henda",
+                                "latitude": -8.8500,
+                                "longitude": 13.2900,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Palanca",
+                                "location": "Rua Principal, Palanca, Luanda",
+                                "neighborhood": "Palanca",
+                                "latitude": -8.8600,
+                                "longitude": 13.2800,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Tala Hady",
+                                "location": "Rua Principal, Tala Hady, Luanda",
+                                "neighborhood": "Tala Hady",
+                                "latitude": -8.8450,
+                                "longitude": 13.2750,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Kikolo",
+                                "location": "Rua Principal, Kikolo, Luanda",
+                                "neighborhood": "Kikolo",
+                                "latitude": -8.7800,
+                                "longitude": 13.3600,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Morro Bento",
+                                "location": "Rua Principal, Morro Bento, Luanda",
+                                "neighborhood": "Morro Bento",
+                                "latitude": -8.9100,
+                                "longitude": 13.1900,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "SIAC",
+                        "description": "Serviços administrativos em Luanda",
+                        "institution_type_id": institution_type_map["Administrativo"],
+                        "logo_url": "https://www.siac.gv.ao/images/site/SIAC_logotipo.jpg",
+                        "services": [
+                            {"name": "Emissão de BI", "category_id": category_map["Documentos"], "description": "Emissão de bilhete de identidade"},
+                            {"name": "Registo Civil", "category_id": category_map["Registros"], "description": "Registos civis"},
+                            {"name": "Renovação de Licenças", "category_id": category_map["Licenças"], "description": "Renovação de licenças administrativas"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "SIAC Rangel",
+                                "location": "Rua do Rangel, Rangel, Luanda",
+                                "neighborhood": "Rangel",
+                                "latitude": -8.8300,
+                                "longitude": 13.2500,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Licenças",
+                                                "prefix": "RL",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Licenças"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Samba",
+                                "location": "Rua Principal, Samba, Luanda",
+                                "neighborhood": "Samba",
+                                "latitude": -8.8200,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Licenças",
+                                                "prefix": "RL",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Licenças"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Cacuaco",
+                                "location": "Rua Principal, Cacuaco, Luanda",
+                                "neighborhood": "Cacuaco",
+                                "latitude": -8.7767,
+                                "longitude": 13.3667,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Licenças",
+                                                "prefix": "RL",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Licenças"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Benfica",
+                                "location": "Rua Principal, Benfica, Luanda",
+                                "neighborhood": "Benfica",
+                                "latitude": -8.9500,
+                                "longitude": 13.1500,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Licenças",
+                                                "prefix": "RL",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Licenças"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Zango",
+                                "location": "Rua Principal, Zango, Luanda",
+                                "neighborhood": "Zango",
+                                "latitude": -8.9200,
+                                "longitude": 13.4000,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Licenças",
+                                                "prefix": "RL",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Licenças"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Patriota",
+                                "location": "Rua Principal, Patriota, Luanda",
+                                "neighborhood": "Patriota",
+                                "latitude": -8.9000,
+                                "longitude": 13.2000,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Licenças",
+                                                "prefix": "RL",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Licenças"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Golfe",
+                                "location": "Rua Principal, Golfe, Luanda",
+                                "neighborhood": "Golfe",
+                                "latitude": -8.8700,
+                                "longitude": 13.2700,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Licenças",
+                                                "prefix": "RL",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Licenças"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Camama",
+                                "location": "Rua Principal, Camama, Luanda",
+                                "neighborhood": "Camama",
+                                "latitude": -8.8900,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Licenças",
+                                                "prefix": "RL",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Licenças"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Prenda",
+                                "location": "Rua Principal, Prenda, Luanda",
+                                "neighborhood": "Prenda",
+                                "latitude": -8.8300,
+                                "longitude": 13.2300,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Licenças",
+                                                "prefix": "RL",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Licenças"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIAC Vila Alice",
+                                "location": "Rua Principal, Vila Alice, Luanda",
+                                "neighborhood": "Vila Alice",
+                                "latitude": -8.8200,
+                                "longitude": 13.2600,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de BI",
+                                                "prefix": "BI",
+                                                "daily_limit": 120,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Documentos", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Licenças",
+                                                "prefix": "RL",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Licenças"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                
+                    # Conservatória dos Registos (do código original)
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Conservatória",
+                        "description": "Serviços de registo civil e comercial em Luanda",
+                        "institution_type_id": institution_type_map["Administrativo"],
+                        "logo_url": "https://rna.ao/rna.ao/wp-content/uploads/2022/09/Registo-Civil.jpg",
+                        "services": [
+                            {"name": "Registo Comercial", "category_id": category_map["Registros"], "description": "Registo de empresas"},
+                            {"name": "Registo Civil", "category_id": category_map["Registros"], "description": "Registo de nascimento, casamento e óbito"},
+                            {"name": "Autenticação de Documentos", "category_id": category_map["Documentos"], "description": "Autenticação de documentos oficiais"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "Conservatória Ingombota",
+                                "location": "Rua Rainha Ginga, Ingombota, Luanda",
+                                "neighborhood": "Ingombota",
+                                "latitude": -8.8167,
+                                "longitude": 13.2332,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Talatona",
+                                "location": "Via Expressa, Talatona, Luanda",
+                                "neighborhood": "Talatona",
+                                "latitude": -8.9180,
+                                "longitude": 13.1840,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Viana",
+                                "location": "Rua Principal, Viana, Luanda",
+                                "neighborhood": "Viana",
+                                "latitude": -8.9040,
+                                "longitude": 13.3750,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Kilamba",
+                                "location": "Avenida do Kilamba, Kilamba, Luanda",
+                                "neighborhood": "Kilamba",
+                                "latitude": -8.9340,
+                                "longitude": 13.2670,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Cazenga",
+                                "location": "Avenida dos Combatentes, Cazenga, Luanda",
+                                "neighborhood": "Cazenga",
+                                "latitude": -8.8510,
+                                "longitude": 13.2840,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Maianga",
+                                "location": "Rua Joaquim Kapango, Maianga, Luanda",
+                                "neighborhood": "Maianga",
+                                "latitude": -8.8150,
+                                "longitude": 13.2310,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Rangel",
+                                "location": "Rua do Rangel, Rangel, Luanda",
+                                "neighborhood": "Rangel",
+                                "latitude": -8.8300,
+                                "longitude": 13.2500,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Samba",
+                                "location": "Rua Principal, Samba, Luanda",
+                                "neighborhood": "Samba",
+                                "latitude": -8.8200,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Cacuaco",
+                                "location": "Rua Principal, Cacuaco, Luanda",
+                                "neighborhood": "Cacuaco",
+                                "latitude": -8.7767,
+                                "longitude": 13.3667,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Benfica",
+                                "location": "Rua Principal, Benfica, Luanda",
+                                "neighborhood": "Benfica",
+                                "latitude": -8.9500,
+                                "longitude": 13.1500,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    # Hospital Josina Machel (novo)
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Hospital Josina Machel",
+                        "description": "Hospital público de referência em Luanda",
+                        "institution_type_id": institution_type_map["Saúde"],
+                        "logo_url": "https://www.hospitaljosinamachel.ao/images/logo.png",
+                        "services": [
+                            {"name": "Consulta Geral", "category_id": category_map["Consulta Médica"], "description": "Consultas médicas gerais"},
+                            {"name": "Exames Laboratoriais", "category_id": category_map["Exames"], "description": "Exames de diagnóstico"},
+                            {"name": "Internamento", "category_id": category_map["Internamento"], "description": "Serviços de internamento hospitalar"},
+                            {"name": "Vacinação", "category_id": category_map["Vacinação"], "description": "Serviços de imunização"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "Unidade Vila Alice",
+                                "location": "Rua Principal, Vila Alice, Luanda",
+                                "neighborhood": "Vila Alice",
+                                "latitude": -8.8200,
+                                "longitude": 13.2600,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Rocha Pinto",
+                                "location": "Rua Principal, Rocha Pinto, Luanda",
+                                "neighborhood": "Rocha Pinto",
+                                "latitude": -8.8400,
+                                "longitude": 13.2500,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Sambizanga",
+                                "location": "Rua Principal, Sambizanga, Luanda",
+                                "neighborhood": "Sambizanga",
+                                "latitude": -8.8000,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Neves Bendinha",
+                                "location": "Rua Principal, Neves Bendinha, Luanda",
+                                "neighborhood": "Neves Bendinha",
+                                "latitude": -8.8100,
+                                "longitude": 13.2500,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Maculusso",
+                                "location": "Rua Principal, Maculusso, Luanda",
+                                "neighborhood": "Maculusso",
+                                "latitude": -8.8150,
+                                "longitude": 13.2350,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    # Clínica Sagrada Esperança (novo)
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Clínica Sagrada Esperança",
+                        "description": "Clínica privada de excelência em Luanda",
+                        "institution_type_id": institution_type_map["Saúde"],
+                        "logo_url": "https://www.clinicasagradaesperanca.ao/images/logo.png",
+                        "services": [
+                            {"name": "Consulta Geral", "category_id": category_map["Consulta Médica"], "description": "Consultas médicas gerais"},
+                            {"name": "Exames Laboratoriais", "category_id": category_map["Exames"], "description": "Exames de diagnóstico"},
+                            {"name": "Internamento", "category_id": category_map["Internamento"], "description": "Serviços de internamento hospitalar"},
+                            {"name": "Vacinação", "category_id": category_map["Vacinação"], "description": "Serviços de imunização"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "Unidade Zango",
+                                "location": "Rua Principal, Zango, Luanda",
+                                "neighborhood": "Zango",
+                                "latitude": -8.9200,
+                                "longitude": 13.4000,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Patriota",
+                                "location": "Rua Principal, Patriota, Luanda",
+                                "neighborhood": "Patriota",
+                                "latitude": -8.9000,
+                                "longitude": 13.2000,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Golfe",
+                                "location": "Rua Principal, Golfe, Luanda",
+                                "neighborhood": "Golfe",
+                                "latitude": -8.8700,
+                                "longitude": 13.2700,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Camama",
+                                "location": "Rua Principal, Camama, Luanda",
+                                "neighborhood": "Camama",
+                                "latitude": -8.8900,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Prenda",
+                                "location": "Rua Principal, Prenda, Luanda",
+                                "neighborhood": "Prenda",
+                                "latitude": -8.8300,
+                                "longitude": 13.2300,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    # Banco BAI
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Banco BAI",
+                        "description": "Serviços bancários em Luanda",
+                        "institution_type_id": institution_type_map["Bancário"],
+                        "logo_url": "https://www.bancobai.ao/images/logo.png",
+                        "services": [
+                            {"name": "Abertura de Conta", "category_id": category_map["Conta"], "description": "Abertura de contas correntes e poupança"},
+                            {"name": "Crédito Pessoal", "category_id": category_map["Crédito"], "description": "Empréstimos pessoais e financiamentos"},
+                            {"name": "Atendimento ao Cliente", "category_id": category_map["Atendimento"], "description": "Suporte e esclarecimentos gerais"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "Filial Ingombota",
+                                "location": "Rua Rainha Ginga, Ingombota, Luanda",
+                                "neighborhood": "Ingombota",
+                                "latitude": -8.8167,
+                                "longitude": 13.2332,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Filial Talatona",
+                                "location": "Via Expressa, Talatona, Luanda",
+                                "neighborhood": "Talatona",
+                                "latitude": -8.9180,
+                                "longitude": 13.1840,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Filial Maianga",
+                                "location": "Rua Joaquim Kapango, Maianga, Luanda",
+                                "neighborhood": "Maianga",
+                                "latitude": -8.8150,
+                                "longitude": 13.2310,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    # Banco BFA
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Banco BFA",
+                        "description": "Banco líder em Angola, parte do grupo CaixaBank",
+                        "institution_type_id": institution_type_map["Bancário"],
+                        "logo_url": "https://www.bfa.ao/images/logo.png",
+                        "services": [
+                            {"name": "Abertura de Conta", "category_id": category_map["Conta"], "description": "Abertura de contas correntes e poupança"},
+                            {"name": "Crédito Pessoal", "category_id": category_map["Crédito"], "description": "Empréstimos pessoais e financiamentos"},
+                            {"name": "Atendimento ao Cliente", "category_id": category_map["Atendimento"], "description": "Suporte e esclarecimentos gerais"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "Filial Vila Alice",
+                                "location": "Rua Principal, Vila Alice, Luanda",
+                                "neighborhood": "Vila Alice",
+                                "latitude": -8.8200,
+                                "longitude": 13.2600,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Filial Rocha Pinto",
+                                "location": "Rua Principal, Rocha Pinto, Luanda",
+                                "neighborhood": "Rocha Pinto",
+                                "latitude": -8.8400,
+                                "longitude": 13.2500,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Filial Sambizanga",
+                                "location": "Rua Principal, Sambizanga, Luanda",
+                                "neighborhood": "Sambizanga",
+                                "latitude": -8.8000,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    # Banco BPC
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Banco BPC",
+                        "description": "Banco estatal com ampla rede de serviços financeiros",
+                        "institution_type_id": institution_type_map["Bancário"],
+                        "logo_url": "https://www.bpc.ao/images/logo.png",
+                        "services": [
+                            {"name": "Abertura de Conta", "category_id": category_map["Conta"], "description": "Abertura de contas correntes e poupança"},
+                            {"name": "Crédito Pessoal", "category_id": category_map["Crédito"], "description": "Empréstimos pessoais e financiamentos"},
+                            {"name": "Atendimento ao Cliente", "category_id": category_map["Atendimento"], "description": "Suporte e esclarecimentos gerais"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "Filial Neves Bendinha",
+                                "location": "Rua Principal, Neves Bendinha, Luanda",
+                                "neighborhood": "Neves Bendinha",
+                                "latitude": -8.8100,
+                                "longitude": 13.2500,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Filial Maculusso",
+                                "location": "Rua Principal, Maculusso, Luanda",
+                                "neighborhood": "Maculusso",
+                                "latitude": -8.8150,
+                                "longitude": 13.2350,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                                                        },
+                            {
+                                "name": "Filial Patriota",
+                                "location": "Rua Principal, Patriota, Luanda",
+                                "neighborhood": "Patriota",
+                                "latitude": -8.9000,
+                                "longitude": 13.2000,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    # Banco BIC
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Banco BIC",
+                        "description": "Banco com forte presença em Angola, focado em inovação",
+                        "institution_type_id": institution_type_map["Bancário"],
+                        "logo_url": "https://www.bancobic.ao/images/logo.png",
+                        "services": [
+                            {"name": "Abertura de Conta", "category_id": category_map["Conta"], "description": "Abertura de contas correntes e poupança"},
+                            {"name": "Crédito Pessoal", "category_id": category_map["Crédito"], "description": "Empréstimos pessoais e financiamentos"},
+                            {"name": "Atendimento ao Cliente", "category_id": category_map["Atendimento"], "description": "Suporte e esclarecimentos gerais"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "Filial Golfe",
+                                "location": "Rua Principal, Golfe, Luanda",
+                                "neighborhood": "Golfe",
+                                "latitude": -8.8700,
+                                "longitude": 13.2700,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Filial Camama",
+                                "location": "Rua Principal, Camama, Luanda",
+                                "neighborhood": "Camama",
+                                "latitude": -8.8900,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Filial Prenda",
+                                "location": "Rua Principal, Prenda, Luanda",
+                                "neighborhood": "Prenda",
+                                "latitude": -8.8300,
+                                "longitude": 13.2300,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    # Banco Económico
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Banco Económico",
+                        "description": "Banco focado em soluções financeiras para empresas e indivíduos",
+                        "institution_type_id": institution_type_map["Bancário"],
+                        "logo_url": "https://www.bancoeconomico.ao/images/logo.png",
+                        "services": [
+                            {"name": "Abertura de Conta", "category_id": category_map["Conta"], "description": "Abertura de contas correntes e poupança"},
+                            {"name": "Crédito Pessoal", "category_id": category_map["Crédito"], "description": "Empréstimos pessoais e financiamentos"},
+                            {"name": "Atendimento ao Cliente", "category_id": category_map["Atendimento"], "description": "Suporte e esclarecimentos gerais"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "Filial Alvalade",
+                                "location": "Rua Principal, Alvalade, Luanda",
+                                "neighborhood": "Alvalade",
+                                "latitude": -8.8250,
+                                "longitude": 13.2300,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Filial Miramar",
+                                "location": "Rua Principal, Miramar, Luanda",
+                                "neighborhood": "Miramar",
+                                "latitude": -8.8100,
+                                "longitude": 13.2200,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Filial Bairro Operário",
+                                "location": "Rua Principal, Bairro Operário, Luanda",
+                                "neighborhood": "Bairro Operário",
+                                "latitude": -8.8200,
+                                "longitude": 13.2450,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    # Banco Millenium Atlântico
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Banco Millenium Atlântico",
+                        "description": "Banco moderno com serviços financeiros inovadores",
+                        "institution_type_id": institution_type_map["Bancário"],
+                        "logo_url": "https://www.atlantico.ao/images/logo.png",
+                        "services": [
+                            {"name": "Abertura de Conta", "category_id": category_map["Conta"], "description": "Abertura de contas correntes e poupança"},
+                            {"name": "Crédito Pessoal", "category_id": category_map["Crédito"], "description": "Empréstimos pessoais e financiamentos"},
+                            {"name": "Atendimento ao Cliente", "category_id": category_map["Atendimento"], "description": "Suporte e esclarecimentos gerais"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "Filial Cassenda",
+                                "location": "Rua Principal, Cassenda, Luanda",
+                                "neighborhood": "Cassenda",
+                                "latitude": -8.8350,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Filial Bairro Azul",
+                                "location": "Rua Principal, Bairro Azul, Luanda",
+                                "neighborhood": "Bairro Azul",
+                                "latitude": -8.8000,
+                                "longitude": 13.2300,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Filial Hoji Ya Henda",
+                                "location": "Rua Principal, Hoji Ya Henda, Luanda",
+                                "neighborhood": "Hoji Ya Henda",
+                                "latitude": -8.8500,
+                                "longitude": 13.2900,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    # Banco Sol
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Banco Sol",
+                        "description": "Banco voltado para inclusão financeira em Angola",
+                        "institution_type_id": institution_type_map["Bancário"],
+                        "logo_url": "https://www.bancosol.ao/images/logo.png",
+                        "services": [
+                            {"name": "Abertura de Conta", "category_id": category_map["Conta"], "description": "Abertura de contas correntes e poupança"},
+                            {"name": "Crédito Pessoal", "category_id": category_map["Crédito"], "description": "Empréstimos pessoais e financiamentos"},
+                            {"name": "Atendimento ao Cliente", "category_id": category_map["Atendimento"], "description": "Suporte e esclarecimentos gerais"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "Filial Palanca",
+                                "location": "Rua Principal, Palanca, Luanda",
+                                "neighborhood": "Palanca",
+                                "latitude": -8.8600,
+                                "longitude": 13.2800,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Filial Tala Hady",
+                                "location": "Rua Principal, Tala Hady, Luanda",
+                                "neighborhood": "Tala Hady",
+                                "latitude": -8.8450,
+                                "longitude": 13.2750,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Filial Kikolo",
+                                "location": "Rua Principal, Kikolo, Luanda",
+                                "neighborhood": "Kikolo",
+                                "latitude": -8.7800,
+                                "longitude": 13.3600,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Bancário",
+                                        "sector": "Bancário",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Abertura de Conta",
+                                                "prefix": "AC",
+                                                "daily_limit": 100,
+                                                "num_counters": 3,
+                                                "tags": ["Bancário", "Conta"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Crédito Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 80,
+                                                "num_counters": 2,
+                                                "tags": ["Bancário", "Crédito"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Atendimento ao Cliente",
+                                                "prefix": "AT",
+                                                "daily_limit": 120,
+                                                "num_counters": 4,
+                                                "tags": ["Bancário", "Atendimento", "24h"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    # Hospital Josina Machel
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Hospital Josina Machel",
+                        "description": "Hospital público de referência em Luanda",
+                        "institution_type_id": institution_type_map["Saúde"],
+                        "logo_url": "https://www.hospitaljosinamachel.ao/images/logo.png",
+                        "services": [
+                            {"name": "Consulta Geral", "category_id": category_map["Consulta Médica"], "description": "Consultas médicas gerais"},
+                            {"name": "Exames Laboratoriais", "category_id": category_map["Exames"], "description": "Exames de diagnóstico"},
+                            {"name": "Internamento", "category_id": category_map["Internamento"], "description": "Serviços de internamento hospitalar"},
+                            {"name": "Vacinação", "category_id": category_map["Vacinação"], "description": "Serviços de imunização"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "Unidade Morro Bento",
+                                "location": "Rua Principal, Morro Bento, Luanda",
+                                "neighborhood": "Morro Bento",
+                                "latitude": -8.9100,
+                                "longitude": 13.1900,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Rangel",
+                                "location": "Rua do Rangel, Rangel, Luanda",
+                                "neighborhood": "Rangel",
+                                "latitude": -8.8300,
+                                "longitude": 13.2500,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Samba",
+                                "location": "Rua Principal, Samba, Luanda",
+                                "neighborhood": "Samba",
+                                "latitude": -8.8200,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Cacuaco",
+                                "location": "Rua Principal, Cacuaco, Luanda",
+                                "neighborhood": "Cacuaco",
+                                "latitude": -8.7767,
+                                "longitude": 13.3667,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Benfica",
+                                "location": "Rua Principal, Benfica, Luanda",
+                                "neighborhood": "Benfica",
+                                "latitude": -8.9500,
+                                "longitude": 13.1500,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    # Clínica Sagrada Esperança
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Clínica Sagrada Esperança",
+                        "description": "Clínica privada de excelência em Luanda",
+                        "institution_type_id": institution_type_map["Saúde"],
+                        "logo_url": "https://www.clinicasagradaesperanca.ao/images/logo.png",
+                        "services": [
+                            {"name": "Consulta Geral", "category_id": category_map["Consulta Médica"], "description": "Consultas médicas gerais"},
+                            {"name": "Exames Laboratoriais", "category_id": category_map["Exames"], "description": "Exames de diagnóstico"},
+                            {"name": "Internamento", "category_id": category_map["Internamento"], "description": "Serviços de internamento hospitalar"},
+                            {"name": "Vacinação", "category_id": category_map["Vacinação"], "description": "Serviços de imunização"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "Unidade Kilamba",
+                                "location": "Avenida do Kilamba, Kilamba, Luanda",
+                                "neighborhood": "Kilamba",
+                                "latitude": -8.9340,
+                                "longitude": 13.2670,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Cazenga",
+                                "location": "Avenida dos Combatentes, Cazenga, Luanda",
+                                "neighborhood": "Cazenga",
+                                "latitude": -8.8510,
+                                "longitude": 13.2840,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Viana",
+                                "location": "Rua Principal, Viana, Luanda",
+                                "neighborhood": "Viana",
+                                "latitude": -8.9040,
+                                "longitude": 13.3750,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Bairro Popular",
+                                "location": "Rua Principal, Bairro Popular, Luanda",
+                                "neighborhood": "Bairro Popular",
+                                "latitude": -8.8300,
+                                "longitude": 13.2600,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Unidade Valódia",
+                                "location": "Rua Principal, Valódia, Luanda",
+                                "neighborhood": "Valódia",
+                                "latitude": -8.8400,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Clínica Geral",
+                                        "sector": "Saúde",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Consulta Geral",
+                                                "prefix": "CG",
+                                                "daily_limit": 80,
+                                                "num_counters": 4,
+                                                "tags": ["Saúde", "Consulta", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Exames Laboratoriais",
+                                                "prefix": "EL",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Exames"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Internamento",
+                                                "prefix": "IN",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Saúde", "Internamento"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Vacinação",
+                                                "prefix": "VC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Saúde", "Vacinação"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
 
-                    # Criar agendamentos
-                    for schedule in queue_data['schedules']:
-                        existing_schedule = QueueSchedule.query.filter_by(queue_id=queue.id, weekday=schedule['weekday']).first()
-                        if existing_schedule:
-                            continue
-                        queue_schedule = QueueSchedule(
-                            id=str(uuid.uuid4()),
-                            queue_id=queue.id,
-                            weekday=schedule['weekday'],
-                            open_time=schedule.get('open_time'),
-                            end_time=schedule.get('end_time'),
-                            is_closed=schedule.get('is_closed', False)
+                # --------------------------------------
+                # Criar Instituições, Filiais, Departamentos, Filas e Tickets
+                # --------------------------------------
+                def create_institution(data):
+                    if not exists(Institution, name=data["name"]):
+                        institution = Institution(
+                            id=data["id"],
+                            name=data["name"],
+                            description=data["description"],
+                            institution_type_id=data["institution_type_id"],
+                            logo_url=data["logo_url"],
+                            is_active=True
                         )
-                        db.session.add(queue_schedule)
-
-                    # Criar tags
-                    for tag_name in queue_data['tags']:
-                        existing_tag = ServiceTag.query.filter_by(queue_id=queue.id, tag=tag_name).first()
-                        if existing_tag:
-                            continue
-                        tag = ServiceTag(
-                            id=str(uuid.uuid4()),
-                            queue_id=queue.id,
-                            tag=tag_name
-                        )
-                        db.session.add(tag)
-
-                    return queue
-
-                def create_department(branch_id, dept_data):
-                    """
-                    Cria um departamento com suas filas.
-                    """
-                    existing_dept = Department.query.filter_by(branch_id=branch_id, name=dept_data['name']).first()
-                    if existing_dept:
-                        app.logger.info(f"Departamento {dept_data['name']} já existe na filial, pulando.")
-                        return existing_dept
-
-                    department = Department(
-                        id=str(uuid.uuid4()),
-                        branch_id=branch_id,
-                        name=dept_data['name'],
-                        sector=dept_data['sector']
-                    )
-                    db.session.add(department)
-                    db.session.flush()
-
-                    for queue_data in dept_data['queues']:
-                        create_queue(department.id, queue_data)
-
-                    return department
-
-                def create_branch(institution_id, branch_data):
-                    """
-                    Cria uma filial com seus departamentos.
-                    """
-                    existing_branch = Branch.query.filter_by(institution_id=institution_id, name=branch_data['name']).first()
-                    if existing_branch:
-                        app.logger.info(f"Filial {branch_data['name']} já existe na instituição, pulando.")
-                        return existing_branch
-
-                    branch = Branch(
-                        id=str(uuid.uuid4()),
-                        institution_id=institution_id,
-                        name=branch_data['name'],
-                        location=branch_data['location'],
-                        neighborhood=branch_data['neighborhood'],  # Usando o bairro da estrutura
-                        latitude=branch_data['latitude'],          # Usando a latitude da estrutura
-                        longitude=branch_data['longitude']         # Usando a longitude da estrutura
-                    )
-                    db.session.add(branch)
-                    db.session.flush()
-
-                    for dept_data in branch_data['departments']:
-                        create_department(branch.id, dept_data)
-
-                    return branch
-
-                def create_institution(inst_data):
-                    """
-                    Cria uma instituição com suas filiais.
-                    """
-                    existing_inst = Institution.query.filter_by(id=inst_data['id']).first()
-                    if existing_inst:
-                        app.logger.info(f"Instituição {inst_data['name']} já existe com ID {inst_data['id']}, pulando.")
-                        return existing_inst
-
-                    institution = Institution(
-                        id=inst_data['id'],
-                        name=inst_data['name'],
-                        description=inst_data['description']
-                    )
-                    db.session.add(institution)
-                    db.session.flush()
-
-                    for branch_data in inst_data['branches']:
-                        create_branch(institution.id, branch_data)
-
+                        db.session.add(institution)
+                        db.session.flush()
+                        app.logger.debug(f"Instituição criada: {data['name']}")
+                    else:
+                        institution = Institution.query.filter_by(name=data["name"]).first()
                     return institution
 
-                # Criar instituições
-                app.logger.info("Criando instituições...")
+                def create_institution_service(institution, service_data):
+                    if not exists(InstitutionService, institution_id=institution.id, name=service_data["name"]):
+                        service = InstitutionService(
+                            id=str(uuid.uuid4()),
+                            institution_id=institution.id,
+                            name=service_data["name"],
+                            category_id=service_data["category_id"],
+                            description=service_data["description"]
+                        )
+                        db.session.add(service)
+                        db.session.flush()
+                        app.logger.debug(f"Serviço criado: {service_data['name']} para {institution.name}")
+                    return InstitutionService.query.filter_by(institution_id=institution.id, name=service_data["name"]).first()
+
+                def create_branch(institution, branch_data):
+                    if not exists(Branch, institution_id=institution.id, name=branch_data["name"]):
+                        branch = Branch(
+                            id=str(uuid.uuid4()),
+                            institution_id=institution.id,
+                            name=branch_data["name"],
+                            location=branch_data["location"],
+                            neighborhood=branch_data["neighborhood"],
+                            latitude=branch_data["latitude"],
+                            longitude=branch_data["longitude"],
+                            is_active=True
+                        )
+                        db.session.add(branch)
+                        db.session.flush()
+                        app.logger.debug(f"Filial criada: {branch_data['name']} para {institution.name}")
+                    else:
+                        branch = Branch.query.filter_by(institution_id=institution.id, name=branch_data["name"]).first()
+                    return branch
+
+                def create_branch_schedule(branch):
+                    for day in Weekday:
+                        if not exists(BranchSchedule, branch_id=branch.id, weekday=day):
+                            schedule = BranchSchedule(
+                                id=str(uuid.uuid4()),
+                                branch_id=branch.id,
+                                weekday=day,
+                                opening_time=time(8, 0),
+                                closing_time=time(17, 0),
+                                is_closed=False
+                            )
+                            db.session.add(schedule)
+                            db.session.flush()
+                    app.logger.debug(f"Horários criados para filial: {branch.name}")
+
+                def create_department(branch, dept_data):
+                    if not exists(Department, branch_id=branch.id, name=dept_data["name"]):
+                        department = Department(
+                            id=str(uuid.uuid4()),
+                            branch_id=branch.id,
+                            name=dept_data["name"],
+                            sector=dept_data["sector"],
+                            is_active=True
+                        )
+                        db.session.add(department)
+                        db.session.flush()
+                        app.logger.debug(f"Departamento criado: {dept_data['name']} para {branch.name}")
+                    else:
+                        department = Department.query.filter_by(branch_id=branch.id, name=dept_data["name"]).first()
+                    return department
+
+                def create_queue(department, queue_data):
+                    if not exists(Queue, department_id=department.id, service_name=queue_data["service_name"]):
+                        queue = Queue(
+                            id=queue_data["id"],
+                            department_id=department.id,
+                            service_name=queue_data["service_name"],
+                            prefix=queue_data["prefix"],
+                            daily_limit=queue_data["daily_limit"],
+                            num_counters=queue_data["num_counters"],
+                            is_active=True
+                        )
+                        db.session.add(queue)
+                        db.session.flush()
+                        for tag in queue_data["tags"]:
+                            if not exists(ServiceTag, queue_id=queue.id, tag=tag):
+                                service_tag = ServiceTag(
+                                    id=str(uuid.uuid4()),
+                                    queue_id=queue.id,
+                                    tag=tag
+                                )
+                                db.session.add(service_tag)
+                                db.session.flush()
+                        app.logger.debug(f"Fila criada: {queue_data['service_name']} para {department.name}")
+                    else:
+                        queue = Queue.query.filter_by(department_id=department.id, service_name=queue_data["service_name"]).first()
+                    return queue
+
+                def create_tickets(queue):
+                    for i in range(10):
+                        ticket_number = f"{queue.prefix}{i+1:03d}"
+                        if not exists(Ticket, queue_id=queue.id, ticket_number=ticket_number):
+                            ticket = Ticket(
+                                id=str(uuid.uuid4()),
+                                queue_id=queue.id,
+                                ticket_number=ticket_number,
+                                status="Atendido",
+                                issue_time=datetime.now() - timedelta(days=1),
+                                called_time=datetime.now() - timedelta(hours=1),
+                                completed_time=datetime.now()
+                            )
+                            db.session.add(ticket)
+                            db.session.flush()
+                            app.logger.debug(f"Ticket criado: {ticket_number} para fila {queue.service_name}")
+
+                # Processar instituições
                 for inst_data in institutions_data:
-                    create_institution(inst_data)
-                app.logger.info("Instituições, filiais, departamentos e filas criados com sucesso.")
+                    institution = create_institution(inst_data)
+                    for service_data in inst_data["services"]:
+                        create_institution_service(institution, service_data)
+                    for branch_data in inst_data["branches"]:
+                        branch = create_branch(institution, branch_data)
+                        create_branch_schedule(branch)
+                        for dept_data in branch_data["departments"]:
+                            department = create_department(branch, dept_data)
+                            for queue_data in dept_data["queues"]:
+                                queue = create_queue(department, queue_data)
+                                create_tickets(queue)
+
+                # --------------------------------------
+                # Criar Usuários Administrativos e Atendentes
+                # --------------------------------------
+                def create_user(email, password, role, institution_id=None, branch_id=None):
+                    if not exists(User, email=email):
+                        user = User(
+                            id=str(uuid.uuid4()),
+                            email=email,
+                            password=hash_password(password),
+                            role=role,
+                            institution_id=institution_id,
+                            branch_id=branch_id,
+                            is_active=True,
+                            is_client=False
+                        )
+                        db.session.add(user)
+                        db.session.flush()
+                        app.logger.debug(f"Usuário criado: {email} com papel {role}")
+                    else:
+                        user = User.query.filter_by(email=email).first()
+                    return user
+
+                # Criar SYSTEM_ADMIN
+                create_user(
+                    email="system_admin@queue.com",
+                    password="Admin123!",
+                    role=UserRole.SYSTEM_ADMIN
+                )
+
+                # Criar INSTITUTION_ADMIN para cada instituição
+                for inst_data in institutions_data:
+                    inst = Institution.query.filter_by(name=inst_data["name"]).first()
+                    create_user(
+                        email=f"inst_admin_{normalize_string(inst_data['name'])}@queue.com",
+                        password="InstAdmin123!",
+                        role=UserRole.INSTITUTION_ADMIN,
+                        institution_id=inst.id
+                    )
+
+                # Criar BRANCH_ADMIN e ATTENDANT para cada filial
+                for inst_data in institutions_data:
+                    inst = Institution.query.filter_by(name=inst_data["name"]).first()
+                    for branch_data in inst_data["branches"]:
+                        branch = Branch.query.filter_by(institution_id=inst.id, name=branch_data["name"]).first()
+                        # BRANCH_ADMIN
+                        create_user(
+                            email=f"branch_admin_{normalize_string(branch_data['name'])}@queue.com",
+                            password="BranchAdmin123!",
+                            role=UserRole.BRANCH_ADMIN,
+                            institution_id=inst.id,
+                            branch_id=branch.id
+                        )
+                        # ATTENDANT (2 por filial)
+                        for i in range(1, 3):
+                            create_user(
+                                email=f"attendant_{normalize_string(branch_data['name'])}_{i}@queue.com",
+                                password="Attendant123!",
+                                role=UserRole.ATTENDANT,
+                                institution_id=inst.id,
+                                branch_id=branch.id
+                            )
+
+                # --------------------------------------
+                # Commit das alterações
+                # --------------------------------------
+                db.session.commit()
+                app.logger.info("População de dados iniciais concluída com sucesso.")
+
+                # --------------------------------------
+                # Retornar dados criados em formato JSON
+                # --------------------------------------
+                result = {
+                    "institutions": [],
+                    "users": []
+                }
+
+                for inst_data in institutions_data:
+                    inst = Institution.query.filter_by(name=inst_data["name"]).first()
+                    inst_info = {
+                        "id": inst.id,
+                        "name": inst.name,
+                        "description": inst.description,
+                        "institution_type_id": inst.institution_type_id,
+                        "logo_url": inst.logo_url,
+                        "services": [
+                            {
+                                "id": s.id,
+                                "name": s.name,
+                                "category_id": s.category_id,
+                                "description": s.description
+                            } for s in InstitutionService.query.filter_by(institution_id=inst.id).all()
+                        ],
+                        "branches": []
+                    }
+                    for branch_data in inst_data["branches"]:
+                        branch = Branch.query.filter_by(institution_id=inst.id, name=branch_data["name"]).first()
+                        branch_info = {
+                            "id": branch.id,
+                            "name": branch.name,
+                            "location": branch.location,
+                            "neighborhood": branch.neighborhood,
+                            "latitude": branch.latitude,
+                            "longitude": branch.longitude,
+                            "departments": []
+                        }
+                        for dept_data in branch_data["departments"]:
+                            dept = Department.query.filter_by(branch_id=branch.id, name=dept_data["name"]).first()
+                            dept_info = {
+                                "id": dept.id,
+                                "name": dept.name,
+                                "sector": dept.sector,
+                                "queues": [
+                                    {
+                                        "id": q.id,
+                                        "service_name": q.service_name,
+                                        "prefix": q.prefix,
+                                        "daily_limit": q.daily_limit,
+                                        "num_counters": q.num_counters,
+                                        "tags": [t.tag for t in ServiceTag.query.filter_by(queue_id=q.id).all()],
+                                        "tickets": [
+                                            {
+                                                "id": t.id,
+                                                "ticket_number": t.ticket_number,
+                                                "status": t.status,
+                                                "issue_time": t.issue_time.isoformat(),
+                                                "called_time": t.called_time.isoformat() if t.called_time else None,
+                                                "completed_time": t.completed_time.isoformat() if t.completed_time else None
+                                            } for t in Ticket.query.filter_by(queue_id=q.id).all()
+                                        ]
+                                    } for q in Queue.query.filter_by(department_id=dept.id).all()
+                                ]
+                            }
+                            branch_info["departments"].append(dept_info)
+                        inst_info["branches"].append(branch_info)
+                    result["institutions"].append(inst_info)
+
+                # Usuários
+                for user in User.query.all():
+                    result["users"].append({
+                        "id": user.id,
+                        "email": user.email,
+                        "role": user.role.value,
+                        "institution_id": user.institution_id,
+                        "branch_id": user.branch_id,
+                        "is_active": user.is_active,
+                        "is_client": user.is_client
+                    })
+
+                return result
 
         except Exception as e:
             db.session.rollback()
-            app.logger.error(f"Erro ao popular dados: {str(e)}")
+            app.logger.error(f"Erro ao popular dados iniciais: {str(e)}")
             raise
+                            
