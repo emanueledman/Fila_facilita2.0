@@ -1,6 +1,6 @@
 from flask import jsonify, request, make_response
 from . import db
-from .models import User, UserRole, Queue, Department
+from .models import User, UserRole, Queue, Department, Institution, Branch
 import logging
 import jwt
 import os
@@ -16,7 +16,7 @@ def init_user_routes(app):
             response = make_response()
             response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
             response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
             response.headers['Access-Control-Max-Age'] = '86400'
             return response
 
@@ -43,10 +43,10 @@ def init_user_routes(app):
                 logger.warning(f"Senha inválida para email={email}")
                 return jsonify({"error": "Credenciais inválidas"}), 401
 
-            # Permitir ATTENDANT, INSTITUTION_ADMIN e SYSTEM_ADMIN
-            if user.user_role not in [UserRole.ATTENDANT, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+            # Permitir todos os papéis administrativos
+            if user.user_role not in [UserRole.ATTENDANT, UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
                 logger.warning(f"Usuário {email} tem papel inválido: {user.user_role.value}")
-                return jsonify({"error": "Acesso restrito a atendentes, administradores de instituição ou sistema"}), 403
+                return jsonify({"error": "Acesso restrito a atendentes, administradores ou sistema"}), 403
 
             secret_key = os.getenv('JWT_SECRET_KEY', '1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0')
             token = jwt.encode({
@@ -76,7 +76,7 @@ def init_user_routes(app):
                 queues = Queue.query.join(Department).filter(Department.branch_id == user.branch_id).all()
                 response_data["queues"] = [{
                     'id': q.id,
-                    'service': q.service.name,
+                    'service': q.service.name if q.service else 'N/A',
                     'prefix': q.prefix,
                     'department': q.department.name if q.department else 'N/A',
                     'active_tickets': q.active_tickets,
@@ -87,22 +87,32 @@ def init_user_routes(app):
                     'end_time': q.end_time.strftime('%H:%M') if q.end_time else None
                 } for q in queues]
 
-            elif user.user_role == UserRole.INSTITUTION_ADMIN:
-                if not user.institution_id:
-                    logger.warning(f"Admin {user.id} não vinculado a instituição")
-                    return jsonify({"error": "Admin não vinculado a uma instituição"}), 403
-                # Buscar departamentos
-                departments = Department.query.filter_by(institution_id=user.institution_id).all()
+            elif user.user_role == UserRole.BRANCH_ADMIN:
+                if not user.branch_id:
+                    logger.warning(f"Admin de filial {user.id} não vinculado a filial")
+                    return jsonify({"error": "Admin não vinculado a uma filial"}), 403
+                # Buscar departamentos e filas da filial
+                departments = Department.query.filter_by(branch_id=user.branch_id).all()
                 response_data["departments"] = [{
                     'id': d.id,
                     'name': d.name,
                     'sector': d.sector
                 } for d in departments]
-                # Buscar atendentes da instituição
-                attendants = User.query.filter_by(
-                    institution_id=user.institution_id,
-                    user_role=UserRole.ATTENDANT
-                ).all()
+                queues = Queue.query.join(Department).filter(Department.branch_id == user.branch_id).all()
+                response_data["queues"] = [{
+                    'id': q.id,
+                    'service': q.service.name if q.service else 'N/A',
+                    'prefix': q.prefix,
+                    'department': q.department.name if q.department else 'N/A',
+                    'active_tickets': q.active_tickets,
+                    'daily_limit': q.daily_limit,
+                    'current_ticket': q.current_ticket,
+                    'status': 'Aberto' if q.active_tickets < q.daily_limit else 'Lotado',
+                    'open_time': q.open_time.strftime('%H:%M') if q.open_time else None,
+                    'end_time': q.end_time.strftime('%H:%M') if q.end_time else None
+                } for q in queues]
+                # Buscar atendentes da filial
+                attendants = User.query.filter_by(branch_id=user.branch_id, user_role=UserRole.ATTENDANT).all()
                 response_data["attendants"] = [{
                     'id': a.id,
                     'email': a.email,
@@ -111,9 +121,46 @@ def init_user_routes(app):
                     'branch_name': a.branch.name if a.branch else 'N/A'
                 } for a in attendants]
 
+            elif user.user_role == UserRole.INSTITUTION_ADMIN:
+                if not user.institution_id:
+                    logger.warning(f"Admin {user.id} não vinculado a instituição")
+                    return jsonify({"error": "Admin não vinculado a uma instituição"}), 403
+                # Buscar departamentos e filiais
+                departments = Department.query.join(Branch).filter(Branch.institution_id == user.institution_id).all()
+                response_data["departments"] = [{
+                    'id': d.id,
+                    'name': d.name,
+                    'sector': d.sector,
+                    'branch_id': d.branch_id,
+                    'branch_name': d.branch.name if d.branch else 'N/A'
+                } for d in departments]
+                branches = Branch.query.filter_by(institution_id=user.institution_id).all()
+                response_data["branches"] = [{
+                    'id': b.id,
+                    'name': b.name,
+                    'location': b.location,
+                    'neighborhood': b.neighborhood
+                } for b in branches]
+                # Buscar atendentes e administradores de filial
+                attendants = User.query.filter_by(institution_id=user.institution_id, user_role=UserRole.ATTENDANT).all()
+                response_data["attendants"] = [{
+                    'id': a.id,
+                    'email': a.email,
+                    'name': a.name,
+                    'branch_id': a.branch_id,
+                    'branch_name': a.branch.name if a.branch else 'N/A'
+                } for a in attendants]
+                branch_admins = User.query.filter_by(institution_id=user.institution_id, user_role=UserRole.BRANCH_ADMIN).all()
+                response_data["branch_admins"] = [{
+                    'id': ba.id,
+                    'email': ba.email,
+                    'name': ba.name,
+                    'branch_id': ba.branch_id,
+                    'branch_name': ba.branch.name if ba.branch else 'N/A'
+                } for ba in branch_admins]
+
             elif user.user_role == UserRole.SYSTEM_ADMIN:
                 # Buscar todas as instituições
-                from .models import Institution
                 institutions = Institution.query.all()
                 response_data["institutions"] = [{
                     'id': i.id,
