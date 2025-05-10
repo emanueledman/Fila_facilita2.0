@@ -3478,11 +3478,15 @@ def populate_initial_data(app):
                         queue = Queue(
                             id=queue_data["id"],
                             department_id=department.id,
-                            service_name=queue_data["service_name"],
+                            service_id=InstitutionService.query.filter_by(institution_id=department.branch.institution_id, name=queue_data["service_name"]).first().id,
                             prefix=queue_data["prefix"],
                             daily_limit=queue_data["daily_limit"],
                             num_counters=queue_data["num_counters"],
-                            
+                            active_tickets=0,
+                            current_ticket=0,
+                            avg_wait_time=5.0,
+                            last_service_time=2.0,
+                            last_counter=0
                         )
                         db.session.add(queue)
                         db.session.flush()
@@ -3499,7 +3503,6 @@ def populate_initial_data(app):
                     else:
                         queue = Queue.query.filter_by(department_id=department.id, service_name=queue_data["service_name"]).first()
                     return queue
-
                 def create_tickets(queue):
                     for i in range(10):
                         ticket_number = f"{queue.prefix}{i+1:03d}"
