@@ -605,7 +605,7 @@ def init_queue_routes(app):
                         'name': inst.type.name if inst.type else 'Desconhecido'
                     },
                     'is_favorite': inst.id in favorite_ids,
-                    'distance': float(distance) if distance is not None else None,
+                    'logo_url': inst.logo_url,
                     'description': inst.description
                 })
 
@@ -745,7 +745,6 @@ def init_queue_routes(app):
             logger.error(f"Erro ao listar filiais: {str(e)}")
             return jsonify({'error': 'Erro interno do servidor'}), 500
 
-
     @app.route('/institution_types', methods=['GET'])
     def list_institution_types():
         """Lista tipos de instituições com busca textual."""
@@ -797,7 +796,9 @@ def init_queue_routes(app):
             # Montar resposta
             results = [{
                 'id': t.id,
-                'name': t.name or 'Desconhecido'
+                'name': t.name or 'Desconhecido',
+                'logo_url': t.logo_url,
+                'description': t.description
             } for t in types]
 
             result = {
@@ -817,7 +818,7 @@ def init_queue_routes(app):
         except Exception as e:
             logger.error(f"Erro ao listar tipos de instituições: {str(e)}")
             return jsonify({'error': 'Erro interno do servidor'}), 500
-
+        
     @app.route('/api/recommendation/featured', methods=['GET'])
     @require_auth
     def get_featured_recommendations():
