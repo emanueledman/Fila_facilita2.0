@@ -3400,7 +3400,7 @@ def populate_initial_data(app):
                             description=data["description"],
                             institution_type_id=data["institution_type_id"],
                             logo_url=data["logo_url"],
-                            is_active=True
+                            
                         )
                         db.session.add(institution)
                         db.session.flush()
@@ -3433,7 +3433,7 @@ def populate_initial_data(app):
                             neighborhood=branch_data["neighborhood"],
                             latitude=branch_data["latitude"],
                             longitude=branch_data["longitude"],
-                            is_active=True
+                            
                         )
                         db.session.add(branch)
                         db.session.flush()
@@ -3464,7 +3464,7 @@ def populate_initial_data(app):
                             branch_id=branch.id,
                             name=dept_data["name"],
                             sector=dept_data["sector"],
-                            is_active=True
+                            
                         )
                         db.session.add(department)
                         db.session.flush()
@@ -3482,7 +3482,7 @@ def populate_initial_data(app):
                             prefix=queue_data["prefix"],
                             daily_limit=queue_data["daily_limit"],
                             num_counters=queue_data["num_counters"],
-                            is_active=True
+                            
                         )
                         db.session.add(queue)
                         db.session.flush()
@@ -3543,7 +3543,7 @@ def populate_initial_data(app):
                             role=role,
                             institution_id=institution_id,
                             branch_id=branch_id,
-                            is_active=True,
+                    
                             is_client=False
                         )
                         db.session.add(user)
@@ -3675,7 +3675,7 @@ def populate_initial_data(app):
                         "role": user.role.value,
                         "institution_id": user.institution_id,
                         "branch_id": user.branch_id,
-                        "is_active": user.is_active,
+                
                         "is_client": user.is_client
                     })
 
