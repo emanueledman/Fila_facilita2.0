@@ -3518,21 +3518,25 @@ def populate_initial_data(app):
                 
                 def create_tickets(queue):
                     for i in range(10):
-                        ticket_number = f"{queue.prefix}{i+1:03d}"
+                        ticket_number = i + 1  # Armazenar como inteiro
+                        display_number = f"{queue.prefix}{i+1:03d}"  # Formato para exibição
+                        qr_code = f"QR_{display_number}_{queue.id[:8]}"  # QR code com prefixo e ID da fila
                         if not exists(Ticket, queue_id=queue.id, ticket_number=ticket_number):
                             ticket = Ticket(
                                 id=str(uuid.uuid4()),
                                 queue_id=queue.id,
-                                ticket_number=ticket_number,
+                                ticket_number=ticket_number,  # Inteiro
+                                qr_code=qr_code,  # String com prefixo
                                 status="Atendido",
-                                issue_time=datetime.now() - timedelta(days=1),
-                                called_time=datetime.now() - timedelta(hours=1),
-                                completed_time=datetime.now()
+                                issued_at=datetime.now() - timedelta(days=1),
+                                attended_at=datetime.now() - timedelta(hours=1),
+                                counter=(i % queue.num_counters) + 1,
+                                service_time=5.0,
+                                trade_available=False
                             )
                             db.session.add(ticket)
                             db.session.flush()
-                            app.logger.debug(f"Ticket criado: {ticket_number} para fila {queue.service_name}")
-
+                            app.logger.debug(f"Ticket criado: {display_number} para fila {queue.service.name}")
                 # Processar instituições
                 for inst_data in institutions_data:
                     institution = create_institution(inst_data)
