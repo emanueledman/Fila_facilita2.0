@@ -52,8 +52,8 @@ def populate_initial_data(app):
                         {"name": "Bancário", "description": "Serviços financeiros e bancários", "logo_url": "https://example.com/icons/bank.png"},
                         {"name": "Saúde", "description": "Serviços de saúde e atendimento médico", "logo_url": "https://image.similarpng.com/file/similarpng/very-thumbnail/2020/07/health-care-medical-concept-vector-PNG.png"},
                         {"name": "Administrativo", "description": "Serviços administrativos e atendimento ao cidadão", "logo_url": "https://example.com/icons/admin.png"},
-                        {"name": "Educação", "description": "Serviços educacionais e acadêmicos", "logo_url": "https://example.com/icons/education.png"},
-                        {"name": "Transportes", "description": "Serviços de transporte e logística", "logo_url": "https://example.com/icons/transport.png"},
+                        {"name": "Educação", "description": "Serviços educacionais e acadêmicos", "logo_url": "https://img.freepik.com/vetores-premium/design-de-logotipo-da-escola-de-educacao_586739-1339.jpg?w=360"},
+                        {"name": "Transportes", "description": "Serviços de transporte e logística", "logo_url": "https://www.pensamentoverde.com.br/wp-content/uploads/2022/08/quais-sao-os-meios-de-transportes-mais-sustentaveis-1.png"},
                         {"name": "Comercial", "description": "Serviços comerciais e varejo", "logo_url": "https://example.com/icons/commercial.png"}
                     ]
                     type_map = {}
@@ -309,7 +309,7 @@ def populate_initial_data(app):
                         "name": "Banco BFA",
                         "description": "Serviços bancários em Luanda",
                         "institution_type_id": institution_type_map["Bancário"],
-                        "logo_url": "https://www.bfa.ao/images/logo.png",
+                        "logo_url": "https://mir-s3-cdn-cf.behance.net/projects/404/34bf0d202655285.Y3JvcCwxMTYyLDkwOSwxOTUsMA.png",
                         "services": [
                             {"name": "Atendimento Bancário", "category_id": category_map["Conta"], "description": "Gestão de contas"},
                             {"name": "Empréstimos", "category_id": category_map["Empréstimo"], "description": "Empréstimos empresariais"},
@@ -440,7 +440,7 @@ def populate_initial_data(app):
                         "name": "Banco BIC",
                         "description": "Serviços bancários em Luanda",
                         "institution_type_id": institution_type_map["Bancário"],
-                        "logo_url": "https://www.bancobic.ao/images/logo.png",
+                        "logo_url": "https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/042016/untitled-1_14.png?itok=KwyRI5ev",
                         "services": [
                             {"name": "Atendimento Bancário", "category_id": category_map["Conta"], "description": "Gestão de contas"},
                             {"name": "Empréstimos", "category_id": category_map["Empréstimo"], "description": "Empréstimos empresariais"},
@@ -571,7 +571,7 @@ def populate_initial_data(app):
                         "name": "Banco Keve",
                         "description": "Serviços bancários em Luanda",
                         "institution_type_id": institution_type_map["Bancário"],
-                        "logo_url": "https://www.bancokeve.ao/images/logo.png",
+                        "logo_url": "https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/112013/keve_0.png?itok=zvzyUwOa",
                         "services": [
                             {"name": "Atendimento Bancário", "category_id": category_map["Conta"], "description": "Gestão de contas"},
                             {"name": "Empréstimos", "category_id": category_map["Empréstimo"], "description": "Empréstimos pessoais e empresariais"},
@@ -1124,7 +1124,7 @@ def populate_initial_data(app):
                         "name": "SIAC",
                         "description": "Serviços administrativos em Luanda",
                         "institution_type_id": institution_type_map["Administrativo"],
-                        "logo_url": "https://www.siac.gv.ao/images/logo.png",
+                        "logo_url": "https://www.siac.gv.ao/images/site/SIAC_logotipo.jpg",
                         "services": [
                             {"name": "Emissão de BI", "category_id": category_map["Documentos"], "description": "Emissão de bilhete de identidade"},
                             {"name": "Registo Civil", "category_id": category_map["Registros"], "description": "Registos civis"},
