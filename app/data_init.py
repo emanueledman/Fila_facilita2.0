@@ -3399,8 +3399,7 @@ def populate_initial_data(app):
                             name=data["name"],
                             description=data["description"],
                             institution_type_id=data["institution_type_id"],
-                            logo_url=data["logo_url"],
-                            
+                            logo_url=data["logo_url"]
                         )
                         db.session.add(institution)
                         db.session.flush()
@@ -3432,8 +3431,7 @@ def populate_initial_data(app):
                             location=branch_data["location"],
                             neighborhood=branch_data["neighborhood"],
                             latitude=branch_data["latitude"],
-                            longitude=branch_data["longitude"],
-                            
+                            longitude=branch_data["longitude"]
                         )
                         db.session.add(branch)
                         db.session.flush()
@@ -3463,8 +3461,7 @@ def populate_initial_data(app):
                             id=str(uuid.uuid4()),
                             branch_id=branch.id,
                             name=dept_data["name"],
-                            sector=dept_data["sector"],
-                            
+                            sector=dept_data["sector"]
                         )
                         db.session.add(department)
                         db.session.flush()
@@ -3473,19 +3470,14 @@ def populate_initial_data(app):
                         department = Department.query.filter_by(branch_id=branch.id, name=dept_data["name"]).first()
                     return department
 
-
                 def create_queue(department, queue_data):
-                    # Buscar o serviço correspondente ao service_name
                     service = InstitutionService.query.filter_by(
                         institution_id=department.branch.institution_id,
                         name=queue_data["service_name"]
                     ).first()
-                    
                     if not service:
                         app.logger.error(f"Serviço {queue_data['service_name']} não encontrado para instituição {department.branch.institution_id}")
                         raise ValueError(f"Serviço {queue_data['service_name']} não encontrado")
-
-                    # Verificar se a fila já existe com base no department_id e service_id
                     if not exists(Queue, department_id=department.id, service_id=service.id):
                         queue = Queue(
                             id=queue_data["id"],
@@ -3515,18 +3507,18 @@ def populate_initial_data(app):
                     else:
                         queue = Queue.query.filter_by(department_id=department.id, service_id=service.id).first()
                     return queue
-                
+
                 def create_tickets(queue):
                     for i in range(10):
-                        ticket_number = i + 1  # Armazenar como inteiro
-                        display_number = f"{queue.prefix}{i+1:03d}"  # Formato para exibição
-                        qr_code = f"QR_{display_number}_{queue.id[:8]}"  # QR code com prefixo e ID da fila
+                        ticket_number = i + 1
+                        display_number = f"{queue.prefix}{i+1:03d}"
+                        qr_code = f"QR_{display_number}_{queue.id[:8]}"
                         if not exists(Ticket, queue_id=queue.id, ticket_number=ticket_number):
                             ticket = Ticket(
                                 id=str(uuid.uuid4()),
                                 queue_id=queue.id,
-                                ticket_number=ticket_number,  # Inteiro
-                                qr_code=qr_code,  # String com prefixo
+                                ticket_number=ticket_number,
+                                qr_code=qr_code,
                                 status="Atendido",
                                 issued_at=datetime.now() - timedelta(days=1),
                                 attended_at=datetime.now() - timedelta(hours=1),
@@ -3537,6 +3529,7 @@ def populate_initial_data(app):
                             db.session.add(ticket)
                             db.session.flush()
                             app.logger.debug(f"Ticket criado: {display_number} para fila {queue.service.name}")
+
                 # Processar instituições
                 for inst_data in institutions_data:
                     institution = create_institution(inst_data)
@@ -3560,7 +3553,7 @@ def populate_initial_data(app):
                             id=str(uuid.uuid4()),
                             email=email,
                             name=f"{role.value} {email.split('@')[0]}",
-                            password_hash=hash_password(password),
+                            password_hash= 为hash_password(password),
                             user_role=role,
                             institution_id=institution_id,
                             branch_id=branch_id,
@@ -3606,13 +3599,25 @@ def populate_initial_data(app):
                         )
                         # ATTENDANT (2 por filial)
                         for i in range(1, 3):
-                            create_user(
+                            attendant = create_user(
                                 email=f"attendant_{normalize_string(branch_data['name'])}_{i}@queue.com",
                                 password="Attendant123!",
                                 role=UserRole.ATTENDANT,
                                 institution_id=inst.id,
                                 branch_id=branch.id
                             )
+                            # Associar atendente a até duas filas da filial
+                            queues = Queue.query.join(Department).filter(Department.branch_id == branch.id).limit(2).all()
+                            for queue in queues:
+                                if not exists(AttendantQueue, user_id=attendant.id, queue_id=queue.id):
+                                    association = AttendantQueue(
+                                        user_id=attendant.id,
+                                        queue_id=queue.id
+                                    )
+                                    db.session.add(association)
+                                    db.session.flush()
+                                    app.logger.debug(f"Atendente {attendant.email} associado à fila {queue.service.name} ({queue.id})")
+
                 # --------------------------------------
                 # Commit das alterações
                 # --------------------------------------
@@ -3665,7 +3670,7 @@ def populate_initial_data(app):
                                 "queues": [
                                     {
                                         "id": q.id,
-                                        "service_name": q.service_name,
+                                        "service_name": q.service.name,
                                         "prefix": q.prefix,
                                         "daily_limit": q.daily_limit,
                                         "num_counters": q.num_counters,
@@ -3675,9 +3680,8 @@ def populate_initial_data(app):
                                                 "id": t.id,
                                                 "ticket_number": t.ticket_number,
                                                 "status": t.status,
-                                                "issue_time": t.issue_time.isoformat(),
-                                                "called_time": t.called_time.isoformat() if t.called_time else None,
-                                                "completed_time": t.completed_time.isoformat() if t.completed_time else None
+                                                "issued_at": t.issued_at.isoformat(),
+                                                "attended_at": t.attended_at.isoformat() if t.attended_at else None
                                             } for t in Ticket.query.filter_by(queue_id=q.id).all()
                                         ]
                                     } for q in Queue.query.filter_by(department_id=dept.id).all()
@@ -3687,16 +3691,13 @@ def populate_initial_data(app):
                         inst_info["branches"].append(branch_info)
                     result["institutions"].append(inst_info)
 
-                # Usuários
                 for user in User.query.all():
                     result["users"].append({
                         "id": user.id,
                         "email": user.email,
-                        "role": user.role.value,
+                        "role": user.user_role.value,
                         "institution_id": user.institution_id,
-                        "branch_id": user.branch_id,
-                
-                        "is_client": user.is_client
+                        "branch_id": user.branch_id
                     })
 
                 return result
@@ -3705,4 +3706,3 @@ def populate_initial_data(app):
             db.session.rollback()
             app.logger.error(f"Erro ao popular dados iniciais: {str(e)}")
             raise
-                            
