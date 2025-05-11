@@ -55,7 +55,7 @@ def init_admin_routes(app):
     # Rota para listar instituições
     @app.route('/api/admin/institutions', methods=['GET'])
     @require_auth
-    def list_institutions():
+    def list_institution():
         if request.user_role != UserRole.SYSTEM_ADMIN:
             logger.warning(f"Usuário {request.user_id} tentou acessar lista de instituições sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores do sistema'}), 403
