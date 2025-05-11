@@ -101,6 +101,7 @@ def create_app():
     from .queue_reco import init_queue_reco
     from .queue_filial import init_queue_filial
     from .attendent import init_attendant_routes
+    from .branch_admin_routes import init_branch_admin_routes
 
     init_routes(app)
     init_queue_routes(app)
@@ -109,6 +110,7 @@ def create_app():
     init_queue_reco(app)
     init_queue_filial(app)
     init_attendant_routes(app)
+    init_branch_admin_routes(app)
 
     # Rota para inicializar o banco de dados
     
