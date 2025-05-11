@@ -3553,7 +3553,7 @@ def populate_initial_data(app):
                             id=str(uuid.uuid4()),
                             email=email,
                             name=f"{role.value} {email.split('@')[0]}",
-                            password_hash= 为hash_password(password),
+                            password_hash= hash_password(password),
                             user_role=role,
                             institution_id=institution_id,
                             branch_id=branch_id,
