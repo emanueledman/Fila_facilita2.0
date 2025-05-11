@@ -42,6 +42,7 @@ def init_admin_routes(app):
             logger.error(f"Usuário {request.user_id} não encontrado")
             return jsonify({'error': 'Usuário não encontrado'}), 404
         
+        logger.info(f"Informações do usuário {user.email} retornadas")
         return jsonify({
             'id': user.id,
             'email': user.email,
@@ -55,8 +56,13 @@ def init_admin_routes(app):
     # Rota para listar instituições
     @app.route('/api/admin/institutions', methods=['GET'])
     @require_auth
-    def list_institution():
-        if request.user_role != UserRole.SYSTEM_ADMIN:
+    def list_institutions():
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+        if user.user_role != UserRole.SYSTEM_ADMIN:
             logger.warning(f"Usuário {request.user_id} tentou acessar lista de instituições sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores do sistema'}), 403
         
@@ -78,7 +84,12 @@ def init_admin_routes(app):
     @app.route('/api/admin/institutions', methods=['POST'])
     @require_auth
     def create_institution():
-        if request.user_role != UserRole.SYSTEM_ADMIN:
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+        if user.user_role != UserRole.SYSTEM_ADMIN:
             logger.warning(f"Usuário {request.user_id} tentou criar instituição sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores do sistema'}), 403
         
@@ -139,7 +150,12 @@ def init_admin_routes(app):
     @app.route('/api/admin/institutions/<institution_id>/departments', methods=['GET'])
     @require_auth
     def list_departments(institution_id):
-        if request.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
             logger.warning(f"Usuário {request.user_id} tentou listar departamentos sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
@@ -148,13 +164,13 @@ def init_admin_routes(app):
             logger.error(f"Instituição {institution_id} não encontrada")
             return jsonify({'error': 'Instituição não encontrada'}), 404
         
-        if request.user_role == UserRole.BRANCH_ADMIN and request.institution_id != institution_id:
+        if user.user_role == UserRole.BRANCH_ADMIN and user.institution_id != institution_id:
             logger.warning(f"Usuário {request.user_id} tentou acessar departamentos de outra instituição")
             return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
         
         query = Department.query.join(Branch).filter(Branch.institution_id == institution_id)
-        if request.user_role == UserRole.BRANCH_ADMIN:
-            query = query.filter(Branch.id == request.branch_id)
+        if user.user_role == UserRole.BRANCH_ADMIN:
+            query = query.filter(Branch.id == user.branch_id)
         
         departments = query.all()
         response = [{
@@ -172,7 +188,12 @@ def init_admin_routes(app):
     @app.route('/api/admin/institutions/<institution_id>/departments', methods=['POST'])
     @require_auth
     def create_department(institution_id):
-        if request.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
             logger.warning(f"Usuário {request.user_id} tentou criar departamento sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
@@ -181,7 +202,7 @@ def init_admin_routes(app):
             logger.error(f"Instituição {institution_id} não encontrada")
             return jsonify({'error': 'Instituição não encontrada'}), 404
         
-        if request.user_role == UserRole.BRANCH_ADMIN and request.institution_id != institution_id:
+        if user.user_role == UserRole.BRANCH_ADMIN and user.institution_id != institution_id:
             logger.warning(f"Usuário {request.user_id} tentou criar departamento em outra instituição")
             return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
         
@@ -204,7 +225,7 @@ def init_admin_routes(app):
             logger.error(f"Filial {branch_id} inválida para instituição {institution_id}")
             return jsonify({'error': 'Filial inválida'}), 400
         
-        if request.user_role == UserRole.BRANCH_ADMIN and branch_id != request.branch_id:
+        if user.user_role == UserRole.BRANCH_ADMIN and branch_id != user.branch_id:
             logger.warning(f"Usuário {request.user_id} tentou criar departamento em outra filial")
             return jsonify({'error': 'Acesso restrito à sua filial'}), 403
         
@@ -247,11 +268,16 @@ def init_admin_routes(app):
             }
         }), 201
 
-    # Rota para atualizar departamento (nova funcionalidade)
+    # Rota para atualizar departamento
     @app.route('/api/admin/institutions/<institution_id>/departments/<department_id>', methods=['PUT'])
     @require_auth
     def update_department(institution_id, department_id):
-        if request.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
             logger.warning(f"Usuário {request.user_id} tentou atualizar departamento sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
@@ -265,8 +291,8 @@ def init_admin_routes(app):
             logger.error(f"Departamento {department_id} não encontrado")
             return jsonify({'error': 'Departamento não encontrado'}), 404
         
-        if request.user_role == UserRole.BRANCH_ADMIN:
-            if request.institution_id != institution_id or department.branch_id != request.branch_id:
+        if user.user_role == UserRole.BRANCH_ADMIN:
+            if user.institution_id != institution_id or department.branch_id != user.branch_id:
                 logger.warning(f"Usuário {request.user_id} tentou atualizar departamento de outra filial")
                 return jsonify({'error': 'Acesso restrito à sua filial'}), 403
         
@@ -320,11 +346,16 @@ def init_admin_routes(app):
             }
         }), 200
 
-    # Rota para excluir departamento (nova funcionalidade)
+    # Rota para excluir departamento
     @app.route('/api/admin/institutions/<institution_id>/departments/<department_id>', methods=['DELETE'])
     @require_auth
     def delete_department(institution_id, department_id):
-        if request.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
             logger.warning(f"Usuário {request.user_id} tentou excluir departamento sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
@@ -338,8 +369,8 @@ def init_admin_routes(app):
             logger.error(f"Departamento {department_id} não encontrado")
             return jsonify({'error': 'Departamento não encontrado'}), 404
         
-        if request.user_role == UserRole.BRANCH_ADMIN:
-            if request.institution_id != institution_id or department.branch_id != request.branch_id:
+        if user.user_role == UserRole.BRANCH_ADMIN:
+            if user.institution_id != institution_id or department.branch_id != user.branch_id:
                 logger.warning(f"Usuário {request.user_id} tentou excluir departamento de outra filial")
                 return jsonify({'error': 'Acesso restrito à sua filial'}), 403
         
@@ -370,15 +401,20 @@ def init_admin_routes(app):
     @app.route('/api/admin/queues', methods=['GET'])
     @require_auth
     def list_queues():
-        if request.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
             logger.warning(f"Usuário {request.user_id} tentou listar filas sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
         query = Queue.query.join(Department).join(Branch)
-        if request.user_role == UserRole.BRANCH_ADMIN:
-            query = query.filter(Branch.id == request.branch_id)
-        elif request.user_role == UserRole.INSTITUTION_ADMIN:
-            query = query.filter(Branch.institution_id == request.institution_id)
+        if user.user_role == UserRole.BRANCH_ADMIN:
+            query = query.filter(Branch.id == user.branch_id)
+        elif user.user_role == UserRole.INSTITUTION_ADMIN:
+            query = query.filter(Branch.institution_id == user.institution_id)
         
         queues = query.all()
         response = [{
@@ -397,11 +433,16 @@ def init_admin_routes(app):
         logger.info(f"Listadas {len(queues)} filas para usuário {request.user_id}")
         return jsonify(response), 200
 
-    # Rota para criar fila (nova funcionalidade)
+    # Rota para criar fila
     @app.route('/api/admin/queues', methods=['POST'])
     @require_auth
     def create_queue():
-        if request.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
             logger.warning(f"Usuário {request.user_id} tentou criar fila sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
@@ -421,12 +462,12 @@ def init_admin_routes(app):
             logger.error(f"Serviço {data['service_id']} inválido")
             return jsonify({'error': 'Serviço inválido'}), 400
         
-        if request.user_role == UserRole.BRANCH_ADMIN:
-            if department.branch_id != request.branch_id or department.branch.institution_id != request.institution_id:
+        if user.user_role == UserRole.BRANCH_ADMIN:
+            if department.branch_id != user.branch_id or department.branch.institution_id != user.institution_id:
                 logger.warning(f"Usuário {request.user_id} tentou criar fila em outra filial")
                 return jsonify({'error': 'Acesso restrito à sua filial'}), 403
-        elif request.user_role == UserRole.INSTITUTION_ADMIN:
-            if department.branch.institution_id != request.institution_id:
+        elif user.user_role == UserRole.INSTITUTION_ADMIN:
+            if department.branch.institution_id != user.institution_id:
                 logger.warning(f"Usuário {request.user_id} tentou criar fila em outra instituição")
                 return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
         
@@ -473,11 +514,16 @@ def init_admin_routes(app):
             }
         }), 201
 
-    # Rota para atualizar fila (nova funcionalidade)
+    # Rota para atualizar fila
     @app.route('/api/admin/queues/<queue_id>', methods=['PUT'])
     @require_auth
     def update_queue(queue_id):
-        if request.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
             logger.warning(f"Usuário {request.user_id} tentou atualizar fila sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
@@ -486,12 +532,12 @@ def init_admin_routes(app):
             logger.error(f"Fila {queue_id} não encontrada")
             return jsonify({'error': 'Fila não encontrada'}), 404
         
-        if request.user_role == UserRole.BRANCH_ADMIN:
-            if queue.department.branch_id != request.branch_id or queue.department.branch.institution_id != request.institution_id:
+        if user.user_role == UserRole.BRANCH_ADMIN:
+            if queue.department.branch_id != user.branch_id or queue.department.branch.institution_id != user.institution_id:
                 logger.warning(f"Usuário {request.user_id} tentou atualizar fila de outra filial")
                 return jsonify({'error': 'Acesso restrito à sua filial'}), 403
-        elif request.user_role == UserRole.INSTITUTION_ADMIN:
-            if queue.department.branch.institution_id != request.institution_id:
+        elif user.user_role == UserRole.INSTITUTION_ADMIN:
+            if queue.department.branch.institution_id != user.institution_id:
                 logger.warning(f"Usuário {request.user_id} tentou atualizar fila de outra instituição")
                 return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
         
@@ -551,11 +597,16 @@ def init_admin_routes(app):
             }
         }), 200
 
-    # Rota para excluir fila (nova funcionalidade)
+    # Rota para excluir fila
     @app.route('/api/admin/queues/<queue_id>', methods=['DELETE'])
     @require_auth
     def delete_queue(queue_id):
-        if request.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
             logger.warning(f"Usuário {request.user_id} tentou excluir fila sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
@@ -564,12 +615,12 @@ def init_admin_routes(app):
             logger.error(f"Fila {queue_id} não encontrada")
             return jsonify({'error': 'Fila não encontrada'}), 404
         
-        if request.user_role == UserRole.BRANCH_ADMIN:
-            if queue.department.branch_id != request.branch_id or queue.department.branch.institution_id != request.institution_id:
+        if user.user_role == UserRole.BRANCH_ADMIN:
+            if queue.department.branch_id != user.branch_id or queue.department.branch.institution_id != user.institution_id:
                 logger.warning(f"Usuário {request.user_id} tentou excluir fila de outra filial")
                 return jsonify({'error': 'Acesso restrito à sua filial'}), 403
-        elif request.user_role == UserRole.INSTITUTION_ADMIN:
-            if queue.department.branch.institution_id != request.institution_id:
+        elif user.user_role == UserRole.INSTITUTION_ADMIN:
+            if queue.department.branch.institution_id != user.institution_id:
                 logger.warning(f"Usuário {request.user_id} tentou excluir fila de outra instituição")
                 return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
         
@@ -596,21 +647,26 @@ def init_admin_routes(app):
     # Rota para chamar próximo ticket
     @app.route('/api/admin/queue/<queue_id>/call', methods=['POST'])
     @require_auth
-    def call_next_tickets(queue_id):
+    def call_next_ticket(queue_id):
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
         queue = Queue.query.get(queue_id)
         if not queue:
             logger.error(f"Fila {queue_id} não encontrada")
             return jsonify({'error': 'Fila não encontrada'}), 404
         
-        if request.user_role == UserRole.BRANCH_ADMIN:
-            if queue.department.branch_id != request.branch_id or queue.department.branch.institution_id != request.institution_id:
+        if user.user_role == UserRole.BRANCH_ADMIN:
+            if queue.department.branch_id != user.branch_id or queue.department.branch.institution_id != user.institution_id:
                 logger.warning(f"Usuário {request.user_id} tentou chamar ticket de outra filial")
                 return jsonify({'error': 'Acesso restrito à sua filial'}), 403
-        elif request.user_role == UserRole.INSTITUTION_ADMIN:
-            if queue.department.branch.institution_id != request.institution_id:
+        elif user.user_role == UserRole.INSTITUTION_ADMIN:
+            if queue.department.branch.institution_id != user.institution_id:
                 logger.warning(f"Usuário {request.user_id} tentou chamar ticket de outra instituição")
                 return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
-        elif request.user_role != UserRole.SYSTEM_ADMIN:
+        elif user.user_role != UserRole.SYSTEM_ADMIN:
             logger.warning(f"Usuário {request.user_id} sem permissão para chamar ticket")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
@@ -651,11 +707,16 @@ def init_admin_routes(app):
             }
         }), 200
 
-    # Rota para listar gestores (atendentes e administradores de filial)
+    # Rota para listar gestores
     @app.route('/api/admin/institutions/<institution_id>/managers', methods=['GET'])
     @require_auth
     def list_managers(institution_id):
-        if request.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
             logger.warning(f"Usuário {request.user_id} tentou listar gestores sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
@@ -664,7 +725,7 @@ def init_admin_routes(app):
             logger.error(f"Instituição {institution_id} não encontrada")
             return jsonify({'error': 'Instituição não encontrada'}), 404
         
-        if request.user_role == UserRole.BRANCH_ADMIN and request.institution_id != institution_id:
+        if user.user_role == UserRole.BRANCH_ADMIN and user.institution_id != institution_id:
             logger.warning(f"Usuário {request.user_id} tentou listar gestores de outra instituição")
             return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
         
@@ -672,8 +733,8 @@ def init_admin_routes(app):
             User.institution_id == institution_id,
             User.user_role.in_([UserRole.ATTENDANT, UserRole.BRANCH_ADMIN])
         )
-        if request.user_role == UserRole.BRANCH_ADMIN:
-            query = query.filter(User.branch_id == request.branch_id)
+        if user.user_role == UserRole.BRANCH_ADMIN:
+            query = query.filter(User.branch_id == user.branch_id)
         
         managers = query.all()
         response = [{
@@ -692,7 +753,12 @@ def init_admin_routes(app):
     @app.route('/api/admin/institutions/<institution_id>/managers', methods=['POST'])
     @require_auth
     def create_manager(institution_id):
-        if request.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
             logger.warning(f"Usuário {request.user_id} tentou criar gestor sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
@@ -701,7 +767,7 @@ def init_admin_routes(app):
             logger.error(f"Instituição {institution_id} não encontrada")
             return jsonify({'error': 'Instituição não encontrada'}), 404
         
-        if request.user_role == UserRole.BRANCH_ADMIN and request.institution_id != institution_id:
+        if user.user_role == UserRole.BRANCH_ADMIN and user.institution_id != institution_id:
             logger.warning(f"Usuário {request.user_id} tentou criar gestor em outra instituição")
             return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
         
@@ -738,7 +804,7 @@ def init_admin_routes(app):
             logger.error(f"Filial {branch_id} inválida")
             return jsonify({'error': 'Filial inválida'}), 400
         
-        if request.user_role == UserRole.BRANCH_ADMIN and branch_id != request.branch_id:
+        if user.user_role == UserRole.BRANCH_ADMIN and branch_id != user.branch_id:
             logger.warning(f"Usuário {request.user_id} tentou criar gestor em outra filial")
             return jsonify({'error': 'Acesso restrito à sua filial'}), 403
         
@@ -746,7 +812,7 @@ def init_admin_routes(app):
             logger.error(f"Email {email} já registrado")
             return jsonify({'error': 'Email já registrado'}), 400
         
-        user = User(
+        new_user = User(
             id=str(uuid.uuid4()),
             email=email,
             name=name,
@@ -755,32 +821,32 @@ def init_admin_routes(app):
             branch_id=branch_id,
             active=True
         )
-        user.set_password(password)
-        db.session.add(user)
+        new_user.set_password(password)
+        db.session.add(new_user)
         db.session.commit()
         
         socketio.emit('user_created', {
-            'user_id': user.id,
-            'name': user.name,
-            'email': user.email
+            'user_id': new_user.id,
+            'name': new_user.name,
+            'email': new_user.email
         }, namespace='/admin')
         
         AuditLog.create(
             user_id=request.user_id,
             action='create_user',
             resource_type='user',
-            resource_id=user.id,
-            details=f"Criado usuário {user.email} com papel {user.user_role.value}"
+            resource_id=new_user.id,
+            details=f"Criado usuário {new_user.email} com papel {new_user.user_role.value}"
         )
         
-        logger.info(f"Gestor {user.email} criado por usuário {request.user_id}")
+        logger.info(f"Gestor {new_user.email} criado por usuário {request.user_id}")
         return jsonify({
             'message': 'Gestor criado com sucesso',
             'user': {
-                'id': user.id,
-                'email': user.email,
-                'name': user.name,
-                'user_role': user.user_role.value
+                'id': new_user.id,
+                'email': new_user.email,
+                'name': new_user.name,
+                'user_role': new_user.user_role.value
             }
         }), 201
 
@@ -788,7 +854,12 @@ def init_admin_routes(app):
     @app.route('/api/admin/institutions/<institution_id>/users/<user_id>', methods=['PUT'])
     @require_auth
     def update_manager(institution_id, user_id):
-        if request.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
             logger.warning(f"Usuário {request.user_id} tentou atualizar gestor sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
@@ -797,13 +868,13 @@ def init_admin_routes(app):
             logger.error(f"Instituição {institution_id} não encontrada")
             return jsonify({'error': 'Instituição não encontrada'}), 404
         
-        user = User.query.get(user_id)
-        if not user or user.institution_id != institution_id:
+        target_user = User.query.get(user_id)
+        if not target_user or target_user.institution_id != institution_id:
             logger.error(f"Usuário {user_id} não encontrado")
             return jsonify({'error': 'Usuário não encontrado'}), 404
         
-        if request.user_role == UserRole.BRANCH_ADMIN:
-            if request.institution_id != institution_id or user.branch_id != request.branch_id:
+        if user.user_role == UserRole.BRANCH_ADMIN:
+            if user.institution_id != institution_id or target_user.branch_id != user.branch_id:
                 logger.warning(f"Usuário {request.user_id} tentou atualizar gestor de outra filial")
                 return jsonify({'error': 'Acesso restrito à sua filial'}), 403
         
@@ -817,7 +888,7 @@ def init_admin_routes(app):
             if not validate_name_or_sector(name, 100):
                 logger.error(f"Nome inválido: {name}")
                 return jsonify({'error': 'Nome inválido'}), 400
-            user.name = name
+            target_user.name = name
         
         if 'email' in data:
             email = sanitize_input(data['email'])
@@ -827,55 +898,55 @@ def init_admin_routes(app):
             if User.query.filter_by(email=email).filter(User.id != user_id).first():
                 logger.error(f"Email {email} já registrado")
                 return jsonify({'error': 'Email já registrado'}), 400
-            user.email = email
+            target_user.email = email
         
         if 'password' in data and data['password']:
             password = data['password']
             if len(password) < 8:
                 logger.error("Senha muito curta")
                 return jsonify({'error': 'A senha deve ter pelo menos 8 caracteres'}), 400
-            user.set_password(password)
+            target_user.set_password(password)
         
         if 'user_role' in data:
             if data['user_role'] not in ['attendant', 'branch_admin']:
                 logger.error(f"Papel inválido: {data['user_role']}")
                 return jsonify({'error': 'Papel inválido'}), 400
-            user.user_role = UserRole(data['user_role'])
+            target_user.user_role = UserRole(data['user_role'])
         
         if 'branch_id' in data:
             branch = Branch.query.get(data['branch_id'])
             if not branch or branch.institution_id != institution_id:
                 logger.error(f"Filial {data['branch_id']} inválida")
                 return jsonify({'error': 'Filial inválida'}), 400
-            if request.user_role == UserRole.BRANCH_ADMIN and data['branch_id'] != request.branch_id:
+            if user.user_role == UserRole.BRANCH_ADMIN and data['branch_id'] != user.branch_id:
                 logger.warning(f"Usuário {request.user_id} tentou atualizar gestor para outra filial")
                 return jsonify({'error': 'Acesso restrito à sua filial'}), 403
-            user.branch_id = data['branch_id']
+            target_user.branch_id = data['branch_id']
         
         db.session.commit()
         
         socketio.emit('user_updated', {
-            'user_id': user.id,
-            'name': user.name,
-            'email': user.email
+            'user_id': target_user.id,
+            'name': target_user.name,
+            'email': target_user.email
         }, namespace='/admin')
         
         AuditLog.create(
             user_id=request.user_id,
             action='update_user',
             resource_type='user',
-            resource_id=user.id,
-            details=f"Atualizado usuário {user.email}"
+            resource_id=target_user.id,
+            details=f"Atualizado usuário {target_user.email}"
         )
         
-        logger.info(f"Gestor {user.email} atualizado por usuário {request.user_id}")
+        logger.info(f"Gestor {target_user.email} atualizado por usuário {request.user_id}")
         return jsonify({
             'message': 'Gestor atualizado com sucesso',
             'user': {
-                'id': user.id,
-                'email': user.email,
-                'name': user.name,
-                'user_role': user.user_role.value
+                'id': target_user.id,
+                'email': target_user.email,
+                'name': target_user.name,
+                'user_role': target_user.user_role.value
             }
         }), 200
 
@@ -883,7 +954,12 @@ def init_admin_routes(app):
     @app.route('/api/admin/institutions/<institution_id>/users/<user_id>', methods=['DELETE'])
     @require_auth
     def delete_manager(institution_id, user_id):
-        if request.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
             logger.warning(f"Usuário {request.user_id} tentou excluir gestor sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
@@ -892,26 +968,26 @@ def init_admin_routes(app):
             logger.error(f"Instituição {institution_id} não encontrada")
             return jsonify({'error': 'Instituição não encontrada'}), 404
         
-        user = User.query.get(user_id)
-        if not user or user.institution_id != institution_id:
+        target_user = User.query.get(user_id)
+        if not target_user or target_user.institution_id != institution_id:
             logger.error(f"Usuário {user_id} não encontrado")
             return jsonify({'error': 'Usuário não encontrado'}), 404
         
-        if request.user_role == UserRole.BRANCH_ADMIN:
-            if request.institution_id != institution_id or user.branch_id != request.branch_id:
+        if user.user_role == UserRole.BRANCH_ADMIN:
+            if user.institution_id != institution_id or target_user.branch_id != user.branch_id:
                 logger.warning(f"Usuário {request.user_id} tentou excluir gestor de outra filial")
                 return jsonify({'error': 'Acesso restrito à sua filial'}), 403
         
-        if user.id == request.user_id:
+        if target_user.id == request.user_id:
             logger.error(f"Usuário {request.user_id} tentou excluir a própria conta")
             return jsonify({'error': 'Não é possível excluir a própria conta'}), 400
         
-        db.session.delete(user)
+        db.session.delete(target_user)
         db.session.commit()
         
         socketio.emit('user_deleted', {
             'user_id': user_id,
-            'email': user.email
+            'email': target_user.email
         }, namespace='/admin')
         
         AuditLog.create(
@@ -919,17 +995,22 @@ def init_admin_routes(app):
             action='delete_user',
             resource_type='user',
             resource_id=user_id,
-            details=f"Excluído usuário {user.email}"
+            details=f"Excluído usuário {target_user.email}"
         )
         
-        logger.info(f"Gestor {user.email} excluído por usuário {request.user_id}")
+        logger.info(f"Gestor {target_user.email} excluído por usuário {request.user_id}")
         return jsonify({'message': 'Gestor excluído com sucesso'}), 200
 
-    # Rota para listar horários da filial (nova funcionalidade)
+    # Rota para listar horários da filial
     @app.route('/api/admin/institutions/<institution_id>/branches/<branch_id>/schedules', methods=['GET'])
     @require_auth
     def list_schedules(institution_id, branch_id):
-        if request.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
             logger.warning(f"Usuário {request.user_id} tentou listar horários sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
@@ -938,12 +1019,12 @@ def init_admin_routes(app):
             logger.error(f"Filial {branch_id} não encontrada")
             return jsonify({'error': 'Filial não encontrada'}), 404
         
-        if request.user_role == UserRole.BRANCH_ADMIN:
-            if request.institution_id != institution_id or branch_id != request.branch_id:
+        if user.user_role == UserRole.BRANCH_ADMIN:
+            if user.institution_id != institution_id or branch_id != user.branch_id:
                 logger.warning(f"Usuário {request.user_id} tentou listar horários de outra filial")
                 return jsonify({'error': 'Acesso restrito à sua filial'}), 403
-        elif request.user_role == UserRole.INSTITUTION_ADMIN:
-            if request.institution_id != institution_id:
+        elif user.user_role == UserRole.INSTITUTION_ADMIN:
+            if user.institution_id != institution_id:
                 logger.warning(f"Usuário {request.user_id} tentou listar horários de outra instituição")
                 return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
         
@@ -959,11 +1040,16 @@ def init_admin_routes(app):
         logger.info(f"Listados {len(schedules)} horários para filial {branch_id}")
         return jsonify(response), 200
 
-    # Rota para criar ou atualizar horário da filial (nova funcionalidade)
+    # Rota para criar ou atualizar horário da filial
     @app.route('/api/admin/institutions/<institution_id>/branches/<branch_id>/schedules', methods=['POST'])
     @require_auth
     def create_schedule(institution_id, branch_id):
-        if request.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
             logger.warning(f"Usuário {request.user_id} tentou criar horário sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
@@ -972,12 +1058,12 @@ def init_admin_routes(app):
             logger.error(f"Filial {branch_id} não encontrada")
             return jsonify({'error': 'Filial não encontrada'}), 404
         
-        if request.user_role == UserRole.BRANCH_ADMIN:
-            if request.institution_id != institution_id or branch_id != request.branch_id:
+        if user.user_role == UserRole.BRANCH_ADMIN:
+            if user.institution_id != institution_id or branch_id != user.branch_id:
                 logger.warning(f"Usuário {request.user_id} tentou criar horário em outra filial")
                 return jsonify({'error': 'Acesso restrito à sua filial'}), 403
-        elif request.user_role == UserRole.INSTITUTION_ADMIN:
-            if request.institution_id != institution_id:
+        elif user.user_role == UserRole.INSTITUTION_ADMIN:
+            if user.institution_id != institution_id:
                 logger.warning(f"Usuário {request.user_id} tentou criar horário em outra instituição")
                 return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
         
@@ -1053,11 +1139,16 @@ def init_admin_routes(app):
             }
         }), 200
 
-    # Rota para atualizar horário específico (nova funcionalidade)
+    # Rota para atualizar horário específico
     @app.route('/api/admin/institutions/<institution_id>/branches/<branch_id>/schedules/<schedule_id>', methods=['PUT'])
     @require_auth
     def update_schedule(institution_id, branch_id, schedule_id):
-        if request.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
             logger.warning(f"Usuário {request.user_id} tentou atualizar horário sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
@@ -1071,12 +1162,12 @@ def init_admin_routes(app):
             logger.error(f"Horário {schedule_id} não encontrado")
             return jsonify({'error': 'Horário não encontrado'}), 404
         
-        if request.user_role == UserRole.BRANCH_ADMIN:
-            if request.institution_id != institution_id or branch_id != request.branch_id:
+        if user.user_role == UserRole.BRANCH_ADMIN:
+            if user.institution_id != institution_id or branch_id != user.branch_id:
                 logger.warning(f"Usuário {request.user_id} tentou atualizar horário de outra filial")
                 return jsonify({'error': 'Acesso restrito à sua filial'}), 403
-        elif request.user_role == UserRole.INSTITUTION_ADMIN:
-            if request.institution_id != institution_id:
+        elif user.user_role == UserRole.INSTITUTION_ADMIN:
+            if user.institution_id != institution_id:
                 logger.warning(f"Usuário {request.user_id} tentou atualizar horário de outra instituição")
                 return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
         
@@ -1144,11 +1235,16 @@ def init_admin_routes(app):
             }
         }), 200
 
-    # Rota para associar atendente a uma fila (nova funcionalidade)
+    # Rota para associar atendente a uma fila
     @app.route('/api/admin/queues/<queue_id>/attendants', methods=['POST'])
     @require_auth
     def assign_attendant(queue_id):
-        if request.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
             logger.warning(f"Usuário {request.user_id} tentou associar atendente sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
@@ -1157,12 +1253,12 @@ def init_admin_routes(app):
             logger.error(f"Fila {queue_id} não encontrada")
             return jsonify({'error': 'Fila não encontrada'}), 404
         
-        if request.user_role == UserRole.BRANCH_ADMIN:
-            if queue.department.branch_id != request.branch_id or queue.department.branch.institution_id != request.institution_id:
+        if user.user_role == UserRole.BRANCH_ADMIN:
+            if queue.department.branch_id != user.branch_id or queue.department.branch.institution_id != user.institution_id:
                 logger.warning(f"Usuário {request.user_id} tentou associar atendente em outra filial")
                 return jsonify({'error': 'Acesso restrito à sua filial'}), 403
-        elif request.user_role == UserRole.INSTITUTION_ADMIN:
-            if queue.department.branch.institution_id != request.institution_id:
+        elif user.user_role == UserRole.INSTITUTION_ADMIN:
+            if queue.department.branch.institution_id != user.institution_id:
                 logger.warning(f"Usuário {request.user_id} tentou associar atendente em outra instituição")
                 return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
         
@@ -1171,17 +1267,17 @@ def init_admin_routes(app):
             logger.error("ID do usuário obrigatório para associação de atendente")
             return jsonify({'error': 'ID do usuário obrigatório'}), 400
         
-        user = User.query.get(data['user_id'])
-        if not user or user.user_role != UserRole.ATTENDANT or user.institution_id != queue.department.branch.institution_id:
+        attendant = User.query.get(data['user_id'])
+        if not attendant or attendant.user_role != UserRole.ATTENDANT or attendant.institution_id != queue.department.branch.institution_id:
             logger.error(f"Atendente {data['user_id']} inválido")
             return jsonify({'error': 'Atendente inválido'}), 400
         
-        if AttendantQueue.query.filter_by(user_id=user.id, queue_id=queue_id).first():
-            logger.error(f"Atendente {user.id} já associado à fila {queue_id}")
+        if AttendantQueue.query.filter_by(user_id=attendant.id, queue_id=queue_id).first():
+            logger.error(f"Atendente {attendant.id} já associado à fila {queue_id}")
             return jsonify({'error': 'Atendente já associado a esta fila'}), 400
         
         attendant_queue = AttendantQueue(
-            user_id=user.id,
+            user_id=attendant.id,
             queue_id=queue_id
         )
         db.session.add(attendant_queue)
@@ -1193,24 +1289,29 @@ def init_admin_routes(app):
             user_id=request.user_id,
             action='assign_attendant',
             resource_type='attendant_queue',
-            resource_id=f"{user.id}_{queue_id}",
-            details=f"Atendente {user.email} associado à fila {queue.service.name}"
+            resource_id=f"{attendant.id}_{queue_id}",
+            details=f"Atendente {attendant.email} associado à fila {queue.service.name}"
         )
         
-        logger.info(f"Atendente {user.email} associado à fila {queue_id} por usuário {request.user_id}")
+        logger.info(f"Atendente {attendant.email} associado à fila {queue_id} por usuário {request.user_id}")
         return jsonify({
             'message': 'Atendente associado com sucesso',
             'attendant': {
-                'user_id': user.id,
+                'user_id': attendant.id,
                 'queue_id': queue_id
             }
         }), 201
 
-    # Rota para remover atendente de uma fila (nova funcionalidade)
+    # Rota para remover atendente de uma fila
     @app.route('/api/admin/queues/<queue_id>/attendants/<user_id>', methods=['DELETE'])
     @require_auth
     def remove_attendant(queue_id, user_id):
-        if request.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário {request.user_id} não encontrado")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        
+        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
             logger.warning(f"Usuário {request.user_id} tentou remover atendente sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
@@ -1219,17 +1320,17 @@ def init_admin_routes(app):
             logger.error(f"Fila {queue_id} não encontrada")
             return jsonify({'error': 'Fila não encontrada'}), 404
         
-        if request.user_role == UserRole.BRANCH_ADMIN:
-            if queue.department.branch_id != request.branch_id or queue.department.branch.institution_id != request.institution_id:
+        if user.user_role == UserRole.BRANCH_ADMIN:
+            if queue.department.branch_id != user.branch_id or queue.department.branch.institution_id != user.institution_id:
                 logger.warning(f"Usuário {request.user_id} tentou remover atendente de outra filial")
                 return jsonify({'error': 'Acesso restrito à sua filial'}), 403
-        elif request.user_role == UserRole.INSTITUTION_ADMIN:
-            if queue.department.branch.institution_id != request.institution_id:
+        elif user.user_role == UserRole.INSTITUTION_ADMIN:
+            if queue.department.branch.institution_id != user.institution_id:
                 logger.warning(f"Usuário {request.user_id} tentou remover atendente de outra instituição")
                 return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
         
-        user = User.query.get(user_id)
-        if not user or user.institution_id != queue.department.branch.institution_id:
+        attendant = User.query.get(user_id)
+        if not attendant or attendant.institution_id != queue.department.branch.institution_id:
             logger.error(f"Atendente {user_id} não encontrado")
             return jsonify({'error': 'Atendente não encontrado'}), 404
         
@@ -1248,8 +1349,8 @@ def init_admin_routes(app):
             action='remove_attendant',
             resource_type='attendant_queue',
             resource_id=f"{user_id}_{queue_id}",
-            details=f"Atendente {user.email} removido da fila {queue.service.name}"
+            details=f"Atendente {attendant.email} removido da fila {queue.service.name}"
         )
         
-        logger.info(f"Atendente {user.email} removido da fila {queue_id} por usuário {request.user_id}")
+        logger.info(f"Atendente {attendant.email} removido da fila {queue_id} por usuário {request.user_id}")
         return jsonify({'message': 'Atendente removido com sucesso'}), 200
