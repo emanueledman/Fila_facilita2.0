@@ -23,6 +23,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def init_queue_filial(app):
+    
+    def cache_key(endpoint, **kwargs):
+        """Gera uma chave de cache única para o endpoint com base nos parâmetros."""
+        params = ':'.join(f"{k}={v}" for k, v in sorted(kwargs.items()) if v is not None)
+        return f"{endpoint}:{params}"
+
 
     @app.route('/api/search/structured', methods=['GET'])
     def search_structured():
