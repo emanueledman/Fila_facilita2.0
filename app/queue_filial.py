@@ -835,7 +835,7 @@ def init_queue_filial(app):
 
     @app.route('/api/queue/create', methods=['POST'])
     @require_auth
-    def create_queue():
+    def create_queues():
         user = User.query.get(request.user_id)
         if not user or not (user.is_department_admin or user.is_institution_admin or user.is_system_admin):
             logger.warning(f"Tentativa não autorizada de criar fila por user_id={request.user_id}")
