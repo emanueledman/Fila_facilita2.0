@@ -460,7 +460,7 @@ def init_queue_filial(app):
 
     @app.route('/api/branches/<branch_id>/schedule', methods=['POST'])
     @require_auth
-    def update_branch_schedule(branch_id):
+    def update_branch_schedules(branch_id):
         """Atualiza o horário de funcionamento de uma filial."""
         user_id = request.user_id
         user = User.query.get(user_id)
@@ -551,7 +551,7 @@ def init_queue_filial(app):
 
     @app.route('/api/branches/<branch_id>/schedule/create', methods=['POST'])
     @require_auth
-    def create_branch_schedule(branch_id):
+    def create_branch_schedules(branch_id):
         """Cria um novo horário para uma filial."""
         user_id = request.user_id
         user = User.query.get(user_id)
@@ -898,7 +898,7 @@ def init_queue_filial(app):
 
     @app.route('/api/queue/<id>', methods=['PUT'])
     @require_auth
-    def update_queue(id):
+    def update_queues(id):
         user = User.query.get(request.user_id)
         if not user or not (user.is_department_admin or user.is_institution_admin or user.is_system_admin):
             logger.warning(f"Tentativa não autorizada de atualizar fila por user_id={request.user_id}")
@@ -952,7 +952,7 @@ def init_queue_filial(app):
 
     @app.route('/api/queue/<id>', methods=['DELETE'])
     @require_auth
-    def delete_queue(id):
+    def delete_queues(id):
         user = User.query.get(request.user_id)
         if not user or not (user.is_department_admin or user.is_institution_admin or user.is_system_admin):
             logger.warning(f"Tentativa não autorizada de excluir fila por user_id={request.user_id}")
