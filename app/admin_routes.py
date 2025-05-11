@@ -53,99 +53,6 @@ def init_admin_routes(app):
             'created_at': user.created_at.isoformat()
         }), 200
 
-    # Rota para listar instituições
-    @app.route('/api/admin/institutions', methods=['GET'])
-    @require_auth
-    def list_institution():
-        user = User.query.get(request.user_id)
-        if not user:
-            logger.error(f"Usuário {request.user_id} não encontrado")
-            return jsonify({'error': 'Usuário não encontrado'}), 404
-        
-        if user.user_role != UserRole.SYSTEM_ADMIN:
-            logger.warning(f"Usuário {request.user_id} tentou acessar lista de instituições sem permissão")
-            return jsonify({'error': 'Acesso restrito a administradores do sistema'}), 403
-        
-        institutions = Institution.query.join(InstitutionType).all()
-        response = [{
-            'id': i.id,
-            'name': i.name,
-            'type': i.type.name,
-            'description': i.description,
-            'logo_url': i.logo_url,
-            'max_branches': i.max_branches,
-            'created_at': i.created_at.isoformat()
-        } for i in institutions]
-        
-        logger.info(f"Listadas {len(institutions)} instituições para usuário {request.user_id}")
-        return jsonify(response), 200
-
-    # Rota para criar instituição
-    @app.route('/api/admin/institutions', methods=['POST'])
-    @require_auth
-    def create_institution():
-        user = User.query.get(request.user_id)
-        if not user:
-            logger.error(f"Usuário {request.user_id} não encontrado")
-            return jsonify({'error': 'Usuário não encontrado'}), 404
-        
-        if user.user_role != UserRole.SYSTEM_ADMIN:
-            logger.warning(f"Usuário {request.user_id} tentou criar instituição sem permissão")
-            return jsonify({'error': 'Acesso restrito a administradores do sistema'}), 403
-        
-        data = request.get_json()
-        required = ['name', 'institution_type_id', 'max_branches']
-        if not data or not all(f in data for f in required):
-            logger.error("Campos obrigatórios faltando na criação de instituição")
-            return jsonify({'error': 'Campos obrigatórios faltando'}), 400
-        
-        name = sanitize_input(data['name'])
-        if not validate_name_or_sector(name, 100):
-            logger.error(f"Nome inválido fornecido: {name}")
-            return jsonify({'error': 'Nome inválido'}), 400
-        
-        if Institution.query.filter_by(name=name).first():
-            logger.error(f"Instituição com nome {name} já existe")
-            return jsonify({'error': 'Instituição com este nome já existe'}), 400
-        
-        institution_type = InstitutionType.query.get(data['institution_type_id'])
-        if not institution_type:
-            logger.error(f"Tipo de instituição {data['institution_type_id']} inválido")
-            return jsonify({'error': 'Tipo de instituição inválido'}), 400
-        
-        institution = Institution(
-            id=str(uuid.uuid4()),
-            name=name,
-            institution_type_id=data['institution_type_id'],
-            description=sanitize_input(data.get('description', '')),
-            logo_url=sanitize_input(data.get('logo_url', '')),
-            max_branches=int(data['max_branches'])
-        )
-        db.session.add(institution)
-        db.session.commit()
-        
-        socketio.emit('institution_created', {
-            'id': institution.id,
-            'name': institution.name
-        }, namespace='/admin')
-        
-        AuditLog.create(
-            user_id=request.user_id,
-            action='create_institution',
-            resource_type='institution',
-            resource_id=institution.id,
-            details=f"Criada instituição {institution.name}"
-        )
-        
-        logger.info(f"Instituição {institution.name} criada por usuário {request.user_id}")
-        return jsonify({
-            'message': 'Instituição criada com sucesso',
-            'institution': {
-                'id': institution.id,
-                'name': institution.name
-            }
-        }), 201
-
     # Rota para listar departamentos
     @app.route('/api/admin/institutions/<institution_id>/departments', methods=['GET'])
     @require_auth
@@ -427,7 +334,9 @@ def init_admin_routes(app):
             'department_id': q.department_id,
             'department': q.department.name,
             'service_id': q.service_id,
-            'status': 'Aberto' if q.active_tickets > 0 else 'Fechado'
+            'status': 'Aberto' if q.active_tickets > 0 else 'Fechado',
+            'open_time': q.service.open_time.strftime('%H:%M') if q.service.open_time else None,
+            'end_time': q.service.end_time.strftime('%H:%M') if q.service.end_time else None
         } for q in queues]
         
         logger.info(f"Listadas {len(queues)} filas para usuário {request.user_id}")
@@ -447,7 +356,7 @@ def init_admin_routes(app):
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
         data = request.get_json()
-        required = ['service_id', 'prefix', 'daily_limit', 'department_id']
+        required = ['service', 'prefix', 'daily_limit', 'department_id', 'service_id']
         if not data or not all(f in data for f in required):
             logger.error("Campos obrigatórios faltando na criação de fila")
             return jsonify({'error': 'Campos obrigatórios faltando'}), 400
@@ -546,6 +455,13 @@ def init_admin_routes(app):
             logger.error("Nenhum dado fornecido para atualização de fila")
             return jsonify({'error': 'Nenhum dado fornecido'}), 400
         
+        if 'service' in data:
+            service = sanitize_input(data['service'])
+            if not validate_name_or_sector(service, 100):
+                logger.error(f"Serviço inválido: {service}")
+                return jsonify({'error': 'Serviço inválido'}), 400
+            queue.service.name = service
+        
         if 'prefix' in data:
             prefix = sanitize_input(data['prefix'])
             if not re.match(r'^[A-Za-z0-9]{1,10}$', prefix):
@@ -597,57 +513,10 @@ def init_admin_routes(app):
             }
         }), 200
 
-    # Rota para excluir fila
-    @app.route('/api/admin/queues/<queue_id>', methods=['DELETE'])
-    @require_auth
-    def delete_queue(queue_id):
-        user = User.query.get(request.user_id)
-        if not user:
-            logger.error(f"Usuário {request.user_id} não encontrado")
-            return jsonify({'error': 'Usuário não encontrado'}), 404
-        
-        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
-            logger.warning(f"Usuário {request.user_id} tentou excluir fila sem permissão")
-            return jsonify({'error': 'Acesso restrito a administradores'}), 403
-        
-        queue = Queue.query.get(queue_id)
-        if not queue:
-            logger.error(f"Fila {queue_id} não encontrada")
-            return jsonify({'error': 'Fila não encontrada'}), 404
-        
-        if user.user_role == UserRole.BRANCH_ADMIN:
-            if queue.department.branch_id != user.branch_id or queue.department.branch.institution_id != user.institution_id:
-                logger.warning(f"Usuário {request.user_id} tentou excluir fila de outra filial")
-                return jsonify({'error': 'Acesso restrito à sua filial'}), 403
-        elif user.user_role == UserRole.INSTITUTION_ADMIN:
-            if queue.department.branch.institution_id != user.institution_id:
-                logger.warning(f"Usuário {request.user_id} tentou excluir fila de outra instituição")
-                return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
-        
-        if Ticket.query.filter_by(queue_id=queue_id, status='Pendente').first():
-            logger.error(f"Fila {queue_id} possui tickets pendentes")
-            return jsonify({'error': 'Não é possível excluir: fila possui tickets pendentes'}), 400
-        
-        db.session.delete(queue)
-        db.session.commit()
-        
-        socketio.emit('queue_deleted', {'queue_id': queue_id}, namespace='/admin')
-        
-        AuditLog.create(
-            user_id=request.user_id,
-            action='delete_queue',
-            resource_type='queue',
-            resource_id=queue_id,
-            details=f"Excluída fila {queue.service.name}"
-        )
-        
-        logger.info(f"Fila {queue.service.name} excluída por usuário {request.user_id}")
-        return jsonify({'message': 'Fila excluída com sucesso'}), 200
-
     # Rota para chamar próximo ticket
     @app.route('/api/admin/queue/<queue_id>/call', methods=['POST'])
     @require_auth
-    def call_next_ticket(queue_id):
+    def call_next_tickets(queue_id):
         user = User.query.get(request.user_id)
         if not user:
             logger.error(f"Usuário {request.user_id} não encontrado")
@@ -742,6 +611,8 @@ def init_admin_routes(app):
             'name': m.name,
             'email': m.email,
             'user_role': m.user_role.value,
+            'department_id': m.department_id,
+            'department_name': m.department.name if m.department else None,
             'branch_id': m.branch_id,
             'branch_name': m.branch.name if m.branch else None
         } for m in managers]
@@ -772,7 +643,7 @@ def init_admin_routes(app):
             return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
         
         data = request.get_json()
-        required = ['name', 'email', 'password', 'user_role', 'branch_id']
+        required = ['name', 'email', 'password', 'user_role', 'department_id', 'branch_id']
         if not data or not all(f in data for f in required):
             logger.error("Campos obrigatórios faltando na criação de gestor")
             return jsonify({'error': 'Campos obrigatórios faltando'}), 400
@@ -781,6 +652,7 @@ def init_admin_routes(app):
         email = sanitize_input(data['email'])
         password = data['password']
         user_role = data['user_role']
+        department_id = data['department_id']
         branch_id = data['branch_id']
         
         if not validate_name_or_sector(name, 100):
@@ -798,6 +670,11 @@ def init_admin_routes(app):
         if user_role not in ['attendant', 'branch_admin']:
             logger.error(f"Papel inválido: {user_role}")
             return jsonify({'error': 'Papel inválido'}), 400
+        
+        department = Department.query.get(department_id)
+        if not department or department.branch.institution_id != institution_id:
+            logger.error(f"Departamento {department_id} inválido")
+            return jsonify({'error': 'Departamento inválido'}), 400
         
         branch = Branch.query.get(branch_id)
         if not branch or branch.institution_id != institution_id:
@@ -818,6 +695,7 @@ def init_admin_routes(app):
             name=name,
             user_role=UserRole(user_role),
             institution_id=institution_id,
+            department_id=department_id,
             branch_id=branch_id,
             active=True
         )
@@ -913,6 +791,13 @@ def init_admin_routes(app):
                 return jsonify({'error': 'Papel inválido'}), 400
             target_user.user_role = UserRole(data['user_role'])
         
+        if 'department_id' in data:
+            department = Department.query.get(data['department_id'])
+            if not department or department.branch.institution_id != institution_id:
+                logger.error(f"Departamento {data['department_id']} inválido")
+                return jsonify({'error': 'Departamento inválido'}), 400
+            target_user.department_id = data['department_id']
+        
         if 'branch_id' in data:
             branch = Branch.query.get(data['branch_id'])
             if not branch or branch.institution_id != institution_id:
@@ -978,9 +863,9 @@ def init_admin_routes(app):
                 logger.warning(f"Usuário {request.user_id} tentou excluir gestor de outra filial")
                 return jsonify({'error': 'Acesso restrito à sua filial'}), 403
         
-        if target_user.id == request.user_id:
-            logger.error(f"Usuário {request.user_id} tentou excluir a própria conta")
-            return jsonify({'error': 'Não é possível excluir a própria conta'}), 400
+        if target_user.id == user.id:
+            logger.error(f"Usuário {request.user_id} tentou excluir a si mesmo")
+            return jsonify({'error': 'Não é possível excluir a si mesmo'}), 400
         
         db.session.delete(target_user)
         db.session.commit()
@@ -1014,19 +899,20 @@ def init_admin_routes(app):
             logger.warning(f"Usuário {request.user_id} tentou listar horários sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
+        institution = Institution.query.get(institution_id)
+        if not institution:
+            logger.error(f"Instituição {institution_id} não encontrada")
+            return jsonify({'error': 'Instituição não encontrada'}), 404
+        
         branch = Branch.query.get(branch_id)
         if not branch or branch.institution_id != institution_id:
             logger.error(f"Filial {branch_id} não encontrada")
             return jsonify({'error': 'Filial não encontrada'}), 404
         
         if user.user_role == UserRole.BRANCH_ADMIN:
-            if user.institution_id != institution_id or branch_id != user.branch_id:
+            if user.institution_id != institution_id or user.branch_id != branch_id:
                 logger.warning(f"Usuário {request.user_id} tentou listar horários de outra filial")
                 return jsonify({'error': 'Acesso restrito à sua filial'}), 403
-        elif user.user_role == UserRole.INSTITUTION_ADMIN:
-            if user.institution_id != institution_id:
-                logger.warning(f"Usuário {request.user_id} tentou listar horários de outra instituição")
-                return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
         
         schedules = BranchSchedule.query.filter_by(branch_id=branch_id).all()
         response = [{
@@ -1040,106 +926,7 @@ def init_admin_routes(app):
         logger.info(f"Listados {len(schedules)} horários para filial {branch_id}")
         return jsonify(response), 200
 
-    # Rota para criar ou atualizar horário da filial
-    @app.route('/api/admin/institutions/<institution_id>/branches/<branch_id>/schedules', methods=['POST'])
-    @require_auth
-    def create_schedule(institution_id, branch_id):
-        user = User.query.get(request.user_id)
-        if not user:
-            logger.error(f"Usuário {request.user_id} não encontrado")
-            return jsonify({'error': 'Usuário não encontrado'}), 404
-        
-        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
-            logger.warning(f"Usuário {request.user_id} tentou criar horário sem permissão")
-            return jsonify({'error': 'Acesso restrito a administradores'}), 403
-        
-        branch = Branch.query.get(branch_id)
-        if not branch or branch.institution_id != institution_id:
-            logger.error(f"Filial {branch_id} não encontrada")
-            return jsonify({'error': 'Filial não encontrada'}), 404
-        
-        if user.user_role == UserRole.BRANCH_ADMIN:
-            if user.institution_id != institution_id or branch_id != user.branch_id:
-                logger.warning(f"Usuário {request.user_id} tentou criar horário em outra filial")
-                return jsonify({'error': 'Acesso restrito à sua filial'}), 403
-        elif user.user_role == UserRole.INSTITUTION_ADMIN:
-            if user.institution_id != institution_id:
-                logger.warning(f"Usuário {request.user_id} tentou criar horário em outra instituição")
-                return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
-        
-        data = request.get_json()
-        required = ['weekday', 'is_closed']
-        if not data or not all(f in data for f in required):
-            logger.error("Campos obrigatórios faltando na criação de horário")
-            return jsonify({'error': 'Campos obrigatórios faltando'}), 400
-        
-        weekday = data['weekday']
-        if weekday not in Weekday.__members__:
-            logger.error(f"Dia da semana inválido: {weekday}")
-            return jsonify({'error': 'Dia da semana inválido'}), 400
-        
-        is_closed = data['is_closed']
-        open_time = data.get('open_time')
-        end_time = data.get('end_time')
-        
-        if not is_closed and (not open_time or not end_time):
-            logger.error("Horários de abertura e fechamento obrigatórios se não fechado")
-            return jsonify({'error': 'Horários de abertura e fechamento são obrigatórios se não estiver fechado'}), 400
-        
-        try:
-            if open_time:
-                open_time = datetime.strptime(open_time, '%H:%M').time()
-            if end_time:
-                end_time = datetime.strptime(end_time, '%H:%M').time()
-        except ValueError:
-            logger.error("Formato de horário inválido")
-            return jsonify({'error': 'Formato de horário inválido (use HH:MM)'}), 400
-        
-        schedule = BranchSchedule.query.filter_by(branch_id=branch_id, weekday=Weekday[weekday]).first()
-        if schedule:
-            schedule.open_time = open_time if not is_closed else None
-            schedule.end_time = end_time if not is_closed else None
-            schedule.is_closed = is_closed
-        else:
-            schedule = BranchSchedule(
-                id=str(uuid.uuid4()),
-                branch_id=branch_id,
-                weekday=Weekday[weekday],
-                open_time=open_time if not is_closed else None,
-                end_time=end_time if not is_closed else None,
-                is_closed=is_closed
-            )
-            db.session.add(schedule)
-        
-        db.session.commit()
-        
-        socketio.emit('branch_schedule_updated', {
-            'schedule_id': schedule.id,
-            'branch_id': branch_id,
-            'weekday': schedule.weekday.value
-        }, namespace='/admin')
-        
-        AuditLog.create(
-            user_id=request.user_id,
-            action='update_schedule',
-            resource_type='branch_schedule',
-            resource_id=schedule.id,
-            details=f"Atualizado horário para {schedule.weekday.value} na filial {branch.name}"
-        )
-        
-        logger.info(f"Horário para {schedule.weekday.value} criado/atualizado por usuário {request.user_id}")
-        return jsonify({
-            'message': 'Horário atualizado com sucesso',
-            'schedule': {
-                'id': schedule.id,
-                'weekday': schedule.weekday.value,
-                'open_time': schedule.open_time.strftime('%H:%M') if schedule.open_time else None,
-                'end_time': schedule.end_time.strftime('%H:%M') if schedule.end_time else None,
-                'is_closed': schedule.is_closed
-            }
-        }), 200
-
-    # Rota para atualizar horário específico
+    # Rota para atualizar horário da filial
     @app.route('/api/admin/institutions/<institution_id>/branches/<branch_id>/schedules/<schedule_id>', methods=['PUT'])
     @require_auth
     def update_schedule(institution_id, branch_id, schedule_id):
@@ -1152,6 +939,11 @@ def init_admin_routes(app):
             logger.warning(f"Usuário {request.user_id} tentou atualizar horário sem permissão")
             return jsonify({'error': 'Acesso restrito a administradores'}), 403
         
+        institution = Institution.query.get(institution_id)
+        if not institution:
+            logger.error(f"Instituição {institution_id} não encontrada")
+            return jsonify({'error': 'Instituição não encontrada'}), 404
+        
         branch = Branch.query.get(branch_id)
         if not branch or branch.institution_id != institution_id:
             logger.error(f"Filial {branch_id} não encontrada")
@@ -1163,13 +955,9 @@ def init_admin_routes(app):
             return jsonify({'error': 'Horário não encontrado'}), 404
         
         if user.user_role == UserRole.BRANCH_ADMIN:
-            if user.institution_id != institution_id or branch_id != user.branch_id:
+            if user.institution_id != institution_id or user.branch_id != branch_id:
                 logger.warning(f"Usuário {request.user_id} tentou atualizar horário de outra filial")
                 return jsonify({'error': 'Acesso restrito à sua filial'}), 403
-        elif user.user_role == UserRole.INSTITUTION_ADMIN:
-            if user.institution_id != institution_id:
-                logger.warning(f"Usuário {request.user_id} tentou atualizar horário de outra instituição")
-                return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
         
         data = request.get_json()
         if not data:
@@ -1177,53 +965,53 @@ def init_admin_routes(app):
             return jsonify({'error': 'Nenhum dado fornecido'}), 400
         
         if 'weekday' in data:
-            if data['weekday'] not in Weekday.__members__:
+            try:
+                schedule.weekday = Weekday(data['weekday'])
+            except ValueError:
                 logger.error(f"Dia da semana inválido: {data['weekday']}")
                 return jsonify({'error': 'Dia da semana inválido'}), 400
-            schedule.weekday = Weekday[data['weekday']]
         
         if 'is_closed' in data:
             schedule.is_closed = data['is_closed']
         
-        if 'open_time' in data and data['open_time']:
-            try:
-                schedule.open_time = datetime.strptime(data['open_time'], '%H:%M').time()
-            except ValueError:
-                logger.error("Formato de horário inválido para open_time")
-                return jsonify({'error': 'Formato de horário inválido (use HH:MM)'}), 400
-        elif schedule.is_closed:
+        if not data.get('is_closed', schedule.is_closed):
+            if 'open_time' in data and data['open_time']:
+                try:
+                    schedule.open_time = datetime.strptime(data['open_time'], '%H:%M').time()
+                except ValueError:
+                    logger.error(f"Horário de abertura inválido: {data['open_time']}")
+                    return jsonify({'error': 'Horário de abertura inválido'}), 400
+            
+            if 'end_time' in data and data['end_time']:
+                try:
+                    schedule.end_time = datetime.strptime(data['end_time'], '%H:%M').time()
+                except ValueError:
+                    logger.error(f"Horário de fechamento inválido: {data['end_time']}")
+                    return jsonify({'error': 'Horário de fechamento inválido'}), 400
+            
+            if schedule.open_time and schedule.end_time and schedule.open_time >= schedule.end_time:
+                logger.error("Horário de abertura deve ser anterior ao horário de fechamento")
+                return jsonify({'error': 'Horário de abertura deve ser anterior ao horário de fechamento'}), 400
+        else:
             schedule.open_time = None
-        
-        if 'end_time' in data and data['end_time']:
-            try:
-                schedule.end_time = datetime.strptime(data['end_time'], '%H:%M').time()
-            except ValueError:
-                logger.error("Formato de horário inválido para end_time")
-                return jsonify({'error': 'Formato de horário inválido (use HH:MM)'}), 400
-        elif schedule.is_closed:
             schedule.end_time = None
-        
-        if not schedule.is_closed and (not schedule.open_time or not schedule.end_time):
-            logger.error("Horários de abertura e fechamento obrigatórios se não fechado")
-            return jsonify({'error': 'Horários de abertura e fechamento são obrigatórios se não estiver fechado'}), 400
         
         db.session.commit()
         
         socketio.emit('branch_schedule_updated', {
             'schedule_id': schedule.id,
-            'branch_id': branch_id,
             'weekday': schedule.weekday.value
         }, namespace='/admin')
         
         AuditLog.create(
             user_id=request.user_id,
             action='update_schedule',
-            resource_type='branch_schedule',
+            resource_type='schedule',
             resource_id=schedule.id,
             details=f"Atualizado horário para {schedule.weekday.value} na filial {branch.name}"
         )
         
-        logger.info(f"Horário {schedule_id} atualizado por usuário {request.user_id}")
+        logger.info(f"Horário {schedule.weekday.value} atualizado por usuário {request.user_id}")
         return jsonify({
             'message': 'Horário atualizado com sucesso',
             'schedule': {
@@ -1234,123 +1022,3 @@ def init_admin_routes(app):
                 'is_closed': schedule.is_closed
             }
         }), 200
-
-    # Rota para associar atendente a uma fila
-    @app.route('/api/admin/queues/<queue_id>/attendants', methods=['POST'])
-    @require_auth
-    def assign_attendant(queue_id):
-        user = User.query.get(request.user_id)
-        if not user:
-            logger.error(f"Usuário {request.user_id} não encontrado")
-            return jsonify({'error': 'Usuário não encontrado'}), 404
-        
-        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
-            logger.warning(f"Usuário {request.user_id} tentou associar atendente sem permissão")
-            return jsonify({'error': 'Acesso restrito a administradores'}), 403
-        
-        queue = Queue.query.get(queue_id)
-        if not queue:
-            logger.error(f"Fila {queue_id} não encontrada")
-            return jsonify({'error': 'Fila não encontrada'}), 404
-        
-        if user.user_role == UserRole.BRANCH_ADMIN:
-            if queue.department.branch_id != user.branch_id or queue.department.branch.institution_id != user.institution_id:
-                logger.warning(f"Usuário {request.user_id} tentou associar atendente em outra filial")
-                return jsonify({'error': 'Acesso restrito à sua filial'}), 403
-        elif user.user_role == UserRole.INSTITUTION_ADMIN:
-            if queue.department.branch.institution_id != user.institution_id:
-                logger.warning(f"Usuário {request.user_id} tentou associar atendente em outra instituição")
-                return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
-        
-        data = request.get_json()
-        if not data or 'user_id' not in data:
-            logger.error("ID do usuário obrigatório para associação de atendente")
-            return jsonify({'error': 'ID do usuário obrigatório'}), 400
-        
-        attendant = User.query.get(data['user_id'])
-        if not attendant or attendant.user_role != UserRole.ATTENDANT or attendant.institution_id != queue.department.branch.institution_id:
-            logger.error(f"Atendente {data['user_id']} inválido")
-            return jsonify({'error': 'Atendente inválido'}), 400
-        
-        if AttendantQueue.query.filter_by(user_id=attendant.id, queue_id=queue_id).first():
-            logger.error(f"Atendente {attendant.id} já associado à fila {queue_id}")
-            return jsonify({'error': 'Atendente já associado a esta fila'}), 400
-        
-        attendant_queue = AttendantQueue(
-            user_id=attendant.id,
-            queue_id=queue_id
-        )
-        db.session.add(attendant_queue)
-        db.session.commit()
-        
-        socketio.emit('queue_updated', {'queue_id': queue_id}, namespace='/admin')
-        
-        AuditLog.create(
-            user_id=request.user_id,
-            action='assign_attendant',
-            resource_type='attendant_queue',
-            resource_id=f"{attendant.id}_{queue_id}",
-            details=f"Atendente {attendant.email} associado à fila {queue.service.name}"
-        )
-        
-        logger.info(f"Atendente {attendant.email} associado à fila {queue_id} por usuário {request.user_id}")
-        return jsonify({
-            'message': 'Atendente associado com sucesso',
-            'attendant': {
-                'user_id': attendant.id,
-                'queue_id': queue_id
-            }
-        }), 201
-
-    # Rota para remover atendente de uma fila
-    @app.route('/api/admin/queues/<queue_id>/attendants/<user_id>', methods=['DELETE'])
-    @require_auth
-    def remove_attendant(queue_id, user_id):
-        user = User.query.get(request.user_id)
-        if not user:
-            logger.error(f"Usuário {request.user_id} não encontrado")
-            return jsonify({'error': 'Usuário não encontrado'}), 404
-        
-        if user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
-            logger.warning(f"Usuário {request.user_id} tentou remover atendente sem permissão")
-            return jsonify({'error': 'Acesso restrito a administradores'}), 403
-        
-        queue = Queue.query.get(queue_id)
-        if not queue:
-            logger.error(f"Fila {queue_id} não encontrada")
-            return jsonify({'error': 'Fila não encontrada'}), 404
-        
-        if user.user_role == UserRole.BRANCH_ADMIN:
-            if queue.department.branch_id != user.branch_id or queue.department.branch.institution_id != user.institution_id:
-                logger.warning(f"Usuário {request.user_id} tentou remover atendente de outra filial")
-                return jsonify({'error': 'Acesso restrito à sua filial'}), 403
-        elif user.user_role == UserRole.INSTITUTION_ADMIN:
-            if queue.department.branch.institution_id != user.institution_id:
-                logger.warning(f"Usuário {request.user_id} tentou remover atendente de outra instituição")
-                return jsonify({'error': 'Acesso restrito à sua instituição'}), 403
-        
-        attendant = User.query.get(user_id)
-        if not attendant or attendant.institution_id != queue.department.branch.institution_id:
-            logger.error(f"Atendente {user_id} não encontrado")
-            return jsonify({'error': 'Atendente não encontrado'}), 404
-        
-        attendant_queue = AttendantQueue.query.filter_by(user_id=user_id, queue_id=queue_id).first()
-        if not attendant_queue:
-            logger.error(f"Atendente {user_id} não está associado à fila {queue_id}")
-            return jsonify({'error': 'Atendente não está associado a esta fila'}), 400
-        
-        db.session.delete(attendant_queue)
-        db.session.commit()
-        
-        socketio.emit('queue_updated', {'queue_id': queue_id}, namespace='/admin')
-        
-        AuditLog.create(
-            user_id=request.user_id,
-            action='remove_attendant',
-            resource_type='attendant_queue',
-            resource_id=f"{user_id}_{queue_id}",
-            details=f"Atendente {attendant.email} removido da fila {queue.service.name}"
-        )
-        
-        logger.info(f"Atendente {attendant.email} removido da fila {queue_id} por usuário {request.user_id}")
-        return jsonify({'message': 'Atendente removido com sucesso'}), 200
