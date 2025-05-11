@@ -9,7 +9,7 @@ from datetime import datetime
 import json
 
 import re
-from .queue_routes import emit_ticket_update  # Importar a função
+from . import emit_ticket_update  # Importar a função
 
 
 logging.basicConfig(level=logging.INFO)
