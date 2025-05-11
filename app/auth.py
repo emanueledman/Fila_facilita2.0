@@ -101,38 +101,31 @@ def require_auth(f):
             # 1. Tentativa com Firebase (se inicializado com sucesso)
             if firebase_initialized:
                 try:
-                    # MODIFICAÇÃO: Não vamos verificar a validade do token do Firebase
-                    # apenas extrair as informações dele
-                    try:
-                        decoded_token = auth.verify_id_token(token)
-                        uid = decoded_token.get('uid')
-                        email = decoded_token.get('email')
-                        name = decoded_token.get('name')
+                    decoded_token = auth.verify_id_token(token)
+                    uid = decoded_token.get('uid')
+                    email = decoded_token.get('email')
+                    name = decoded_token.get('name')
+                    
+                    # Sincronizar usuário com o banco
+                    user = sync_firebase_user(uid, email, name)
+                    if not user:
+                        logger.error(f"Falha ao sincronizar usuário Firebase UID={uid}")
+                        return jsonify({'error': 'Falha ao sincronizar usuário'}), 500
+                    
+                    # Definir user_id e user_tipo
+                    request.user_id = uid
+                    request.user_tipo = decoded_token.get('user_tipo', 'user')  # valor padrão
                         
-                        # Sincronizar usuário com o banco
-                        user = sync_firebase_user(uid, email, name)
-                        if not user:
-                            logger.error(f"Falha ao sincronizar usuário Firebase UID={uid}")
-                            return jsonify({'error': 'Falha ao sincronizar usuário'}), 500
-                        
-                        # Definir user_id e user_tipo
-                        request.user_id = uid
-                        request.user_tipo = decoded_token.get('user_tipo', 'user')
-                            
-                        logger.info(f"Autenticado via Firebase - UID: {request.user_id}")
-                        return f(*args, **kwargs)
-                    except Exception as firebase_error:
-                        logger.warning(f"Falha Firebase: {str(firebase_error)}")
-                        # Continuar para tentar JWT local
+                    logger.info(f"Autenticado via Firebase - UID: {request.user_id}")
+                    return f(*args, **kwargs)
                 except Exception as firebase_error:
                     logger.warning(f"Falha Firebase: {str(firebase_error)}")
                     # Continuar para tentar JWT local
             
             # 2. Tentativa com JWT local
             try:
-                # MODIFICAÇÃO: Não vamos verificar a expiração do token JWT
-                # Ignora o campo exp do token
-                payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'], options={"verify_exp": False})
+                # Restringir explicitamente aos algoritmos permitidos
+                payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
                 request.user_id = payload.get('user_id')
                 request.user_tipo = payload.get('user_tipo', 'user')
                 logger.info(f"Autenticado via JWT - User ID: {request.user_id}")
@@ -140,6 +133,9 @@ def require_auth(f):
             except jwt.InvalidAlgorithmError:
                 logger.warning("Token JWT inválido: The specified alg value is not allowed")
                 return jsonify({'error': 'Algoritmo de token inválido'}), 401
+            except jwt.ExpiredSignatureError:
+                logger.warning("Token JWT expirado")
+                return jsonify({'error': 'Token expirado'}), 401
             except jwt.InvalidTokenError as jwt_error:
                 logger.warning(f"Token JWT inválido: {str(jwt_error)}")
                 return jsonify({'error': 'Token inválido'}), 401

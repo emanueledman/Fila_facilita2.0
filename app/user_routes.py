@@ -50,22 +50,11 @@ def init_user_routes(app):
                 return jsonify({"error": "Acesso restrito a atendentes, administradores ou sistema"}), 403
 
             secret_key = os.getenv('JWT_SECRET_KEY', '1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0')
-            
-            # MODIFICAÇÃO: Token JWT sem data de expiração ou com data muito longa
-            # Opção 1: Sem data de expiração (mais simples)
-            token_payload = {
+            token = jwt.encode({
                 'user_id': user.id,
-                'user_role': user.user_role.value
-            }
-            
-            # Opção 2: Data de expiração muito longa (50 anos)
-            # token_payload = {
-            #     'user_id': user.id,
-            #     'user_role': user.user_role.value,
-            #     'exp': datetime.utcnow() + timedelta(days=365*50)  # 50 anos
-            # }
-            
-            token = jwt.encode(token_payload, secret_key, algorithm='HS256')
+                'user_role': user.user_role.value,
+                'exp': datetime.utcnow() + timedelta(hours=24)
+            }, secret_key, algorithm='HS256')
 
             if isinstance(token, bytes):
                 token = token.decode('utf-8')
