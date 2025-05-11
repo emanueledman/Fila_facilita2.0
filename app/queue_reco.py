@@ -201,7 +201,7 @@ def init_queue_reco(app):
 
     @app.route('/api/queues/<queue_id>/call', methods=['POST'])
     @require_auth
-    def call_next_ticket(queue_id):
+    def call_next_tic(queue_id):
         """Chama o próximo ticket de uma fila."""
         user_id = request.user_id
         user = User.query.get(user_id)
