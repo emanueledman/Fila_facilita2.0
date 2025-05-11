@@ -261,6 +261,102 @@ def init_attendant_routes(app):
             db.session.rollback()
             return jsonify({'error': 'Erro interno ao atribuir fila'}), 500
 
+
+    @app.route('/api/attendant/call-next', methods=['POST'])
+    @require_auth
+    def call_next_ticket():
+        """Chama o próximo ticket de uma fila para o atendente."""
+        user = User.query.get(request.user_id)
+        if not user:
+            logger.error(f"Usuário não encontrado no banco para user_id={request.user_id}")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        if user.user_role != UserRole.ATTENDANT:
+            logger.warning(f"Tentativa não autorizada de acessar /api/attendant/call-next por user_id={request.user_id}, role={user.user_role}")
+            return jsonify({'error': 'Acesso restrito a atendentes'}), 403
+
+        data = request.get_json() or {}
+        queue_id = data.get('queue_id')
+        counter = data.get('counter', 1)  # Guichê padrão como 1, ajustar conforme necessário
+
+        if not queue_id:
+            logger.warning("queue_id é obrigatório")
+            return jsonify({'error': 'queue_id é obrigatório'}), 400
+
+        queue = Queue.query.get(queue_id)
+        if not queue:
+            logger.warning(f"Fila não encontrada: queue_id={queue_id}")
+            return jsonify({'error': 'Fila não encontrada'}), 404
+
+        # Verificar se o atendente está associado à fila
+        attendant_queue = AttendantQueue.query.filter_by(user_id=user.id, queue_id=queue_id).first()
+        if not attendant_queue:
+            logger.warning(f"Atendente {user.id} não vinculado à fila {queue_id}")
+            return jsonify({'error': 'Atendente não vinculado a esta fila'}), 403
+
+        try:
+            # Buscar o próximo ticket pendente
+            ticket = Ticket.query.filter_by(queue_id=queue_id, status='Pendente').order_by(Ticket.priority.desc(), Ticket.issued_at.asc()).first()
+            if not ticket:
+                logger.info(f"Nenhum ticket pendente para chamar na fila {queue_id}")
+                return jsonify({'message': 'Nenhum ticket pendente para chamar'}), 200
+
+            # Atualizar ticket
+            ticket.status = 'Chamado'
+            ticket.counter = counter
+            ticket.attended_at = datetime.utcnow()
+            db.session.commit()
+
+            # Emitir eventos
+            socketio.emit('ticket_called', {
+                'id': ticket.id,
+                'number': f"{ticket.queue.prefix}{ticket.ticket_number}",
+                'service': ticket.queue.service.name if ticket.queue.service else 'N/A',
+                'counter': counter,
+                'avg_wait_time': ticket.queue.estimated_wait_time,
+                'department_name': ticket.queue.department.name if ticket.queue.department else 'N/A'
+            }, namespace='/dashboard')
+
+            emit_dashboard_update(
+                institution_id=queue.department.branch.institution_id,
+                queue_id=queue_id,
+                event_type='ticket_called',
+                data={
+                    'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
+                    'counter': counter,
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+            )
+
+            # Invalidar cache
+            cache_key = f"tickets:attendant:{user.id}"
+            try:
+                redis_client.delete(cache_key)
+                logger.info(f"Cache invalidado para {cache_key}")
+            except Exception as e:
+                logger.warning(f"Erro ao invalidar cache Redis: {e}")
+
+            AuditLog.create(
+                user_id=user.id,
+                action="call_ticket",
+                resource_type="ticket",
+                resource_id=ticket.id,
+                details=f"Ticket {ticket.queue.prefix}{ticket.ticket_number} chamado no guichê {counter}"
+            )
+
+            logger.info(f"Ticket chamado: {ticket.queue.prefix}{ticket.ticket_number} no guichê {counter} (queue_id={queue_id})")
+            return jsonify({
+                'id': ticket.id,
+                'number': f"{ticket.queue.prefix}{ticket.ticket_number}",
+                'service': ticket.queue.service.name if ticket.queue.service else 'N/A',
+                'counter': counter,
+                'avg_wait_time': ticket.queue.estimated_wait_time,
+                'department_name': ticket.queue.department.name if ticket.queue.department else 'N/A'
+            }), 200
+        except Exception as e:
+            logger.error(f"Erro ao chamar próximo ticket na fila {queue_id}: {str(e)}")
+            db.session.rollback()
+            return jsonify({'error': 'Erro interno ao chamar ticket'}), 500
+
     @app.route('/api/attendant/unassign-queue', methods=['POST'])
     @require_auth
     def unassign_queue():
