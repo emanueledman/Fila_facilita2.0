@@ -1,6 +1,7 @@
 from flask import jsonify, request, make_response
 from . import db
 from .models import User, UserRole, Queue, Department, Institution, Branch, BranchSchedule, Weekday
+from .auth import require_auth
 import logging
 import jwt
 import os
@@ -44,7 +45,6 @@ def init_user_routes(app):
                 logger.warning(f"Senha inválida para email={email}")
                 return jsonify({"error": "Credenciais inválidas"}), 401
 
-            # Permitir todos os papéis administrativos
             if user.user_role not in [UserRole.ATTENDANT, UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
                 logger.warning(f"Usuário {email} tem papel inválido: {user.user_role.value}")
                 return jsonify({"error": "Acesso restrito a atendentes, administradores ou sistema"}), 403
@@ -53,13 +53,12 @@ def init_user_routes(app):
             token = jwt.encode({
                 'user_id': user.id,
                 'user_role': user.user_role.value,
-                'exp': datetime.utcnow() + timedelta(hours=24)
+                'exp': datetime.utcnow() + timedelta(days=30)  # Extended to 30 days
             }, secret_key, algorithm='HS256')
 
             if isinstance(token, bytes):
                 token = token.decode('utf-8')
 
-            # Preparar resposta com base no papel
             response_data = {
                 "token": token,
                 "user_id": user.id,
@@ -69,7 +68,6 @@ def init_user_routes(app):
                 "email": user.email
             }
 
-            # Função auxiliar para obter horários da filial
             def get_branch_schedule(branch_id, now=None):
                 if not now:
                     local_tz = pytz.timezone('Africa/Luanda')
@@ -95,11 +93,9 @@ def init_user_routes(app):
                 if not user.branch_id:
                     logger.warning(f"Atendente {user.id} não vinculado a filial")
                     return jsonify({"error": "Atendente não vinculado a uma filial"}), 403
-                # Buscar filas da filial
                 queues = Queue.query.join(Department).filter(Department.branch_id == user.branch_id).all()
                 response_data["queues"] = []
                 for q in queues:
-                    # Obter horários da filial
                     open_time, end_time = get_branch_schedule(user.branch_id)
                     response_data["queues"].append({
                         'id': q.id,
@@ -118,17 +114,15 @@ def init_user_routes(app):
                 if not user.branch_id:
                     logger.warning(f"Admin de filial {user.id} não vinculado a filial")
                     return jsonify({"error": "Admin não vinculado a uma filial"}), 403
-                # Buscar departamentos e filas da filial
                 departments = Department.query.filter_by(branch_id=user.branch_id).all()
                 response_data["departments"] = [{
                     'id': d.id,
                     'name': d.name,
                     'sector': d.sector
                 } for d in departments]
-                queues = Queue.query.join(Department).filter(Department.branch_id == user.branch_id).all()
+                queues = Queue.query.join(Department).filter(Department.branch_id=user.branch_id).all()
                 response_data["queues"] = []
                 for q in queues:
-                    # Obter horários da filial
                     open_time, end_time = get_branch_schedule(user.branch_id)
                     response_data["queues"].append({
                         'id': q.id,
@@ -142,7 +136,6 @@ def init_user_routes(app):
                         'open_time': open_time,
                         'end_time': end_time
                     })
-                # Buscar atendentes da filial
                 attendants = User.query.filter_by(branch_id=user.branch_id, user_role=UserRole.ATTENDANT).all()
                 response_data["attendants"] = [{
                     'id': a.id,
@@ -156,7 +149,6 @@ def init_user_routes(app):
                 if not user.institution_id:
                     logger.warning(f"Admin {user.id} não vinculado a instituição")
                     return jsonify({"error": "Admin não vinculado a uma instituição"}), 403
-                # Buscar departamentos e filiais
                 departments = Department.query.join(Branch).filter(Branch.institution_id == user.institution_id).all()
                 response_data["departments"] = [{
                     'id': d.id,
@@ -172,7 +164,6 @@ def init_user_routes(app):
                     'location': b.location,
                     'neighborhood': b.neighborhood
                 } for b in branches]
-                # Buscar atendentes e administradores de filial
                 attendants = User.query.filter_by(institution_id=user.institution_id, user_role=UserRole.ATTENDANT).all()
                 response_data["attendants"] = [{
                     'id': a.id,
@@ -191,7 +182,6 @@ def init_user_routes(app):
                 } for ba in branch_admins]
 
             elif user.user_role == UserRole.SYSTEM_ADMIN:
-                # Buscar todas as instituições
                 institutions = Institution.query.all()
                 response_data["institutions"] = [{
                     'id': i.id,
@@ -208,4 +198,40 @@ def init_user_routes(app):
 
         except Exception as e:
             logger.error(f"Erro ao processar login para email={request.json.get('email', 'unknown')}: {str(e)}")
+            return jsonify({"error": "Erro interno no servidor"}), 500
+
+    @app.route('/api/auth/verify-token', methods=['GET', 'OPTIONS'])
+    @require_auth
+    def verify_token():
+        if request.method == 'OPTIONS':
+            response = make_response()
+            response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+            response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
+            response.headers['Access-Control-Max-Age'] = '86400'
+            return response
+
+        try:
+            user_id = request.user_id
+            user = User.query.get(user_id)
+            if not user:
+                logger.warning(f"Usuário não encontrado para ID={user_id}")
+                return jsonify({"error": "Usuário não encontrado"}), 404
+
+            response_data = {
+                "user_id": user.id,
+                "user_role": user.user_role.value,
+                "email": user.email,
+                "institution_id": user.institution_id,
+                "branch_id": user.branch_id
+            }
+
+            logger.info(f"Token verificado para usuário: {user.email} ({user.user_role.value})")
+            response = jsonify(response_data)
+            response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
+            response.headers.add('Access-Control-Allow-Credentials', 'true')
+            return response, 200
+
+        except Exception as e:
+            logger.error(f"Erro ao verificar token para user_id={request.user_id}: {str(e)}")
             return jsonify({"error": "Erro interno no servidor"}), 500
