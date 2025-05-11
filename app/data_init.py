@@ -3,7 +3,7 @@ from datetime import datetime, time, timedelta
 import bcrypt
 from app import db
 from app.models import (
-    InstitutionType, Institution, Branch, BranchSchedule, Department, Queue,
+    AttendantQueue, InstitutionType, Institution, Branch, BranchSchedule, Department, Queue,
     InstitutionService, ServiceCategory, ServiceTag, User, UserRole, Ticket, UserPreference,
     UserBehavior, UserLocationFallback, NotificationLog, AuditLog, Weekday
 )
