@@ -56,7 +56,7 @@ def init_admin_routes(app):
     # Rota para listar instituições
     @app.route('/api/admin/institutions', methods=['GET'])
     @require_auth
-    def list_institutions():
+    def list_institution():
         user = User.query.get(request.user_id)
         if not user:
             logger.error(f"Usuário {request.user_id} não encontrado")
