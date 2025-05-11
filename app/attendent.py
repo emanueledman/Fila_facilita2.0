@@ -7,7 +7,10 @@ import logging
 import uuid
 from datetime import datetime
 import json
+
 import re
+from .queue_routes import emit_ticket_update  # Importar a função
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -262,6 +265,81 @@ def init_attendant_routes(app):
             return jsonify({'error': 'Erro interno ao atribuir fila'}), 500
 
 
+ 
+    @app.route('/api/attendant/complete', methods=['POST'])
+    @require_auth
+    def complete_attendant_ticket():
+        """Marca um ticket como atendido pelo atendente."""
+        user_id = request.user_id
+        user = User.query.get(user_id)
+        if not user:
+            logger.error(f"Usuário não encontrado: user_id={user_id}")
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+        if user.user_role != UserRole.ATTENDANT:
+            logger.warning(f"Tentativa não autorizada de completar ticket por user_id={user_id}, role={user.user_role}")
+            return jsonify({'error': 'Acesso restrito a atendentes'}), 403
+
+        data = request.get_json() or {}
+        ticket_id = data.get('ticket_id')
+        if not ticket_id:
+            logger.warning("ticket_id é obrigatório")
+            return jsonify({'error': 'ticket_id é obrigatório'}), 400
+
+        ticket = Ticket.query.get(ticket_id)
+        if not ticket:
+            logger.warning(f"Ticket não encontrado: ticket_id={ticket_id}")
+            return jsonify({'error': 'Ticket não encontrado'}), 404
+
+        # Verificar se o atendente está associado à fila do ticket
+        attendant_queue = AttendantQueue.query.filter_by(user_id=user_id, queue_id=ticket.queue_id).first()
+        if not attendant_queue:
+            logger.warning(f"Atendente {user_id} não vinculado à fila {ticket.queue_id}")
+            return jsonify({'error': 'Atendente não vinculado a esta fila'}), 403
+
+        try:
+            ticket = QueueService.complete_ticket(ticket_id)
+            emit_ticket_update(ticket)  # Notificar usuário
+            emit_dashboard_update(
+                institution_id=ticket.queue.department.branch.institution_id,
+                queue_id=ticket.queue.id,
+                event_type='ticket_completed',
+                data={
+                    'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+            )
+
+            # Invalidar cache
+            cache_key = f"tickets:attendant:{user_id}"
+            try:
+                redis_client.delete(cache_key)
+                logger.info(f"Cache invalidado para {cache_key}")
+            except Exception as e:
+                logger.warning(f"Erro ao invalidar cache Redis: {e}")
+
+            AuditLog.create(
+                user_id=user_id,
+                action="complete_ticket",
+                resource_type="ticket",
+                resource_id=ticket_id,
+                details=f"Ticket {ticket.queue.prefix}{ticket.ticket_number} marcado como atendido por atendente"
+            )
+
+            logger.info(f"Ticket completado: {ticket.queue.prefix}{ticket.ticket_number} (ticket_id={ticket_id}) por atendente {user_id}")
+            return jsonify({
+                'message': 'Ticket marcado como atendido',
+                'ticket_id': ticket.id,
+                'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}"
+            }), 200
+        except ValueError as e:
+            logger.error(f"Erro ao completar ticket {ticket_id}: {str(e)}")
+            return jsonify({'error': str(e)}), 400
+        except Exception as e:
+            logger.error(f"Erro inesperado ao completar ticket {ticket_id}: {str(e)}")
+            db.session.rollback()
+            return jsonify({'error': 'Erro interno ao completar ticket'}), 500
+    
+    
     @app.route('/api/attendant/call-next', methods=['POST'])
     @require_auth
     def call_next_ticket():
