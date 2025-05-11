@@ -264,7 +264,6 @@ def init_attendant_routes(app):
             return jsonify({'error': 'Erro interno ao atribuir fila'}), 500
 
 
-    
     @app.route('/api/attendant/complete', methods=['POST'])
     @require_auth
     def complete_attendant_ticket():
@@ -296,7 +295,7 @@ def init_attendant_routes(app):
             return jsonify({'error': 'Atendente não vinculado a esta fila'}), 403
 
         try:
-            ticket = QueueService.complete_ticket(ticket_id)
+            ticket = QueueService.complete_ticket(ticket_id, user_id=user_id)
             emit_ticket_update(ticket)  # Notificar usuário
             emit_dashboard_update(
                 institution_id=ticket.queue.department.branch.institution_id,
@@ -337,7 +336,6 @@ def init_attendant_routes(app):
             logger.error(f"Erro inesperado ao completar ticket {ticket_id}: {str(e)}")
             db.session.rollback()
             return jsonify({'error': 'Erro interno ao completar ticket'}), 500
-    
     
     @app.route('/api/attendant/call-next', methods=['POST'])
     @require_auth

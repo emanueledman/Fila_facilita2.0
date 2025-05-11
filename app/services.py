@@ -246,6 +246,76 @@ class QueueService:
             return []
 
     @staticmethod
+    def complete_ticket(ticket_id, user_id=None):
+        """Marca um ticket como atendido, atualizando métricas e enviando notificações."""
+        try:
+            if not isinstance(ticket_id, str):
+                logger.error(f"ticket_id inválido: {ticket_id}")
+                raise ValueError("ticket_id inválido")
+            
+            ticket = Ticket.query.get(ticket_id)
+            if not ticket:
+                logger.error(f"Ticket não encontrado: ticket_id={ticket_id}")
+                raise ValueError("Ticket não encontrado")
+            
+            if ticket.status not in ['Pendente', 'Chamado']:
+                logger.warning(f"Ticket {ticket_id} no estado {ticket.status} não pode ser completado")
+                raise ValueError(f"Ticket já está {ticket.status}")
+            
+            queue = ticket.queue
+            if not queue:
+                logger.error(f"Fila não encontrada para ticket_id={ticket_id}")
+                raise ValueError("Fila não encontrada")
+            
+            if not QueueService.is_queue_open(queue):
+                logger.warning(f"Fila {queue.id} está fechada")
+                raise ValueError("Fila está fechada (fora do horário da filial)")
+            
+            # Marcar como atendido
+            ticket.status = 'Atendido'
+            ticket.attended_at = datetime.utcnow()
+            queue.active_tickets = max(0, queue.active_tickets - 1)
+            
+            # Calcular tempo de serviço
+            last_ticket = Ticket.query.filter_by(queue_id=queue.id, status='Atendido')\
+                .filter(Ticket.attended_at < ticket.attended_at).order_by(Ticket.attended_at.desc()).first()
+            if last_ticket and last_ticket.attended_at:
+                ticket.service_time = (ticket.attended_at - last_ticket.attended_at).total_seconds() / 60.0
+                queue.last_service_time = ticket.service_time
+            
+            db.session.commit()
+            
+            # Enviar notificação
+            if ticket.user_id != 'PRESENCIAL':
+                message = f"Sua senha {queue.prefix}{ticket.ticket_number} foi atendida com sucesso em {queue.service.name}."
+                QueueService.send_notification(
+                    fcm_token=None,
+                    message=message,
+                    ticket_id=ticket.id,
+                    via_websocket=True,
+                    user_id=ticket.user_id
+                )
+            
+            # Atualizar métricas da fila
+            QueueService.update_queue_metrics(queue.id)
+            
+            # Emitir evento de atualização via WebSocket
+            if socketio:
+                socketio.emit('queue_update', {
+                    'queue_id': queue.id,
+                    'active_tickets': queue.active_tickets,
+                    'current_ticket': queue.current_ticket,
+                    'message': f"Senha {queue.prefix}{ticket.ticket_number} atendida"
+                }, namespace='/', room=str(queue.id))
+            
+            logger.info(f"Ticket {ticket.id} marcado como atendido na fila {queue.service.name}")
+            return ticket
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao completar ticket {ticket_id}: {str(e)}")
+            raise
+
+    @staticmethod
     def update_queue_metrics(queue_id):
         """Atualiza métricas da fila, como avg_wait_time e last_service_time."""
         try:
