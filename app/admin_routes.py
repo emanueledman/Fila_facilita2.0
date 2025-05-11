@@ -596,7 +596,7 @@ def init_admin_routes(app):
     # Rota para chamar próximo ticket
     @app.route('/api/admin/queue/<queue_id>/call', methods=['POST'])
     @require_auth
-    def call_next_ticket(queue_id):
+    def call_next_tickets(queue_id):
         queue = Queue.query.get(queue_id)
         if not queue:
             logger.error(f"Fila {queue_id} não encontrada")
