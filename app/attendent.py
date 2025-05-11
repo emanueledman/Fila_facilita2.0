@@ -7,6 +7,8 @@ import logging
 import uuid
 from datetime import datetime
 import json
+from .queue_reco import emit_ticket_update  # Importar a função
+
 import re
 
 logging.basicConfig(level=logging.INFO)
@@ -262,8 +264,7 @@ def init_attendant_routes(app):
             return jsonify({'error': 'Erro interno ao atribuir fila'}), 500
 
 
-    from .queue_routes import emit_ticket_update  # Importar a função
-
+    
     @app.route('/api/attendant/complete', methods=['POST'])
     @require_auth
     def complete_attendant_ticket():
