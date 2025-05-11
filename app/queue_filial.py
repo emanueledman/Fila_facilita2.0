@@ -409,7 +409,7 @@ def init_queue_filial(app):
             return jsonify({'error': 'Erro interno ao obter estatísticas'}), 500
 
     @app.route('/api/branches/<branch_id>/schedule', methods=['GET'])
-    def get_branch_schedule(branch_id):
+    def get_branch_schedul(branch_id):
         """Retorna o horário de funcionamento de uma filial."""
         branch = Branch.query.get(branch_id)
         if not branch:
@@ -460,7 +460,7 @@ def init_queue_filial(app):
 
     @app.route('/api/branches/<branch_id>/schedule', methods=['POST'])
     @require_auth
-    def update_branch_schedules(branch_id):
+    def update_branch_schedul(branch_id):
         """Atualiza o horário de funcionamento de uma filial."""
         user_id = request.user_id
         user = User.query.get(user_id)
@@ -551,7 +551,7 @@ def init_queue_filial(app):
 
     @app.route('/api/branches/<branch_id>/schedule/create', methods=['POST'])
     @require_auth
-    def create_branch_schedules(branch_id):
+    def create_branch_schedul(branch_id):
         """Cria um novo horário para uma filial."""
         user_id = request.user_id
         user = User.query.get(user_id)
