@@ -65,7 +65,8 @@ def create_app():
         cors_allowed_origins=[
             "http://127.0.0.1:5500",
             "https://frontfa.netlify.app",
-            "https://fila-facilita2-0-4uzw.onrender.com"
+            "https://fila-facilita2-0-4uzw.onrender.com",
+            "null"
         ],
         async_mode='eventlet',
         logger=os.getenv('FLASK_ENV') != 'production',
@@ -81,7 +82,8 @@ def create_app():
         "origins": [
             "http://127.0.0.1:5500",
             "https://frontfa.netlify.app",
-            "https://fila-facilita2-0-4uzw.onrender.com"
+            "https://fila-facilita2-0-4uzw.onrender.com",
+            "null"
         ],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
