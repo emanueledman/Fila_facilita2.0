@@ -269,16 +269,13 @@ def init_branch_admin_routes(app):
                         q.active_tickets < q.daily_limit
                     )
                 features = QueueService.get_wait_time_features(q.id, q.current_ticket + 1, 0)
-                # Chamar predict com argumentos explícitos
+                # Chamar predict com argumentos suportados
                 wait_time = wait_time_predictor.predict(
                     queue_id=q.id,
                     position=features['position'],
                     active_tickets=features['active_tickets'],
                     priority=features['priority'],
                     hour_of_day=features['hour_of_day'],
-                    num_counters=features['num_counters'],
-                    avg_service_time=features['avg_service_time'],
-                    daily_limit=features['daily_limit'],
                     user_id=None,
                     user_lat=None,
                     user_lon=None,
@@ -782,16 +779,13 @@ def init_branch_admin_routes(app):
                         q.active_tickets < q.daily_limit
                     )
                 features = QueueService.get_wait_time_features(q.id, q.current_ticket + 1, 0)
-                # Chamar predict com argumentos explícitos
+                # Chamar predict com argumentos suportados
                 wait_time = wait_time_predictor.predict(
                     queue_id=q.id,
                     position=features['position'],
                     active_tickets=features['active_tickets'],
                     priority=features['priority'],
                     hour_of_day=features['hour_of_day'],
-                    num_counters=features['num_counters'],
-                    avg_service_time=features['avg_service_time'],
-                    daily_limit=features['daily_limit'],
                     user_id=None,
                     user_lat=None,
                     user_lon=None,
