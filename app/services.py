@@ -1022,6 +1022,35 @@ class QueueService:
             logger.error(f"Erro ao verificar notificações proativas: {e}")
 
     @staticmethod
+    def get_wait_time_features(queue_id, ticket_number, priority):
+        try:
+            queue = Queue.query.get(queue_id)
+            if not queue:
+                logger.error(f"Fila não encontrada para queue_id={queue_id}")
+                raise ValueError("Fila não encontrada")
+            
+            position = max(0, ticket_number - queue.current_ticket)
+            local_tz = pytz.timezone('Africa/Luanda')
+            now = datetime.now(local_tz)
+            hour_of_day = now.hour
+            
+            features = {
+                'position': position,
+                'active_tickets': queue.active_tickets,
+                'priority': priority,
+                'hour_of_day': hour_of_day,
+                'num_counters': queue.num_counters or 1,
+                'avg_service_time': queue.avg_wait_time or 5.0,
+                'daily_limit': queue.daily_limit or 100,
+            }
+            
+            logger.debug(f"Características geradas para queue_id={queue_id}: {features}")
+            return features
+        except Exception as e:
+            logger.error(f"Erro ao gerar características para queue_id={queue_id}: {str(e)}")
+            raise
+
+    @staticmethod
     def trade_tickets(ticket_from_id, ticket_to_id, user_from_id):
         """Troca dois tickets entre usuários, com validação rigorosa."""
         try:
