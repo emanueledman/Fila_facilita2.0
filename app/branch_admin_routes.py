@@ -269,7 +269,21 @@ def init_branch_admin_routes(app):
                         q.active_tickets < q.daily_limit
                     )
                 features = QueueService.get_wait_time_features(q.id, q.current_ticket + 1, 0)
-                wait_time = wait_time_predictor.predict(q.id, features)
+                # Chamar predict com argumentos explícitos
+                wait_time = wait_time_predictor.predict(
+                    queue_id=q.id,
+                    position=features['position'],
+                    active_tickets=features['active_tickets'],
+                    priority=features['priority'],
+                    hour_of_day=features['hour_of_day'],
+                    num_counters=features['num_counters'],
+                    avg_service_time=features['avg_service_time'],
+                    daily_limit=features['daily_limit'],
+                    user_id=None,
+                    user_lat=None,
+                    user_lon=None,
+                    user_service_preference=None
+                )
                 response.append({
                     'id': q.id,
                     'department_id': q.department_id,
@@ -283,7 +297,7 @@ def init_branch_admin_routes(app):
                     'num_counters': q.num_counters,
                     'status': 'Aberto' if is_open else ('Lotado' if q.active_tickets >= q.daily_limit else 'Fechado'),
                     'avg_wait_time': round(q.avg_wait_time, 2) if q.avg_wait_time else None,
-                    'estimated_wait_time': round(wait_time, 2) if wait_time else None
+                    'estimated_wait_time': round(wait_time, 2) if isinstance(wait_time, (int, float)) else None
                 })
 
             try:
@@ -768,7 +782,21 @@ def init_branch_admin_routes(app):
                         q.active_tickets < q.daily_limit
                     )
                 features = QueueService.get_wait_time_features(q.id, q.current_ticket + 1, 0)
-                wait_time = wait_time_predictor.predict(q.id, features)
+                # Chamar predict com argumentos explícitos
+                wait_time = wait_time_predictor.predict(
+                    queue_id=q.id,
+                    position=features['position'],
+                    active_tickets=features['active_tickets'],
+                    priority=features['priority'],
+                    hour_of_day=features['hour_of_day'],
+                    num_counters=features['num_counters'],
+                    avg_service_time=features['avg_service_time'],
+                    daily_limit=features['daily_limit'],
+                    user_id=None,
+                    user_lat=None,
+                    user_lon=None,
+                    user_service_preference=None
+                )
                 queue_status.append({
                     'queue_id': q.id,
                     'service_name': q.service.name if q.service else 'N/A',
@@ -778,7 +806,7 @@ def init_branch_admin_routes(app):
                     'current_ticket': q.current_ticket,
                     'status': 'Aberto' if is_open else ('Lotado' if q.active_tickets >= q.daily_limit else 'Fechado'),
                     'avg_wait_time': round(q.avg_wait_time, 2) if q.avg_wait_time else None,
-                    'estimated_wait_time': round(wait_time, 2) if wait_time else None
+                    'estimated_wait_time': round(wait_time, 2) if isinstance(wait_time, (int, float)) else None
                 })
 
             # Tickets recentes
@@ -903,3 +931,5 @@ def init_branch_admin_routes(app):
         except Exception as e:
             logger.error(f"Erro inesperado ao emitir ticket via totem: {str(e)}")
             return jsonify({'error': 'Erro interno ao emitir ticket'}), 500
+
+    return app
