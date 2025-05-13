@@ -279,7 +279,6 @@ def init_branch_admin_routes(app):
                     user_id=None,
                     user_lat=None,
                     user_lon=None,
-                    user_service_preference=None
                 )
                 response.append({
                     'id': q.id,
@@ -788,8 +787,7 @@ def init_branch_admin_routes(app):
                     hour_of_day=features['hour_of_day'],
                     user_id=None,
                     user_lat=None,
-                    user_lon=None,
-                    user_service_preference=None
+                    user_lon=None
                 )
                 queue_status.append({
                     'queue_id': q.id,
