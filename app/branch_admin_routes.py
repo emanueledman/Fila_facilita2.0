@@ -3,7 +3,6 @@ from . import db, socketio, redis_client
 from .models import AuditLog, User, Queue, Ticket, Department, Institution, UserRole, Branch, BranchSchedule, AttendantQueue, Weekday, InstitutionService
 from .auth import require_auth
 from .services import QueueService
-from .ml_models import wait_time_predictor
 from sqlalchemy.exc import SQLAlchemyError
 import logging
 import uuid
@@ -11,6 +10,8 @@ from datetime import datetime, timedelta
 import re
 import json
 import io
+import csv
+from io import StringIO
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ def init_branch_admin_routes(app):
         except Exception as e:
             logger.error(f"Erro ao emitir atualização de painel: {str(e)}")
 
+    # Criar Departamento
     @app.route('/api/branch_admin/branches/<branch_id>/departments', methods=['POST'])
     @require_auth
     def create_branch_department(branch_id):
@@ -49,12 +51,12 @@ def init_branch_admin_routes(app):
             return jsonify({'error': 'Campos obrigatórios faltando: name, sector'}), 400
 
         # Validações
-        if not re.match(r'^[A-Za-zÀ-ÿ\s0-9.,-]{1,50}$', data['name']):
+        if not re.match(r'^[A-Za-zÀ-ÿ\s0-9.,\'-]{1,50}$', data['name']):
             logger.warning(f"Nome inválido para departamento: {data['name']}")
-            return jsonify({'error': 'Nome do departamento inválido'}), 400
+            return jsonify({'error': 'Nome do departamento inválido (use até 50 caracteres, incluindo letras, números e pontuação básica)'}), 400
         if not re.match(r'^[A-Za-zÀ-ÿ\s]{1,50}$', data['sector']):
             logger.warning(f"Setor inválido: {data['sector']}")
-            return jsonify({'error': 'Setor inválido'}), 400
+            return jsonify({'error': 'Setor inválido (use até 50 caracteres, apenas letras e espaços)'}), 400
         if Department.query.filter_by(branch_id=branch_id, name=data['name']).first():
             logger.warning(f"Departamento com nome {data['name']} já existe na filial {branch_id}")
             return jsonify({'error': 'Departamento com este nome já existe na filial'}), 400
@@ -96,8 +98,9 @@ def init_branch_admin_routes(app):
         except Exception as e:
             db.session.rollback()
             logger.error(f"Erro ao criar departamento: {str(e)}")
-            return jsonify({'error': 'Erro interno ao criar departamento'}), 500
+            return jsonify({'error': f'Falha ao criar departamento: {str(e)}'}), 500
 
+    # Listar Departamentos
     @app.route('/api/branch_admin/branches/<branch_id>/departments', methods=['GET'])
     @require_auth
     def list_branch_departments(branch_id):
@@ -139,8 +142,103 @@ def init_branch_admin_routes(app):
             return jsonify(response), 200
         except Exception as e:
             logger.error(f"Erro ao listar departamentos para user_id={user.id}: {str(e)}")
-            return jsonify({'error': 'Erro interno ao listar departamentos'}), 500
+            return jsonify({'error': f'Erro ao listar departamentos: {str(e)}'}), 500
 
+    # Editar Departamento
+    @app.route('/api/branch_admin/branches/<branch_id>/departments/<department_id>', methods=['PUT'])
+    @require_auth
+    def update_branch_department(branch_id, department_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
+            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+
+        department = Department.query.get(department_id)
+        if not department or department.branch_id != branch_id:
+            return jsonify({'error': 'Departamento não encontrado ou não pertence à filial'}), 404
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Nenhum dado fornecido'}), 400
+
+        if 'name' in data:
+            if not re.match(r'^[A-Za-zÀ-ÿ\s0-9.,\'-]{1,50}$', data['name']):
+                return jsonify({'error': 'Nome do departamento inválido'}), 400
+            if Department.query.filter_by(branch_id=branch_id, name=data['name']).filter(Department.id != department_id).first():
+                return jsonify({'error': 'Departamento com este nome já existe na filial'}), 400
+            department.name = data['name']
+
+        if 'sector' in data:
+            if not re.match(r'^[A-Za-zÀ-ÿ\s]{1,50}$', data['sector']):
+                return jsonify({'error': 'Setor inválido'}), 400
+            department.sector = data['sector']
+
+        try:
+            db.session.commit()
+            socketio.emit('department_updated', {
+                'department_id': department.id,
+                'name': department.name,
+                'sector': department.sector,
+                'branch_id': branch_id
+            }, namespace='/branch_admin')
+            AuditLog.create(
+                user_id=user.id,
+                action='update_department',
+                resource_type='department',
+                resource_id=department.id,
+                details=f"Departamento {department.name} atualizado na filial {branch_id}"
+            )
+            redis_client.delete(f"cache:departments:{branch_id}")
+            return jsonify({
+                'message': 'Departamento atualizado com sucesso',
+                'department': {
+                    'id': department.id,
+                    'name': department.name,
+                    'sector': department.sector,
+                    'branch_id': branch_id
+                }
+            }), 200
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao atualizar departamento: {str(e)}")
+            return jsonify({'error': f'Erro ao atualizar departamento: {str(e)}'}), 500
+
+    # Excluir Departamento
+    @app.route('/api/branch_admin/branches/<branch_id>/departments/<department_id>', methods=['DELETE'])
+    @require_auth
+    def delete_branch_department(branch_id, department_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
+            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+
+        department = Department.query.get(department_id)
+        if not department or department.branch_id != branch_id:
+            return jsonify({'error': 'Departamento não encontrado ou não pertence à filial'}), 404
+
+        if Queue.query.filter_by(department_id=department_id).first():
+            return jsonify({'error': 'Departamento possui filas associadas. Remova as filas primeiro'}), 400
+
+        try:
+            db.session.delete(department)
+            db.session.commit()
+            socketio.emit('department_deleted', {
+                'department_id': department.id,
+                'branch_id': branch_id
+            }, namespace='/branch_admin')
+            AuditLog.create(
+                user_id=user.id,
+                action='delete_department',
+                resource_type='department',
+                resource_id=department.id,
+                details=f"Departamento {department.name} excluído na filial {branch_id}"
+            )
+            redis_client.delete(f"cache:departments:{branch_id}")
+            return jsonify({'message': 'Departamento excluído com sucesso'}), 200
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao excluir departamento: {str(e)}")
+            return jsonify({'error': f'Erro ao excluir departamento: {str(e)}'}), 500
+
+    # Criar Fila
     @app.route('/api/branch_admin/branches/<branch_id>/queues', methods=['POST'])
     @require_auth
     def create_branch_queue(branch_id):
@@ -169,9 +267,9 @@ def init_branch_admin_routes(app):
         if not service or service.institution_id != branch.institution_id:
             logger.warning(f"Serviço {data['service_id']} inválido ou não pertence à instituição")
             return jsonify({'error': 'Serviço inválido ou não pertence à instituição'}), 400
-        if not re.match(r'^[A-Z]{1,10}$', data['prefix']):
+        if not re.match(r'^[A-Z0-9]{1,10}$', data['prefix']):
             logger.warning(f"Prefixo inválido: {data['prefix']}")
-            return jsonify({'error': 'Prefixo deve conter apenas letras maiúsculas e até 10 caracteres'}), 400
+            return jsonify({'error': 'Prefixo deve conter letras maiúsculas ou números, até 10 caracteres'}), 400
         if not isinstance(data['daily_limit'], int) or data['daily_limit'] < 1:
             logger.warning(f"Limite diário inválido: {data['daily_limit']}")
             return jsonify({'error': 'Limite diário deve ser um número inteiro maior que 0'}), 400
@@ -225,8 +323,9 @@ def init_branch_admin_routes(app):
         except Exception as e:
             db.session.rollback()
             logger.error(f"Erro ao criar fila: {str(e)}")
-            return jsonify({'error': 'Erro interno ao criar fila'}), 500
+            return jsonify({'error': f'Erro ao criar fila: {str(e)}'}), 500
 
+    # Listar Filas
     @app.route('/api/branch_admin/branches/<branch_id>/queues', methods=['GET'])
     @require_auth
     def list_branch_queues(branch_id):
@@ -268,18 +367,7 @@ def init_branch_admin_routes(app):
                         current_time <= schedule.end_time and
                         q.active_tickets < q.daily_limit
                     )
-                features = QueueService.get_wait_time_features(q.id, q.current_ticket + 1, 0)
-                # Chamar predict com argumentos suportados
-                wait_time = wait_time_predictor.predict(
-                    queue_id=q.id,
-                    position=features['position'],
-                    active_tickets=features['active_tickets'],
-                    priority=features['priority'],
-                    hour_of_day=features['hour_of_day'],
-                    user_id=None,
-                    user_lat=None,
-                    user_lon=None,
-                )
+                estimated_wait_time = q.avg_wait_time if q.avg_wait_time else 5.0  # Fallback para 5 minutos
                 response.append({
                     'id': q.id,
                     'department_id': q.department_id,
@@ -293,7 +381,7 @@ def init_branch_admin_routes(app):
                     'num_counters': q.num_counters,
                     'status': 'Aberto' if is_open else ('Lotado' if q.active_tickets >= q.daily_limit else 'Fechado'),
                     'avg_wait_time': round(q.avg_wait_time, 2) if q.avg_wait_time else None,
-                    'estimated_wait_time': round(wait_time, 2) if isinstance(wait_time, (int, float)) else None
+                    'estimated_wait_time': round(estimated_wait_time, 2)
                 })
 
             try:
@@ -305,8 +393,181 @@ def init_branch_admin_routes(app):
             return jsonify(response), 200
         except Exception as e:
             logger.error(f"Erro ao listar filas para user_id={user.id}: {str(e)}")
-            return jsonify({'error': 'Erro interno ao listar filas'}), 500
+            return jsonify({'error': f'Erro ao listar filas: {str(e)}'}), 500
 
+    # Editar Fila
+    @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>', methods=['PUT'])
+    @require_auth
+    def update_branch_queue(branch_id, queue_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
+            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+
+        queue = Queue.query.get(queue_id)
+        if not queue or queue.department.branch_id != branch_id:
+            return jsonify({'error': 'Fila não encontrada ou não pertence à filial'}), 404
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Nenhum dado fornecido'}), 400
+
+        if 'prefix' in data:
+            if not re.match(r'^[A-Z0-9]{1,10}$', data['prefix']):
+                return jsonify({'error': 'Prefixo deve conter letras maiúsculas ou números, até 10 caracteres'}), 400
+            queue.prefix = data['prefix']
+
+        if 'daily_limit' in data:
+            if not isinstance(data['daily_limit'], int) or data['daily_limit'] < 1:
+                return jsonify({'error': 'Limite diário deve ser um número inteiro maior que 0'}), 400
+            queue.daily_limit = data['daily_limit']
+
+        if 'num_counters' in data:
+            if not isinstance(data['num_counters'], int) or data['num_counters'] < 1:
+                return jsonify({'error': 'Número de guichês deve ser um número inteiro maior que 0'}), 400
+            queue.num_counters = data['num_counters']
+
+        try:
+            db.session.commit()
+            socketio.emit('queue_updated', {
+                'queue_id': queue.id,
+                'prefix': queue.prefix,
+                'daily_limit': queue.daily_limit,
+                'num_counters': queue.num_counters,
+                'branch_id': branch_id
+            }, namespace='/branch_admin')
+            AuditLog.create(
+                user_id=user.id,
+                action='update_queue',
+                resource_type='queue',
+                resource_id=queue.id,
+                details=f"Fila {queue.prefix} atualizada na filial {branch_id}"
+            )
+            redis_client.delete(f"cache:queues:{branch_id}")
+            return jsonify({
+                'message': 'Fila atualizada com sucesso',
+                'queue': {
+                    'id': queue.id,
+                    'department_id': queue.department_id,
+                    'service_id': queue.service_id,
+                    'prefix': queue.prefix,
+                    'daily_limit': queue.daily_limit,
+                    'num_counters': queue.num_counters
+                }
+            }), 200
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao atualizar fila: {str(e)}")
+            return jsonify({'error': f'Erro ao atualizar fila: {str(e)}'}), 500
+
+    # Excluir Fila
+    @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>', methods=['DELETE'])
+    @require_auth
+    def delete_branch_queue(branch_id, queue_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
+            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+
+        queue = Queue.query.get(queue_id)
+        if not queue or queue.department.branch_id != branch_id:
+            return jsonify({'error': 'Fila não encontrada ou não pertence à filial'}), 404
+
+        if Ticket.query.filter_by(queue_id=queue_id, status='Pendente').first():
+            return jsonify({'error': 'Fila possui tickets pendentes. Cancele os tickets primeiro'}), 400
+
+        try:
+            db.session.delete(queue)
+            db.session.commit()
+            socketio.emit('queue_deleted', {
+                'queue_id': queue.id,
+                'branch_id': branch_id
+            }, namespace='/branch_admin')
+            AuditLog.create(
+                user_id=user.id,
+                action='delete_queue',
+                resource_type='queue',
+                resource_id=queue.id,
+                details=f"Fila {queue.prefix} excluída na filial {branch_id}"
+            )
+            redis_client.delete(f"cache:queues:{branch_id}")
+            return jsonify({'message': 'Fila excluída com sucesso'}), 200
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao excluir fila: {str(e)}")
+            return jsonify({'error': f'Erro ao excluir fila: {str(e)}'}), 500
+
+    # Pausar Fila
+    @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/pause', methods=['POST'])
+    @require_auth
+    def pause_queue(branch_id, queue_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
+            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+
+        queue = Queue.query.get(queue_id)
+        if not queue or queue.department.branch_id != branch_id:
+            return jsonify({'error': 'Fila não encontrada ou não pertence à filial'}), 404
+
+        try:
+            queue.daily_limit = 0  # Impede novos tickets
+            db.session.commit()
+            socketio.emit('queue_paused', {
+                'queue_id': queue.id,
+                'branch_id': branch_id
+            }, namespace='/branch_admin')
+            AuditLog.create(
+                user_id=user.id,
+                action='pause_queue',
+                resource_type='queue',
+                resource_id=queue.id,
+                details=f"Fila {queue.prefix} pausada por {user.email}"
+            )
+            redis_client.delete(f"cache:queues:{branch_id}")
+            return jsonify({'message': 'Fila pausada com sucesso'}), 200
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao pausar fila: {str(e)}")
+            return jsonify({'error': f'Erro ao pausar fila: {str(e)}'}), 500
+
+    # Reabrir Fila
+    @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/resume', methods=['POST'])
+    @require_auth
+    def resume_queue(branch_id, queue_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
+            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+
+        queue = Queue.query.get(queue_id)
+        if not queue or queue.department.branch_id != branch_id:
+            return jsonify({'error': 'Fila não encontrada ou não pertence à filial'}), 404
+
+        data = request.get_json() or {}
+        daily_limit = data.get('daily_limit', queue.daily_limit)
+        if not isinstance(daily_limit, int) or daily_limit < 1:
+            return jsonify({'error': 'Limite diário deve ser um número inteiro maior que 0'}), 400
+
+        try:
+            queue.daily_limit = daily_limit
+            db.session.commit()
+            socketio.emit('queue_resumed', {
+                'queue_id': queue.id,
+                'branch_id': branch_id,
+                'daily_limit': queue.daily_limit
+            }, namespace='/branch_admin')
+            AuditLog.create(
+                user_id=user.id,
+                action='resume_queue',
+                resource_type='queue',
+                resource_id=queue.id,
+                details=f"Fila {queue.prefix} reaberta por {user.email}"
+            )
+            redis_client.delete(f"cache:queues:{branch_id}")
+            return jsonify({'message': 'Fila reaberta com sucesso'}), 200
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao reabrir fila: {str(e)}")
+            return jsonify({'error': f'Erro ao reabrir fila: {str(e)}'}), 500
+
+    # Listar Tickets
     @app.route('/api/branch_admin/branches/<branch_id>/tickets', methods=['GET'])
     @require_auth
     def list_branch_tickets(branch_id):
@@ -320,8 +581,14 @@ def init_branch_admin_routes(app):
             logger.warning(f"Filial {branch_id} não encontrada")
             return jsonify({'error': 'Filial não encontrada'}), 404
 
-        cache_key = f'tickets:{branch_id}'
+        # Parâmetros de filtro e paginação
+        status = request.args.get('status')
+        queue_id = request.args.get('queue_id')
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 20))
         refresh = request.args.get('refresh', 'false').lower() == 'true'
+
+        cache_key = f'tickets:{branch_id}:{status}:{queue_id}:{page}:{per_page}'
         if not refresh:
             try:
                 cached_data = redis_client.get(cache_key)
@@ -332,33 +599,83 @@ def init_branch_admin_routes(app):
 
         try:
             department_ids = [d.id for d in Department.query.filter_by(branch_id=branch_id).all()]
-            queue_ids = [q.id for q in Queue.query.filter(Queue.department_id.in_(department_ids)).all()]
-            tickets = Ticket.query.filter(Ticket.queue_id.in_(queue_ids)).order_by(Ticket.issued_at.desc()).limit(100).all()
-            response = [{
-                'id': t.id,
-                'queue_id': t.queue_id,
-                'queue_prefix': t.queue.prefix if t.queue else 'N/A',
-                'ticket_number': t.ticket_number,
-                'status': t.status,
-                'priority': t.priority,
-                'is_physical': t.is_physical,
-                'issued_at': t.issued_at.isoformat() if t.issued_at else None,
-                'attended_at': t.attended_at.isoformat() if t.attended_at else None,
-                'counter': t.counter,
-                'service_time': t.service_time
-            } for t in tickets]
+            query = Ticket.query.filter(Ticket.queue_id.in_([q.id for q in Queue.query.filter(Queue.department_id.in_(department_ids)).all()]))
+            if status:
+                query = query.filter(Ticket.status == status)
+            if queue_id:
+                query = query.filter(Ticket.queue_id == queue_id)
+
+            tickets = query.order_by(Ticket.issued_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
+            response = {
+                'tickets': [{
+                    'id': t.id,
+                    'queue_id': t.queue_id,
+                    'queue_prefix': t.queue.prefix if t.queue else 'N/A',
+                    'ticket_number': t.ticket_number,
+                    'status': t.status,
+                    'priority': t.priority,
+                    'is_physical': t.is_physical,
+                    'issued_at': t.issued_at.isoformat() if t.issued_at else None,
+                    'attended_at': t.attended_at.isoformat() if t.attended_at else None,
+                    'counter': t.counter,
+                    'service_time': t.service_time
+                } for t in tickets.items],
+                'total': tickets.total,
+                'pages': tickets.pages,
+                'page': page
+            }
 
             try:
                 redis_client.setex(cache_key, 300, json.dumps(response))
             except Exception as e:
                 logger.warning(f"Erro ao salvar cache no Redis para tickets {branch_id}: {str(e)}")
 
-            logger.info(f"Admin {user.email} listou {len(response)} tickets da filial {branch_id}")
+            logger.info(f"Admin {user.email} listou {len(response['tickets'])} tickets da filial {branch_id}")
             return jsonify(response), 200
         except Exception as e:
             logger.error(f"Erro ao listar tickets para user_id={user.id}: {str(e)}")
-            return jsonify({'error': 'Erro interno ao listar tickets'}), 500
+            return jsonify({'error': f'Erro ao listar tickets: {str(e)}'}), 500
 
+    # Cancelar Ticket
+    @app.route('/api/branch_admin/branches/<branch_id>/tickets/<ticket_id>/cancel', methods=['POST'])
+    @require_auth
+    def cancel_ticket(branch_id, ticket_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
+            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+
+        ticket = Ticket.query.get(ticket_id)
+        if not ticket or ticket.queue.department.branch_id != branch_id:
+            return jsonify({'error': 'Ticket não encontrado ou não pertence à filial'}), 404
+
+        if ticket.status != 'Pendente':
+            return jsonify({'error': 'Apenas tickets pendentes podem ser cancelados'}), 400
+
+        try:
+            ticket.status = 'Cancelado'
+            ticket.cancelled_at = datetime.utcnow()
+            ticket.queue.active_tickets -= 1
+            db.session.commit()
+            socketio.emit('ticket_cancelled', {
+                'ticket_id': ticket.id,
+                'queue_id': ticket.queue_id,
+                'branch_id': branch_id
+            }, namespace='/branch_admin')
+            AuditLog.create(
+                user_id=user.id,
+                action='cancel_ticket',
+                resource_type='ticket',
+                resource_id=ticket.id,
+                details=f"Ticket {ticket.queue.prefix}{ticket.ticket_number} cancelado por {user.email}"
+            )
+            redis_client.delete(f"cache:tickets:{branch_id}")
+            return jsonify({'message': 'Ticket cancelado com sucesso'}), 200
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao cancelar ticket: {str(e)}")
+            return jsonify({'error': f'Erro ao cancelar ticket: {str(e)}'}), 500
+
+    # Criar Atendente
     @app.route('/api/branch_admin/branches/<branch_id>/attendants', methods=['POST'])
     @require_auth
     def create_branch_attendant(branch_id):
@@ -387,7 +704,7 @@ def init_branch_admin_routes(app):
             return jsonify({'error': 'A senha deve ter pelo menos 8 caracteres'}), 400
         if not re.match(r'^[A-Za-zÀ-ÿ\s]{1,100}$', data['name']):
             logger.warning(f"Nome inválido: {data['name']}")
-            return jsonify({'error': 'Nome inválido'}), 400
+            return jsonify({'error': 'Nome inválido (use até 100 caracteres, apenas letras e espaços)'}), 400
         if User.query.filter_by(email=data['email']).first():
             logger.warning(f"Usuário com email {data['email']} já existe")
             return jsonify({'error': 'Usuário com este email já existe'}), 400
@@ -435,8 +752,9 @@ def init_branch_admin_routes(app):
         except Exception as e:
             db.session.rollback()
             logger.error(f"Erro ao criar atendente: {str(e)}")
-            return jsonify({'error': 'Erro interno ao criar atendente'}), 500
+            return jsonify({'error': f'Erro ao criar atendente: {str(e)}'}), 500
 
+    # Listar Atendentes
     @app.route('/api/branch_admin/branches/<branch_id>/attendants', methods=['GET'])
     @require_auth
     def list_branch_attendants(branch_id):
@@ -479,8 +797,79 @@ def init_branch_admin_routes(app):
             return jsonify(response), 200
         except Exception as e:
             logger.error(f"Erro ao listar atendentes para user_id={user.id}: {str(e)}")
-            return jsonify({'error': 'Erro interno ao listar atendentes'}), 500
+            return jsonify({'error': f'Erro ao listar atendentes: {str(e)}'}), 500
 
+    # Editar Atendente
+    @app.route('/api/branch_admin/branches/<branch_id>/attendants/<attendant_id>', methods=['PUT'])
+    @require_auth
+    def update_branch_attendant(branch_id, attendant_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
+            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+
+        attendant = User.query.get(attendant_id)
+        if not attendant or attendant.branch_id != branch_id or attendant.user_role != UserRole.ATTENDANT:
+            return jsonify({'error': 'Atendente não encontrado ou não pertence à filial'}), 404
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Nenhum dado fornecido'}), 400
+
+        if 'email' in data:
+            if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', data['email']):
+                return jsonify({'error': 'Email inválido'}), 400
+            if User.query.filter_by(email=data['email']).filter(User.id != attendant_id).first():
+                return jsonify({'error': 'Email já está em uso'}), 400
+            attendant.email = data['email']
+
+        if 'name' in data:
+            if not re.match(r'^[A-Za-zÀ-ÿ\s]{1,100}$', data['name']):
+                return jsonify({'error': 'Nome inválido'}), 400
+            attendant.name = data['name']
+
+        if 'password' in data:
+            if len(data['password']) < 8:
+                return jsonify({'error': 'A senha deve ter pelo menos 8 caracteres'}), 400
+            attendant.set_password(data['password'])
+
+        if 'active' in data:
+            if not isinstance(data['active'], bool):
+                return jsonify({'error': 'O campo active deve ser um booleano'}), 400
+            attendant.active = data['active']
+
+        try:
+            db.session.commit()
+            socketio.emit('attendant_updated', {
+                'user_id': attendant.id,
+                'email': attendant.email,
+                'name': attendant.name,
+                'active': attendant.active,
+                'branch_id': branch_id
+            }, namespace='/branch_admin')
+            AuditLog.create(
+                user_id=user.id,
+                action='update_attendant',
+                resource_type='user',
+                resource_id=attendant.id,
+                details=f"Atendente {attendant.email} atualizado na filial {branch_id}"
+            )
+            redis_client.delete(f"cache:attendants:{branch_id}")
+            return jsonify({
+                'message': 'Atendente atualizado com sucesso',
+                'user': {
+                    'id': attendant.id,
+                    'email': attendant.email,
+                    'name': attendant.name,
+                    'active': attendant.active,
+                    'branch_id': branch_id
+                }
+            }), 200
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao atualizar atendente: {str(e)}")
+            return jsonify({'error': f'Erro ao atualizar atendente: {str(e)}'}), 500
+
+    # Atribuir Atendente à Fila
     @app.route('/api/branch_admin/branches/<branch_id>/attendants/<attendant_id>/queues', methods=['POST'])
     @require_auth
     def assign_attendant_to_queue(branch_id, attendant_id):
@@ -543,8 +932,9 @@ def init_branch_admin_routes(app):
         except Exception as e:
             db.session.rollback()
             logger.error(f"Erro ao atribuir atendente à fila: {str(e)}")
-            return jsonify({'error': 'Erro interno ao atribuir atendente'}), 500
+            return jsonify({'error': f'Erro ao atribuir atendente: {str(e)}'}), 500
 
+    # Criar Horário
     @app.route('/api/branch_admin/branches/<branch_id>/schedules', methods=['POST'])
     @require_auth
     def create_branch_schedules(branch_id):
@@ -630,8 +1020,9 @@ def init_branch_admin_routes(app):
         except Exception as e:
             db.session.rollback()
             logger.error(f"Erro ao criar horário: {str(e)}")
-            return jsonify({'error': 'Erro interno ao criar horário'}), 500
+            return jsonify({'error': f'Erro ao criar horário: {str(e)}'}), 500
 
+    # Listar Horários
     @app.route('/api/branch_admin/branches/<branch_id>/schedules', methods=['GET'])
     @require_auth
     def list_branch_schedules(branch_id):
@@ -674,8 +1065,81 @@ def init_branch_admin_routes(app):
             return jsonify(response), 200
         except Exception as e:
             logger.error(f"Erro ao listar horários para user_id={user.id}: {str(e)}")
-            return jsonify({'error': 'Erro interno ao listar horários'}), 500
+            return jsonify({'error': f'Erro ao listar horários: {str(e)}'}), 500
 
+    # Editar Horário
+    @app.route('/api/branch_admin/branches/<branch_id>/schedules/<schedule_id>', methods=['PUT'])
+    @require_auth
+    def update_branch_schedule(branch_id, schedule_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
+            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+
+        schedule = BranchSchedule.query.get(schedule_id)
+        if not schedule or schedule.branch_id != branch_id:
+            return jsonify({'error': 'Horário não encontrado ou não pertence à filial'}), 404
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Nenhum dado fornecido'}), 400
+
+        if 'open_time' in data and 'end_time' in data:
+            if not data.get('is_closed', schedule.is_closed):
+                try:
+                    open_time = datetime.strptime(data['open_time'], '%H:%M').time()
+                    end_time = datetime.strptime(data['end_time'], '%H:%M').time()
+                    if open_time >= end_time:
+                        return jsonify({'error': 'Horário de abertura deve ser anterior ao horário de fechamento'}), 400
+                    schedule.open_time = open_time
+                    schedule.end_time = end_time
+                except ValueError:
+                    return jsonify({'error': 'Formato de horário inválido (use HH:MM)'}), 400
+            else:
+                schedule.open_time = None
+                schedule.end_time = None
+
+        if 'is_closed' in data:
+            if not isinstance(data['is_closed'], bool):
+                return jsonify({'error': 'O campo is_closed deve ser um booleano'}), 400
+            schedule.is_closed = data['is_closed']
+            if data['is_closed']:
+                schedule.open_time = None
+                schedule.end_time = None
+
+        try:
+            db.session.commit()
+            socketio.emit('schedule_updated', {
+                'schedule_id': schedule.id,
+                'branch_id': branch_id,
+                'weekday': schedule.weekday.value,
+                'open_time': schedule.open_time.strftime('%H:%M') if schedule.open_time else None,
+                'end_time': schedule.end_time.strftime('%H:%M') if schedule.end_time else None,
+                'is_closed': schedule.is_closed
+            }, namespace='/branch_admin')
+            AuditLog.create(
+                user_id=user.id,
+                action='update_schedule',
+                resource_type='branch_schedule',
+                resource_id=schedule.id,
+                details=f"Horário para {schedule.weekday.value} atualizado na filial {branch_id}"
+            )
+            redis_client.delete(f"cache:schedules:{branch_id}")
+            return jsonify({
+                'message': 'Horário atualizado com sucesso',
+                'schedule': {
+                    'id': schedule.id,
+                    'weekday': schedule.weekday.value,
+                    'open_time': schedule.open_time.strftime('%H:%M') if schedule.open_time else None,
+                    'end_time': schedule.end_time.strftime('%H:%M') if schedule.end_time else None,
+                    'is_closed': schedule.is_closed
+                }
+            }), 200
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao atualizar horário: {str(e)}")
+            return jsonify({'error': f'Erro ao atualizar horário: {str(e)}'}), 500
+
+    # Gerar Relatório
     @app.route('/api/branch_admin/branches/<branch_id>/report', methods=['GET'])
     @require_auth
     def branch_reports(branch_id):
@@ -732,8 +1196,68 @@ def init_branch_admin_routes(app):
             return jsonify(report), 200
         except Exception as e:
             logger.error(f"Erro ao gerar relatório para user_id={user.id}: {str(e)}")
-            return jsonify({'error': 'Erro interno ao gerar relatório'}), 500
+            return jsonify({'error': f'Erro ao gerar relatório: {str(e)}'}), 500
 
+    # Exportar Relatório em CSV
+    @app.route('/api/branch_admin/branches/<branch_id>/report/export', methods=['GET'])
+    @require_auth
+    def export_branch_report(branch_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
+            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+
+        branch = Branch.query.get(branch_id)
+        if not branch:
+            return jsonify({'error': 'Filial não encontrada'}), 404
+
+        date_str = request.args.get('date')
+        try:
+            report_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Data inválida. Use o formato AAAA-MM-DD'}), 400
+
+        try:
+            department_ids = [d.id for d in Department.query.filter_by(branch_id=branch_id).all()]
+            queues = Queue.query.filter(Queue.department_id.in_(department_ids)).all()
+            queue_ids = [q.id for q in queues]
+            start_time = datetime.combine(report_date, datetime.min.time())
+            end_time = start_time + timedelta(days=1)
+
+            output = StringIO()
+            writer = csv.writer(output)
+            writer.writerow(['Queue ID', 'Service Name', 'Department Name', 'Issued Tickets', 'Attended Tickets', 'Avg Service Time'])
+            
+            for queue in queues:
+                tickets = Ticket.query.filter(
+                    Ticket.queue_id == queue.id,
+                    Ticket.issued_at >= start_time,
+                    Ticket.issued_at < end_time
+                ).all()
+                issued = len(tickets)
+                attended = len([t for t in tickets if t.status == 'Atendido'])
+                service_times = [t.service_time for t in tickets if t.status == 'Atendido' and t.service_time is not None]
+                avg_time = sum(service_times) / len(service_times) if service_times else None
+                writer.writerow([
+                    queue.id,
+                    queue.service.name if queue.service else 'N/A',
+                    queue.department.name if queue.department else 'N/A',
+                    issued,
+                    attended,
+                    round(avg_time, 2) if avg_time else 'N/A'
+                ])
+
+            logger.info(f"Relatório CSV exportado para {user.email} em {date_str}")
+            return send_file(
+                io.BytesIO(output.getvalue().encode('utf-8')),
+                as_attachment=True,
+                download_name=f"report_{branch_id}_{date_str}.csv",
+                mimetype='text/csv'
+            )
+        except Exception as e:
+            logger.error(f"Erro ao exportar relatório para user_id={user.id}: {str(e)}")
+            return jsonify({'error': f'Erro ao exportar relatório: {str(e)}'}), 500
+
+    # Painel de Controle
     @app.route('/api/branch_admin/branches/<branch_id>/dashboard', methods=['GET'])
     @require_auth
     def branch_dashboards(branch_id):
@@ -777,17 +1301,7 @@ def init_branch_admin_routes(app):
                         current_time <= schedule.end_time and
                         q.active_tickets < q.daily_limit
                     )
-                features = QueueService.get_wait_time_features(q.id, q.current_ticket + 1, 0)
-                wait_time = wait_time_predictor.predict(
-                    queue_id=q.id,
-                    position=features['position'],
-                    active_tickets=features['active_tickets'],
-                    priority=features['priority'],
-                    hour_of_day=features['hour_of_day'],
-                    user_id=None,
-                    user_lat=None,
-                    user_lon=None
-                )
+                estimated_wait_time = q.avg_wait_time if q.avg_wait_time else 5.0  # Fallback para 5 minutos
                 queue_status.append({
                     'queue_id': q.id,
                     'service_name': q.service.name if q.service else 'N/A',
@@ -797,7 +1311,7 @@ def init_branch_admin_routes(app):
                     'current_ticket': q.current_ticket,
                     'status': 'Aberto' if is_open else ('Lotado' if q.active_tickets >= q.daily_limit else 'Fechado'),
                     'avg_wait_time': round(q.avg_wait_time, 2) if q.avg_wait_time else None,
-                    'estimated_wait_time': round(wait_time, 2) if isinstance(wait_time, (int, float)) else None
+                    'estimated_wait_time': round(estimated_wait_time, 2)
                 })
 
             # Tickets recentes
@@ -853,16 +1367,16 @@ def init_branch_admin_routes(app):
             return jsonify(response), 200
         except Exception as e:
             logger.error(f"Erro ao gerar painel para user_id={user.id}: {str(e)}")
-            return jsonify({'error': 'Erro interno ao gerar painel'}), 500
-    
-    
+            return jsonify({'error': f'Erro ao gerar painel: {str(e)}'}), 500
+
+    # Gerar Ticket via Totem
     @app.route('/api/branch_admin/branches/<branch_id>/queues/totem', methods=['POST'])
-    @require_auth
     def generate_totem_tickets(branch_id):
-        user = User.query.get(request.user_id)
-        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
-            logger.warning(f"Tentativa não autorizada de emitir ticket via totem por user_id={request.user_id}")
-            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+        # Validação por token de totem
+        token = request.headers.get('Totem-Token')
+        if not token or token != app.config.get('TOTEM_TOKEN'):
+            logger.warning(f"Token de totem inválido para IP {request.remote_addr}")
+            return jsonify({'error': 'Token de totem inválido'}), 401
 
         branch = Branch.query.get(branch_id)
         if not branch:
@@ -891,21 +1405,21 @@ def init_branch_admin_routes(app):
 
         try:
             ticket, pdf_buffer = QueueService.generate_physical_ticket_for_totem(queue_id=queue_id)
-            emit_dashboard_update(
-                branch_id=branch_id,
-                queue_id=queue_id,
-                event_type='ticket_issued',
-                data={
+            socketio.emit('dashboard_update', {
+                'branch_id': branch_id,
+                'queue_id': queue_id,
+                'event_type': 'ticket_issued',
+                'data': {
                     'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
                     'timestamp': ticket.issued_at.isoformat()
                 }
-            )
+            }, room=branch_id, namespace='/dashboard')
             AuditLog.create(
-                user_id=user.id,
+                user_id=None,
                 action='generate_totem_ticket',
                 resource_type='ticket',
                 resource_id=ticket.id,
-                details=f"Ticket físico {ticket.queue.prefix}{ticket.ticket_number} emitido via totem por {user.email}"
+                details=f"Ticket físico {ticket.queue.prefix}{ticket.ticket_number} emitido via totem (IP: {client_ip})"
             )
             logger.info(f"Ticket físico emitido via totem: {ticket.queue.prefix}{ticket.ticket_number} (IP: {client_ip})")
             return send_file(
@@ -922,6 +1436,6 @@ def init_branch_admin_routes(app):
             return jsonify({'error': 'Erro no banco de dados ao emitir ticket'}), 500
         except Exception as e:
             logger.error(f"Erro inesperado ao emitir ticket via totem: {str(e)}")
-            return jsonify({'error': 'Erro interno ao emitir ticket'}), 500
+            return jsonify({'error': f'Erro interno ao emitir ticket: {str(e)}'}), 500
 
     return app
