@@ -778,7 +778,6 @@ def init_branch_admin_routes(app):
                         q.active_tickets < q.daily_limit
                     )
                 features = QueueService.get_wait_time_features(q.id, q.current_ticket + 1, 0)
-                # Chamar predict com argumentos suportados
                 wait_time = wait_time_predictor.predict(
                     queue_id=q.id,
                     position=features['position'],
@@ -822,7 +821,7 @@ def init_branch_admin_routes(app):
             attendants_data = [{
                 'attendant_id': a.id,
                 'name': a.name,
-                'queues': [q.queue.prefix for q in AttendantQueue.query.filter_by(user_id=a.id).join(Queue).all()],
+                'queues': [q.prefix for q in a.queues.all()],
                 'last_location_update': a.last_location_update.isoformat() if a.last_location_update else None
             } for a in attendants]
 
@@ -855,7 +854,8 @@ def init_branch_admin_routes(app):
         except Exception as e:
             logger.error(f"Erro ao gerar painel para user_id={user.id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao gerar painel'}), 500
-
+    
+    
     @app.route('/api/branch_admin/branches/<branch_id>/queues/totem', methods=['POST'])
     @require_auth
     def generate_totem_tickets(branch_id):
