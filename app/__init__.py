@@ -5,7 +5,7 @@ from flask import jsonify, request, send_file
 from sqlalchemy.exc import SQLAlchemyError
 import io
 import logging
-from .services import QueueService  # Importação do QueueService
+from .app.services import QueueService  # Importação do QueueService
 
 
 import eventlet
