@@ -260,7 +260,8 @@ def init_branch_admin_routes(app):
             now = datetime.now()
             current_weekday = now.strftime('%A').upper()
             current_time = now.time()
-            schedule = Branch.query.get(branch_id).schedules.filter_by(weekday=current_weekday).first()
+            # Correção: Usar BranchSchedule.query para filtrar o horário
+            schedule = BranchSchedule.query.filter_by(branch_id=branch_id, weekday=current_weekday).first()
 
             response = []
             for q in queues:
@@ -303,7 +304,7 @@ def init_branch_admin_routes(app):
         except Exception as e:
             logger.error(f"Erro ao listar filas: {str(e)}")
             return jsonify({'error': 'Erro ao listar filas'}), 500
-
+        
     # Criar Fila
     @app.route('/api/branch_admin/branches/<branch_id>/queues', methods=['POST'])
     @require_auth
