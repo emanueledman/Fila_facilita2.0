@@ -2,6 +2,8 @@ import logging
 import uuid
 import numpy as np
 import json
+from sqlalchemy.orm import selectinload
+
 import re
 from sqlalchemy import and_, func, or_
 from datetime import datetime, time, timedelta
@@ -743,73 +745,118 @@ class QueueService:
             logger.error(f"Erro ao gerar ticket físico para serviço {service}, branch_id={branch_id}: {e}")
             raise
 
+
+
     @staticmethod
-    def call_next(service, branch_id=None):
-        """Chama o próximo ticket na fila, considerando prioridade e similaridade."""
+    def call_next(queue_id, counter):
+        """Chama o próximo ticket na fila especificada, atribuindo um guichê específico.
+
+        Args:
+            queue_id (str): ID da fila (UUID).
+            counter (int): Número do guichê (deve estar entre 1 e queue.num_counters).
+
+        Returns:
+            Ticket: O ticket chamado.
+
+        Raises:
+            ValueError: Se queue_id, counter ou fila forem inválidos, ou se não houver tickets pendentes.
+            Exception: Para erros inesperados, com rollback da transação.
+        """
         try:
-            if not isinstance(service, str) or not service.strip():
-                logger.error("Serviço inválido")
-                raise ValueError("Serviço inválido")
-            if branch_id and not isinstance(branch_id, str):
-                logger.error(f"branch_id inválido: {branch_id}")
-                raise ValueError("branch_id inválido")
-            service_id = QueueService.get_service_id_from_query(service)
-            query = Queue.query.join(Department).join(Branch).join(InstitutionService)
-            if service_id:
-                query = query.filter(Queue.service_id == service_id)
-            else:
-                search_terms = re.sub(r'[^\w\sÀ-ÿ]', '', service.lower()).split()
-                if search_terms:
-                    search_query = ' & '.join(search_terms)
-                    query = query.filter(
-                        func.to_tsvector('portuguese', func.concat(
-                            InstitutionService.name, ' ', InstitutionService.description
-                        )).op('@@')(func.to_tsquery('portuguese', search_query))
-                    )
-            if branch_id:
-                query = query.filter(Branch.id == branch_id)
-            queue = query.first()
+            # Validação do queue_id como UUID
+            if not isinstance(queue_id, str):
+                logger.error(f"queue_id inválido: {queue_id} (deve ser string)")
+                raise ValueError("queue_id inválido")
+            try:
+                uuid.UUID(queue_id)
+            except ValueError:
+                logger.error(f"queue_id inválido: {queue_id} (não é UUID)")
+                raise ValueError("queue_id inválido")
+
+            # Buscar fila com relacionamentos
+            queue = Queue.query.options(
+                selectinload(Queue.service),
+                selectinload(Queue.department).selectinload(Department.branch)
+            ).get(queue_id)
+
             if not queue:
-                logger.warning(f"Fila não encontrada para serviço {service}")
+                logger.warning(f"Fila não encontrada: queue_id={queue_id}")
                 raise ValueError("Fila não encontrada")
+
+            # Verificar se a fila está aberta
             if not QueueService.is_queue_open(queue):
-                logger.warning(f"Fila {queue.id} está fechada")
+                logger.warning(f"Fila {queue_id} fechada (serviço: {queue.service.name})")
                 raise ValueError("Fila está fechada (fora do horário da filial)")
+
+            # Verificar se há tickets ativos
             if queue.active_tickets == 0:
-                logger.warning(f"Fila {queue.service.name} está vazia")
+                logger.warning(f"Fila {queue_id} vazia (serviço: {queue.service.name})")
                 raise ValueError("Fila vazia")
-            next_ticket = Ticket.query.filter_by(queue_id=queue.id, status='Pendente')\
-                .order_by(Ticket.priority.desc(), Ticket.ticket_number).first()
+
+            # Validar counter
+            if not isinstance(counter, int):
+                logger.error(f"Guichê inválido: {counter} (deve ser inteiro)")
+                raise ValueError("Guichê inválido")
+            if counter < 1 or counter > queue.num_counters:
+                logger.error(f"Guichê inválido: {counter} (deve ser entre 1 e {queue.num_counters})")
+                raise ValueError(f"Guichê inválido (deve ser entre 1 e {queue.num_counters})")
+
+            # Buscar próximo ticket com prioridade
+            next_ticket = Ticket.query.filter_by(queue_id=queue_id, status='Pendente')\
+                .order_by(Ticket.priority.desc(), Ticket.ticket_number)\
+                .options(selectinload(Ticket.queue)).first()
+
             if not next_ticket:
-                logger.warning(f"Sem tickets pendentes na fila {queue.id}")
+                logger.warning(f"Nenhum ticket pendente na fila {queue_id}")
                 raise ValueError("Nenhum ticket pendente")
+
+            # Atualizar estado do ticket e da fila
             now = datetime.utcnow()
             next_ticket.expires_at = now + timedelta(minutes=QueueService.CALL_TIMEOUT_MINUTES)
             queue.current_ticket = next_ticket.ticket_number
-            queue.active_tickets -= 1
-            queue.last_counter = (queue.last_counter % queue.num_counters) + 1
+            queue.active_tickets = max(0, queue.active_tickets - 1)
+            queue.last_counter = counter  # Atualizar last_counter para refletir o guichê usado
             next_ticket.status = 'Chamado'
-            next_ticket.counter = queue.last_counter
+            next_ticket.counter = counter
             next_ticket.attended_at = now
+
             db.session.commit()
+
+            # Enviar notificação
             message = f"Dirija-se ao guichê {next_ticket.counter:02d}! Senha {queue.prefix}{next_ticket.ticket_number} chamada para {queue.service.name}."
             if next_ticket.user_id != 'PRESENCIAL':
-                QueueService.send_notification(None, message, next_ticket.id, via_websocket=True, user_id=next_ticket.user_id)
+                QueueService.send_notification(
+                    fcm_token=None,
+                    message=message,
+                    ticket_id=next_ticket.id,
+                    via_websocket=True,
+                    user_id=next_ticket.user_id
+                )
             else:
-                logger.debug(f"Notificação não enviada para ticket físico {next_ticket.id} (usuário PRESENCIAL)")
+                logger.debug(f"Notificação suprimida para ticket físico {next_ticket.id} (usuário PRESENCIAL)")
+
+            # Emitir evento de atualização
             if socketio:
                 emit('queue_update', {
-                    'queue_id': queue.id,
+                    'queue_id': queue_id,
                     'active_tickets': queue.active_tickets,
                     'current_ticket': queue.current_ticket,
+                    'counter': next_ticket.counter,
                     'message': f"Senha {queue.prefix}{next_ticket.ticket_number} chamada"
-                }, namespace='/', room=str(queue.id))
-            QueueService.update_queue_metrics(queue.id)
-            logger.info(f"Ticket {next_ticket.id} chamado na fila {queue.service.name}")
+                }, namespace='/', room=str(queue_id))
+
+            # Atualizar métricas
+            QueueService.update_queue_metrics(queue_id)
+
+            logger.info(f"Ticket {next_ticket.id} chamado na fila {queue.service.name} (guichê {counter})")
             return next_ticket
+
+        except ValueError as e:
+            logger.error(f"Erro de validação ao chamar ticket na fila {queue_id}: {str(e)}")
+            raise
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Erro ao chamar próximo ticket na fila {service}: {e}")
+            logger.error(f"Erro inesperado ao chamar ticket na fila {queue_id}: {str(e)}")
             raise
 
     @staticmethod
