@@ -1650,13 +1650,13 @@ def init_branch_admin_routes(app):
         tickets = Ticket.query.join(Queue).filter(
             Queue.department_id.in_(department_ids),
             Ticket.status.in_(['Chamado', 'Concluído'])
-        ).order_by(desc(Ticket.called_at)).limit(10).all()
+        ).order_by(desc(Ticket.attended_at)).limit(10).all()
 
         response = [{
             'ticket_number': f"{t.queue.prefix}{t.ticket_number}",
             'service_name': t.queue.service.name,
             'counter': t.counter,
-            'called_at': t.called_at.isoformat() if t.called_at else None,
+            'attended_at': t.attended_at.isoformat() if t.attended_at else None,
             'status': t.status
         } for t in tickets]
 
@@ -1814,7 +1814,7 @@ def init_branch_admin_routes(app):
             'counter': ticket.counter,
             'status': ticket.status,
             'issued_at': ticket.issued_at.isoformat(),
-            'called_at': ticket.called_at.isoformat() if ticket.called_at else None
+            'attended_at': ticket.attended_at.isoformat() if ticket.attended_at else None
         }), 200
 
     # Rota para configurações de chamada (nova)
