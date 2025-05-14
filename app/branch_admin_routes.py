@@ -578,86 +578,6 @@ def init_branch_admin_routes(app):
             logger.error(f"Erro ao exportar relatório: {str(e)}")
             return jsonify({'error': 'Erro ao exportar relatório'}), 500
 
-    # Chamar Próximo Ticket
-    @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/call', methods=['POST'])
-    @require_auth
-    def call_next_branch_ticket(branch_id, queue_id):
-        user = User.query.get(request.user_id)
-        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
-            logger.warning(f"Tentativa não autorizada de chamar ticket por user_id={request.user_id}")
-            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
-
-        queue = Queue.query.get(queue_id)
-        if not queue or queue.department.branch_id != branch_id:
-            logger.warning(f"Fila {queue_id} não encontrada ou não pertence à filial {branch_id}")
-            return jsonify({'error': 'Fila não encontrada ou não pertence à filial'}), 404
-
-        if queue.daily_limit == 0:
-            logger.warning(f"Fila {queue_id} está pausada")
-            return jsonify({'error': 'Fila está pausada'}), 400
-
-        data = request.get_json() or {}
-        counter = data.get('counter', 1)
-        if not isinstance(counter, int) or counter < 1 or counter > queue.num_counters:
-            logger.warning(f"Guichê inválido: {counter} para fila {queue_id}")
-            return jsonify({'error': f'Guichê inválido (deve ser entre 1 e {queue.num_counters})'}), 400
-
-        try:
-            ticket = QueueService.call_next(queue.service.name, branch_id=branch_id, counter=counter)
-            if not ticket:
-                logger.info(f"Nenhum ticket pendente para chamar na fila {queue_id}")
-                return jsonify({'message': 'Nenhum ticket pendente para chamar'}), 200
-
-            emit_ticket_update(ticket)
-            emit_dashboard_update(branch_id, queue_id, 'ticket_called', {
-                'ticket_id': ticket.id,
-                'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
-                'service': ticket.queue.service.name if ticket.queue.service else 'N/A',
-                'counter': ticket.counter,
-                'department_name': ticket.queue.department.name if ticket.queue.department else 'N/A'
-            })
-
-            AuditLog.create(
-                user_id=user.id,
-                action='call_ticket',
-                resource_type='ticket',
-                resource_id=ticket.id,
-                details=f"Ticket {ticket.queue.prefix}{ticket.ticket_number} chamado no guichê {ticket.counter} por admin"
-            )
-            redis_client.delete(f"cache:tickets:{branch_id}")
-
-            # Verificar alertas
-            if queue.active_tickets >= queue.daily_limit and user.notification_enabled:
-                alerts = user.notification_preferences.get('admin_alerts', {})
-                if alerts.get('queue_full', {}).get('enabled', False):
-                    QueueService.send_fcm_notification(
-                        user.id,
-                        f"Fila {queue.prefix} atingiu o limite diário na filial {queue.department.branch.name}"
-                    )
-            if queue.estimated_wait_time and queue.estimated_wait_time > 30:
-                alerts = user.notification_preferences.get('admin_alerts', {})
-                if alerts.get('long_wait_time', {}).get('enabled', False):
-                    QueueService.send_fcm_notification(
-                        user.id,
-                        f"Tempo de espera na fila {queue.prefix} excede 30 minutos"
-                    )
-
-            logger.info(f"Ticket {ticket.queue.prefix}{ticket.ticket_number} chamado por user_id={user.id}")
-            return jsonify({
-                'message': 'Ticket chamado com sucesso',
-                'ticket': {
-                    'id': ticket.id,
-                    'number': f"{ticket.queue.prefix}{ticket.ticket_number}",
-                    'counter': ticket.counter
-                }
-            }), 200
-        except ValueError as e:
-            logger.error(f"Erro ao chamar ticket: {str(e)}")
-            return jsonify({'error': str(e)}), 400
-        except Exception as e:
-            db.session.rollback()
-            logger.error(f"Erro ao chamar ticket: {str(e)}")
-            return jsonify({'error': 'Erro ao chamar ticket'}), 500
 
     # Rechamar Ticket
     @app.route('/api/branch_admin/branches/<branch_id>/tickets/<ticket_id>/recall', methods=['POST'])
@@ -1478,7 +1398,7 @@ def init_branch_admin_routes(app):
                 logger.info(f"Nenhum ticket pendente para chamar na fila {queue_id}")
                 return jsonify({'message': 'Nenhum ticket pendente para chamar'}), 200
 
-            queue.active_tickets += 1
+            # Ajuste: Não incrementar active_tickets, pois call_next_ticket já decrementa
             queue.current_ticket = ticket.ticket_number
             queue.update_estimated_wait_time()
             db.session.commit()
@@ -1504,6 +1424,22 @@ def init_branch_admin_routes(app):
                 details=f"Ticket {ticket.queue.prefix}{ticket.ticket_number} chamado no guichê {counter}"
             )
 
+            # Verificar alertas (mantido do primeiro trecho)
+            if queue.active_tickets >= queue.daily_limit and user.notification_enabled:
+                alerts = user.notification_preferences.get('admin_alerts', {})
+                if alerts.get('queue_full', {}).get('enabled', False):
+                    QueueService.send_fcm_notification(
+                        user.id,
+                        f"Fila {queue.prefix} atingiu o limite diário na filial {queue.department.branch.name}"
+                    )
+            if queue.estimated_wait_time and queue.estimated_wait_time > 30:
+                alerts = user.notification_preferences.get('admin_alerts', {})
+                if alerts.get('long_wait_time', {}).get('enabled', False):
+                    QueueService.send_fcm_notification(
+                        user.id,
+                        f"Tempo de espera na fila {queue.prefix} excede 30 minutos"
+                    )
+
             logger.info(f"Ticket chamado: {ticket.queue.prefix}{ticket.ticket_number} no guichê {counter} (queue_id={queue_id})")
             return jsonify({
                 'message': 'Ticket chamado com sucesso',
@@ -1522,7 +1458,7 @@ def init_branch_admin_routes(app):
             db.session.rollback()
             logger.error(f"Erro inesperado ao chamar próximo ticket na fila {queue_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao chamar ticket'}), 500
-
+    
     # Rota para completar um ticket (modificada)
     @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/tickets/<ticket_id>/complete', methods=['POST'])
     @require_auth
