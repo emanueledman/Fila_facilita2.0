@@ -10,7 +10,6 @@ import json
 import re
 import uuid
 from datetime import datetime, timedelta
-from sqlalchemy.sql import Index
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
