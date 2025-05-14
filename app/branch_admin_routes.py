@@ -2,7 +2,7 @@ from flask import jsonify, request
 from sqlalchemy import and_, String, func
 from sqlalchemy.orm import joinedload
 from . import db, socketio, redis_client
-from .models import AuditLog, User, Queue, Ticket, Branch, UserRole, Department, BranchSchedule, AttendantQueue, DisplayQueue, Service
+from .models import AuditLog, User, Queue, Ticket, Branch, UserRole, Department, BranchSchedule, AttendantQueue, DisplayQueue, InstitutionService
 from .auth import require_auth
 from .services import QueueService
 import logging
@@ -330,7 +330,7 @@ def init_branch_admin_routes(app):
             logger.warning(f"Departamento {data['department_id']} inválido")
             return jsonify({'error': 'Departamento inválido'}), 400
 
-        service = Service.query.get(data['service_id'])
+        service = InstitutionService.query.get(data['service_id'])
         if not service:
             logger.warning(f"Serviço {data['service_id']} inválido")
             return jsonify({'error': 'Serviço inválido'}), 400
