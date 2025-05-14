@@ -8,6 +8,11 @@ from .services import QueueService
 import logging
 import json
 import re
+from flask import jsonify, request
+from sqlalchemy import desc
+from datetime import datetime
+from flask_socketio import emit
+
 import uuid
 from datetime import datetime, timedelta
 
@@ -305,7 +310,98 @@ def init_branch_admin_routes(app):
             logger.error(f"Erro ao listar filas: {str(e)}")
             return jsonify({'error': 'Erro ao listar filas'}), 500
         
-    # Criar Fila
+
+
+    # Rota para chamar o próximo ticket (modificada)
+    @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/call', methods=['POST'])
+    @require_auth
+    def call_next_ticket(branch_id, queue_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
+            logger.warning(f"Tentativa não autorizada de chamar ticket por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+
+        queue = Queue.query.get(queue_id)
+        if not queue or queue.department.branch_id != branch_id:
+            logger.warning(f"Fila {queue_id} não encontrada")
+            return jsonify({'error': 'Fila não encontrada'}), 404
+
+        if queue.daily_limit == 0:
+            logger.warning(f"Tentativa de chamar ticket em fila pausada {queue_id}")
+            return jsonify({'error': 'Fila está pausada'}), 400
+
+        if queue.num_counters < 1:
+            logger.warning(f"Fila {queue_id} sem guichês configurados")
+            return jsonify({'error': 'Nenhum guichê configurado para esta fila'}), 400
+
+        data = request.get_json()
+        counter = data.get('counter')
+
+        # Suporte para atribuição automática de guichê
+        if counter == 'auto':
+            queue.last_counter = (queue.last_counter % queue.num_counters) + 1
+            counter = queue.last_counter
+        else:
+            try:
+                counter = int(counter)
+                if counter < 1 or counter > queue.num_counters:
+                    logger.warning(f"Guichê inválido: {counter} para fila {queue_id}")
+                    return jsonify({'error': f'Guichê inválido: {counter}'}), 400
+            except (ValueError, TypeError):
+                logger.warning(f"Guichê inválido: {counter} para fila {queue_id}")
+                return jsonify({'error': f'Guichê inválido: {counter}'}), 400
+
+        try:
+            ticket = QueueService.call_next_ticket(queue_id, counter)
+            if not ticket:
+                logger.info(f"Nenhum ticket disponível para fila {queue_id}")
+                return jsonify({'message': 'Nenhum ticket disponível'}), 200
+
+            queue.active_tickets += 1
+            queue.current_ticket = ticket.ticket_number
+            queue.update_estimated_wait_time()
+            db.session.commit()
+
+            redis_client.delete(f"cache:queues:{branch_id}")
+            socketio.emit('ticket_called', {
+                'queue_id': queue_id,
+                'ticket_number': ticket.ticket_number,
+                'counter': counter,
+                'service_name': queue.service.name
+            }, namespace='/branch_admin')
+
+            if ticket.user and ticket.user.fcm_token:
+                QueueService.send_notification(
+                    user_id=ticket.user.id,
+                    title=f"Chamando Ticket {queue.prefix}{ticket.ticket_number}",
+                    body=f"Dirija-se ao guichê {counter} para atendimento em {queue.service.name}.",
+                    queue_id=queue_id
+                )
+
+            AuditLog.create(
+                user_id=user.id,
+                action='call_ticket',
+                resource_type='ticket',
+                resource_id=ticket.id,
+                details=f"Ticket {queue.prefix}{ticket.ticket_number} chamado no guichê {counter} por {user.email}"
+            )
+            logger.info(f"Ticket {queue.prefix}{ticket.ticket_number} chamado no guichê {counter} por user_id={user.id}")
+            return jsonify({
+                'message': f"Ticket {queue.prefix}{ticket.ticket_number} chamado no guichê {counter}",
+                'ticket': {
+                    'id': ticket.id,
+                    'ticket_number': ticket.ticket_number,
+                    'counter': counter,
+                    'queue_id': queue_id,
+                    'service_name': queue.service.name
+                }
+            }), 200
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao chamar ticket para fila {queue_id}: {str(e)}")
+            return jsonify({'error': 'Erro ao chamar ticket'}), 500
+
+    # Rota para criar uma nova fila (modificada)
     @app.route('/api/branch_admin/branches/<branch_id>/queues', methods=['POST'])
     @require_auth
     def create_branch_queue(branch_id):
@@ -320,38 +416,36 @@ def init_branch_admin_routes(app):
             logger.warning("Campos obrigatórios faltando na criação de fila")
             return jsonify({'error': 'Campos obrigatórios faltando'}), 400
 
-        branch = Branch.query.get(branch_id)
-        if not branch:
-            logger.warning(f"Filial {branch_id} não encontrada")
-            return jsonify({'error': 'Filial não encontrada'}), 404
-
-        department = Department.query.get(data['department_id'])
-        if not department or department.branch_id != branch_id:
-            logger.warning(f"Departamento {data['department_id']} inválido")
-            return jsonify({'error': 'Departamento inválido'}), 400
-
-        service = InstitutionService.query.get(data['service_id'])
-        if not service:
-            logger.warning(f"Serviço {data['service_id']} inválido")
-            return jsonify({'error': 'Serviço inválido'}), 400
+        if not isinstance(data['num_counters'], int) or data['num_counters'] < 1:
+            logger.warning(f"Número de guichês inválido: {data['num_counters']}")
+            return jsonify({'error': 'O número de guichês deve ser maior que 0'}), 400
 
         try:
+            department = Department.query.get(data['department_id'])
+            if not department or department.branch_id != branch_id:
+                logger.warning(f"Departamento {data['department_id']} não encontrado")
+                return jsonify({'error': 'Departamento não encontrado'}), 404
+
             queue = Queue(
-                id=str(uuid.uuid4()),
                 department_id=data['department_id'],
                 service_id=data['service_id'],
-                prefix=data['prefix'],
+                prefix=data['prefix'].upper(),
                 daily_limit=data['daily_limit'],
-                num_counters=data['num_counters']
+                num_counters=data['num_counters'],
+                last_counter=0,
+                active_tickets=0,
+                estimated_wait_time=0
             )
             db.session.add(queue)
             db.session.commit()
 
             redis_client.delete(f"cache:queues:{branch_id}")
-            socketio.emit('queue_created', {
+            socketio.emit('queue_updated', {
                 'queue_id': queue.id,
-                'prefix': queue.prefix
+                'prefix': queue.prefix,
+                'daily_limit': queue.daily_limit
             }, namespace='/branch_admin')
+
             AuditLog.create(
                 user_id=user.id,
                 action='create_queue',
@@ -361,17 +455,22 @@ def init_branch_admin_routes(app):
             )
             logger.info(f"Fila {queue.prefix} criada por user_id={user.id}")
             return jsonify({
-                'id': queue.id,
-                'prefix': queue.prefix,
-                'department_id': queue.department_id,
-                'service_id': queue.service_id
+                'message': 'Fila criada com sucesso',
+                'queue': {
+                    'id': queue.id,
+                    'department_id': queue.department_id,
+                    'service_id': queue.service_id,
+                    'prefix': queue.prefix,
+                    'daily_limit': queue.daily_limit,
+                    'num_counters': queue.num_counters
+                }
             }), 201
         except Exception as e:
             db.session.rollback()
             logger.error(f"Erro ao criar fila: {str(e)}")
             return jsonify({'error': 'Erro ao criar fila'}), 500
 
-    # Pausar Fila
+    # Rota para pausar/retomar fila (modificada)
     @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/pause', methods=['POST'])
     @require_auth
     def pause_queue(branch_id, queue_id):
@@ -385,32 +484,301 @@ def init_branch_admin_routes(app):
             logger.warning(f"Fila {queue_id} não encontrada")
             return jsonify({'error': 'Fila não encontrada'}), 404
 
-        try:
-            queue.daily_limit = 0
-            db.session.commit()
+        data = request.get_json()
+        daily_limit = data.get('daily_limit')
 
-            socketio.emit('queue_updated', {
-                'queue_id': queue.id,
-                'status': 'Pausado'
-            }, namespace='/branch_admin')
-            emit_display_update(branch_id, 'queue_updated', {
-                'queue_id': queue.id,
-                'status': 'Pausado'
-            })
+        try:
+            if daily_limit is None:
+                # Pausar a fila
+                queue.daily_limit = 0
+                action = 'pause_queue'
+                message = f"Fila {queue.prefix} pausada"
+            else:
+                # Retomar a fila com o limite fornecido
+                if not isinstance(daily_limit, int) or daily_limit < 0:
+                    return jsonify({'error': 'Limite diário inválido'}), 400
+                queue.daily_limit = daily_limit
+                action = 'resume_queue'
+                message = f"Fila {queue.prefix} retomada"
+
+            db.session.commit()
             redis_client.delete(f"cache:queues:{branch_id}")
+            socketio.emit('queue_updated', {
+                'queue_id': queue_id,
+                'prefix': queue.prefix,
+                'daily_limit': queue.daily_limit
+            }, namespace='/branch_admin')
+
             AuditLog.create(
                 user_id=user.id,
-                action='pause_queue',
+                action=action,
                 resource_type='queue',
                 resource_id=queue.id,
-                details=f"Fila {queue.prefix} pausada por {user.email}"
+                details=f"{message} por {user.email}"
             )
-            logger.info(f"Fila {queue_id} pausada por user_id={user.id}")
-            return jsonify({'message': 'Fila pausada com sucesso'}), 200
+            logger.info(f"{message} por user_id={user.id}")
+            return jsonify({'message': message}), 200
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Erro ao pausar fila: {str(e)}")
-            return jsonify({'error': 'Erro ao pausar fila'}), 500
+            logger.error(f"Erro ao pausar/retomar fila {queue_id}: {str(e)}")
+            return jsonify({'error': 'Erro ao atualizar status da fila'}), 500
+
+    # Rota para configurações de chamada (nova)
+    @app.route('/api/branch_admin/branches/<branch_id>/call_settings', methods=['GET', 'POST'])
+    @require_auth
+    def call_settings(branch_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
+            logger.warning(f"Tentativa não autorizada de acessar configurações por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+
+        if request.method == 'GET':
+            # Simulação de configurações armazenadas (substituir por modelo ou Redis em produção)
+            settings = {
+                'priority': 'fifo',
+                'counter_id': 'auto',
+                'sound': 'default',
+                'interval': 30
+            }
+            return jsonify(settings), 200
+
+        if request.method == 'POST':
+            data = request.get_json()
+            required_fields = ['priority', 'counter_id', 'sound', 'interval']
+            if not data or not all(field in data for field in required_fields):
+                logger.warning("Campos obrigatórios faltando nas configurações")
+                return jsonify({'error': 'Campos obrigatórios faltando'}), 400
+
+            # Aqui você salvaria as configurações (ex.: em um modelo CallSettings ou Redis)
+            logger.info(f"Configurações de chamada atualizadas por user_id={user.id}")
+            return jsonify({'message': 'Configurações salvas com sucesso'}), 200
+
+    # Rota para listar próximos tickets (nova)
+    @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/next_tickets', methods=['GET'])
+    @require_auth
+    def list_next_tickets(branch_id, queue_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
+            logger.warning(f"Tentativa não autorizada de listar próximos tickets por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+
+        queue = Queue.query.get(queue_id)
+        if not queue or queue.department.branch_id != branch_id:
+            logger.warning(f"Fila {queue_id} não encontrada")
+            return jsonify({'error': 'Fila não encontrada'}), 404
+
+        # Obter até 3 tickets pendentes, ordenados por prioridade e data de emissão
+        tickets = Ticket.query.filter_by(queue_id=queue_id, status='Pendente').order_by(
+            Ticket.priority.desc(), Ticket.issued_at.asc()
+        ).limit(3).all()
+
+        response = [{
+            'id': t.id,
+            'ticket_number': f"{queue.prefix}{t.ticket_number}",
+            'service_name': queue.service.name,
+            'priority': t.priority,
+            'issued_at': t.issued_at.isoformat()
+        } for t in tickets]
+
+        logger.info(f"Próximos tickets listados para fila {queue_id} por user_id={user.id}")
+        return jsonify(response), 200
+
+    # Rota para finalizar um ticket (nova)
+    @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/tickets/<ticket_id>/complete', methods=['POST'])
+    @require_auth
+    def complete_ticket(branch_id, queue_id, ticket_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
+            logger.warning(f"Tentativa não autorizada de finalizar ticket por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+
+        queue = Queue.query.get(queue_id)
+        if not queue or queue.department.branch_id != branch_id:
+            logger.warning(f"Fila {queue_id} não encontrada")
+            return jsonify({'error': 'Fila não encontrada'}), 404
+
+        ticket = Ticket.query.get(ticket_id)
+        if not ticket or ticket.queue_id != queue_id or ticket.status != 'Chamado':
+            logger.warning(f"Ticket {ticket_id} inválido ou não chamado")
+            return jsonify({'error': 'Ticket inválido ou não chamado'}), 400
+
+        try:
+            ticket.status = 'Concluído'
+            ticket.completed_at = datetime.utcnow()
+            queue.active_tickets -= 1
+            queue.update_estimated_wait_time()
+            db.session.commit()
+
+            redis_client.delete(f"cache:queues:{branch_id}")
+            socketio.emit('ticket_completed', {
+                'queue_id': queue_id,
+                'ticket_id': ticket_id,
+                'ticket_number': ticket.ticket_number
+            }, namespace='/branch_admin')
+
+            AuditLog.create(
+                user_id=user.id,
+                action='complete_ticket',
+                resource_type='ticket',
+                resource_id=ticket.id,
+                details=f"Ticket {queue.prefix}{ticket.ticket_number} finalizado por {user.email}"
+            )
+            logger.info(f"Ticket {queue.prefix}{ticket.ticket_number} finalizado por user_id={user.id}")
+            return jsonify({'message': f"Ticket {queue.prefix}{ticket.ticket_number} finalizado com sucesso"}), 200
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao finalizar ticket {ticket_id}: {str(e)}")
+            return jsonify({'error': 'Erro ao finalizar ticket'}), 500
+
+    # Rota para listar chamadas recentes (nova)
+    @app.route('/api/branch_admin/branches/<branch_id>/recent_calls', methods=['GET'])
+    @require_auth
+    def list_recent_calls(branch_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
+            logger.warning(f"Tentativa não autorizada de listar chamadas recentes por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+
+        department_ids = [d.id for d in Department.query.filter_by(branch_id=branch_id).all()]
+        tickets = Ticket.query.join(Queue).filter(
+            Queue.department_id.in_(department_ids),
+            Ticket.status.in_(['Chamado', 'Concluído'])
+        ).order_by(desc(Ticket.called_at)).limit(10).all()
+
+        response = [{
+            'ticket_number': f"{t.queue.prefix}{t.ticket_number}",
+            'service_name': t.queue.service.name,
+            'counter': t.counter,
+            'called_at': t.called_at.isoformat() if t.called_at else None,
+            'status': t.status
+        } for t in tickets]
+
+        logger.info(f"Chamadas recentes listadas para filial {branch_id} por user_id={user.id}")
+        return jsonify(response), 200
+
+    # Rota para rechamar um ticket (nova)
+    @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/recall', methods=['POST'])
+    @require_auth
+    def recall_ticket(branch_id, queue_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
+            logger.warning(f"Tentativa não autorizada de rechamar ticket por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+
+        queue = Queue.query.get(queue_id)
+        if not queue or queue.department.branch_id != branch_id:
+            logger.warning(f"Fila {queue_id} não encontrada")
+            return jsonify({'error': 'Fila não encontrada'}), 404
+
+        data = request.get_json()
+        ticket_id = data.get('ticket_id')
+        ticket = Ticket.query.get(ticket_id)
+        if not ticket or ticket.queue_id != queue_id or ticket.status != 'Chamado':
+            logger.warning(f"Ticket {ticket_id} inválido ou não chamado")
+            return jsonify({'error': 'Ticket inválido ou não chamado'}), 400
+
+        try:
+            socketio.emit('ticket_called', {
+                'queue_id': queue_id,
+                'ticket_number': ticket.ticket_number,
+                'counter': ticket.counter,
+                'service_name': queue.service.name
+            }, namespace='/branch_admin')
+
+            if ticket.user and ticket.user.fcm_token:
+                QueueService.send_notification(
+                    user_id=ticket.user.id,
+                    title=f"Rechamada: Ticket {queue.prefix}{ticket.ticket_number}",
+                    body=f"Dirija-se ao guichê {ticket.counter} para atendimento em {queue.service.name}.",
+                    queue_id=queue_id
+                )
+
+            AuditLog.create(
+                user_id=user.id,
+                action='recall_ticket',
+                resource_type='ticket',
+                resource_id=ticket.id,
+                details=f"Ticket {queue.prefix}{ticket.ticket_number} rechamado por {user.email}"
+            )
+            logger.info(f"Ticket {queue.prefix}{ticket.ticket_number} rechamado por user_id={user.id}")
+            return jsonify({'message': f"Ticket {queue.prefix}{ticket.ticket_number} rechamado com sucesso"}), 200
+        except Exception as e:
+            logger.error(f"Erro ao rechamar ticket {ticket_id}: {str(e)}")
+            return jsonify({'error': 'Erro ao rechamar ticket'}), 500
+
+    # Rota para cancelar um ticket (nova)
+    @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/tickets/<ticket_id>/cancel', methods=['POST'])
+    @require_auth
+    def cancel_ticket(branch_id, queue_id, ticket_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
+            logger.warning(f"Tentativa não autorizada de cancelar ticket por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+
+        queue = Queue.query.get(queue_id)
+        if not queue or queue.department.branch_id != branch_id:
+            logger.warning(f"Fila {queue_id} não encontrada")
+            return jsonify({'error': 'Fila não encontrada'}), 404
+
+        ticket = Ticket.query.get(ticket_id)
+        if not ticket or ticket.queue_id != queue_id or ticket.status != 'Chamado':
+            logger.warning(f"Ticket {ticket_id} inválido ou não chamado")
+            return jsonify({'error': 'Ticket inválido ou não chamado'}), 400
+
+        try:
+            ticket.status = 'Cancelado'
+            queue.active_tickets -= 1
+            queue.update_estimated_wait_time()
+            db.session.commit()
+
+            redis_client.delete(f"cache:queues:{branch_id}")
+            socketio.emit('ticket_cancelled', {
+                'queue_id': queue_id,
+                'ticket_id': ticket_id,
+                'ticket_number': ticket.ticket_number
+            }, namespace='/branch_admin')
+
+            AuditLog.create(
+                user_id=user.id,
+                action='cancel_ticket',
+                resource_type='ticket',
+                resource_id=ticket.id,
+                details=f"Ticket {queue.prefix}{ticket.ticket_number} cancelado por {user.email}"
+            )
+            logger.info(f"Ticket {queue.prefix}{ticket.ticket_number} cancelado por user_id={user.id}")
+            return jsonify({'message': f"Ticket {queue.prefix}{ticket.ticket_number} cancelado com sucesso"}), 200
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao cancelar ticket {ticket_id}: {str(e)}")
+            return jsonify({'error': 'Erro ao cancelar ticket'}), 500
+
+    # Rota para obter detalhes de um ticket (nova)
+    @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/tickets/<ticket_id>', methods=['GET'])
+    @require_auth
+    def get_ticket_details(branch_id, queue_id, ticket_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
+            logger.warning(f"Tentativa não autorizada de visualizar ticket por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+
+        queue = Queue.query.get(queue_id)
+        if not queue or queue.department.branch_id != branch_id:
+            logger.warning(f"Fila {queue_id} não encontrada")
+            return jsonify({'error': 'Fila não encontrada'}), 404
+
+        ticket = Ticket.query.get(ticket_id)
+        if not ticket or ticket.queue_id != queue_id:
+            logger.warning(f"Ticket {ticket_id} não encontrado")
+            return jsonify({'error': 'Ticket não encontrado'}), 404
+
+        return jsonify({
+            'ticket_number': f"{queue.prefix}{ticket.ticket_number}",
+            'service_name': queue.service.name,
+            'counter': ticket.counter,
+            'status': ticket.status,
+            'issued_at': ticket.issued_at.isoformat(),
+            'called_at': ticket.called_at.isoformat() if ticket.called_at else None
+        }), 200
 
     # Listar Tickets
     @app.route('/api/branch_admin/branches/<branch_id>/tickets', methods=['GET'])
