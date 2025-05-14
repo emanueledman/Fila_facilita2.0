@@ -284,7 +284,7 @@ def init_attendant_routes(app):
 
     @app.route('/api/attendant/call-next', methods=['POST'])
     @require_auth
-    def call_next_ticket():
+    def call_next_tickett():
         """Chama o próximo ticket de uma fila para o atendente."""
         try:
             user = User.query.get(request.user_id)

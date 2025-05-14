@@ -22,6 +22,7 @@ from sqlalchemy.exc import SQLAlchemyError
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Função de notificação (fornecida)
 def emit_ticket_update(ticket):
     try:
         if not ticket or not ticket.user_id or ticket.user_id == 'PRESENCIAL' or ticket.is_physical:
@@ -74,6 +75,7 @@ def emit_ticket_update(ticket):
             logger.error(f"Erro ao emitir atualização WebSocket para ticket_id={ticket.id}: {str(e)}")
     except Exception as e:
         logger.error(f"Erro geral ao processar atualização de ticket_id={ticket.id}: {str(e)}")
+
 
 def emit_dashboard_update(institution_id, queue_id, event_type, data):
     try:
