@@ -1393,7 +1393,7 @@ def init_branch_admin_routes(app):
                 return jsonify({'error': f'Guichê inválido: {counter}'}), 400
 
         try:
-            ticket = QueueService.call_next_ticket(queue_id, counter)
+            ticket = QueueService.call_next(queue_id, counter)
             if not ticket:
                 logger.info(f"Nenhum ticket pendente para chamar na fila {queue_id}")
                 return jsonify({'message': 'Nenhum ticket pendente para chamar'}), 200
