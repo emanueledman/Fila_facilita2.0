@@ -329,6 +329,21 @@ class UserLocationFallback(db.Model):
     def __repr__(self):
         return f'<UserLocationFallback User {self.user_id} Neighborhood {self.neighborhood}>'
 
+class DisplayQueue(db.Model):
+    __tablename__ = 'display_queue'
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    branch_id = Column(String(36), ForeignKey('branch.id'), nullable=False, index=True)
+    queue_id = Column(String(36), ForeignKey('queue.id'), nullable=False, index=True)
+    display_order = Column(Integer, nullable=False, default=0)  # Ordem de exibição na tela
+    created_at = Column(DateTime, default=datetime.utcnow)
+    branch = relationship('Branch', backref=db.backref('display_queues', lazy='dynamic'))
+    queue = relationship('Queue', backref=db.backref('display_queues', lazy='dynamic'))
+
+    def __repr__(self):
+        return f'<DisplayQueue Queue {self.queue_id} for Branch {self.branch_id}>'
+
+# Índice para consultas rápidas
+Index('idx_display_queue_branch_id', DisplayQueue.branch_id)
 # Índices otimizados
 Index('idx_institution_type_id', Institution.institution_type_id)
 Index('idx_queue_department_id_service_id', Queue.department_id, Queue.service_id)
