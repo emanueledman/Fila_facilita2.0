@@ -1,4 +1,13 @@
 import logging
+from venv import logger
+
+from flask import jsonify, request, send_file
+from sqlalchemy.exc import SQLAlchemyError
+import io
+import logging
+from .services import QueueService  # Importação do QueueService
+
+
 import eventlet
 eventlet.monkey_patch()
 
@@ -212,5 +221,84 @@ def create_app():
     else:
         app.config['DEBUG'] = True
         app.logger.info("Aplicação configurada para modo de desenvolvimento")
+
+
+    @app.route('/api/branch_admin/branches/<branch_id>/queues/totem', methods=['POST'])
+    @limiter.limit("10 per minute")  # Limite de 10 requisições por minuto por IP
+    def generate_totem_tickets(branch_id):
+        """Gera um ticket físico via totem para um serviço em uma filial."""
+        try:
+            # Validar token do totem
+            token = request.headers.get('Totem-Token')
+            expected_token = app.config.get('TOTEM_TOKEN', 'default-totem-token')
+            if not token or token != expected_token:
+                logger.warning(f"Token de totem inválido para IP {request.remote_addr}")
+                return jsonify({'error': 'Token de totem inválido'}), 401
+
+            # Validar entrada
+            data = request.get_json() or {}
+            service = data.get('service')
+            if not service or not isinstance(service, str) or not service.strip():
+                logger.warning("Serviço não fornecido ou inválido")
+                return jsonify({'error': 'Serviço é obrigatório e deve ser uma string válida'}), 400
+
+            client_ip = request.remote_addr
+            if not client_ip:
+                logger.error("IP do cliente não detectado")
+                return jsonify({'error': 'IP do cliente não detectado'}), 400
+
+            # Verificar limite de emissões por IP
+            cache_key = f"totem:throttle:{client_ip}:{branch_id}"
+            if app.redis_client.get(cache_key):
+                logger.warning(f"Limite de emissão atingido para IP {client_ip} na filial {branch_id}")
+                return jsonify({'error': 'Limite de emissão atingido. Tente novamente em 30 segundos'}), 429
+            app.redis_client.setex(cache_key, 30, "1")
+
+            # Gerar ticket físico
+            result = QueueService.generate_physical_ticket_for_totem(service, branch_id, client_ip)
+            ticket = result['ticket']
+            pdf_buffer = io.BytesIO(bytes.fromhex(result['pdf']))
+
+            # Emitir evento WebSocket para o dashboard
+            branch = ticket['queue'].department.branch if ticket['queue'] and ticket['queue'].department else None
+            if branch and app.socketio:
+                app.socketio.emit('dashboard_update', {
+                    'branch_id': branch_id,
+                    'queue_id': ticket['queue_id'],
+                    'event_type': 'ticket_issued',
+                    'data': {
+                        'ticket_number': f"{ticket['queue'].prefix}{ticket['ticket_number']}",
+                        'timestamp': ticket['issued_at']
+                    }
+                }, room=branch_id, namespace='/dashboard')
+
+            # Registrar auditoria
+            from .models import AuditLog
+            AuditLog.create(
+                user_id=None,
+                action='generate_totem_ticket',
+                resource_type='ticket',
+                resource_id=ticket['id'],
+                details=f"Ticket físico {ticket['queue'].prefix}{ticket['ticket_number']} emitido via totem (IP: {client_ip}, Filial: {branch_id})"
+            )
+
+            logger.info(f"Ticket físico emitido via totem: {ticket['queue'].prefix}{ticket['ticket_number']} (IP: {client_ip}, Filial: {branch_id})")
+            return send_file(
+                pdf_buffer,
+                as_attachment=True,
+                download_name=f"ticket_{ticket['queue'].prefix}{ticket['ticket_number']}.pdf",
+                mimetype='application/pdf'
+            )
+
+        except ValueError as e:
+            logger.error(f"Erro de validação ao emitir ticket via totem para serviço {service}, branch_id={branch_id}: {str(e)}")
+            return jsonify({'error': str(e)}), 400
+        except SQLAlchemyError as e:
+            logger.error(f"Erro no banco de dados ao emitir ticket via totem para serviço {service}, branch_id={branch_id}: {str(e)}")
+            return jsonify({'error': 'Erro no banco de dados ao emitir ticket'}), 500
+        except Exception as e:
+            logger.error(f"Erro inesperado ao emitir ticket via totem para serviço {service}, branch_id={branch_id}: {str(e)}")
+            return jsonify({'error': f'Erro interno ao emitir ticket: {str(e)}'}), 500
+
 
     return app
