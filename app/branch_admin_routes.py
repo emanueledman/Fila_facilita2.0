@@ -1666,7 +1666,7 @@ def init_branch_admin_routes(app):
     # Rota para rechamar um ticket (nova)
     @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/recall', methods=['POST'])
     @require_auth
-    def recall_ticket(branch_id, queue_id):
+    def recall_tickett(branch_id, queue_id):
         """Rechama um ticket específico."""
         user = User.query.get(request.user_id)
         if not user or user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
