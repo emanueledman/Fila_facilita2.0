@@ -13,6 +13,7 @@ import io
 import csv
 from io import StringIO
 
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -1446,4 +1447,3 @@ def init_branch_admin_routes(app):
             logger.error(f"Erro inesperado ao emitir ticket via totem para serviço {service}, branch_id={branch_id}: {str(e)}")
             return jsonify({'error': f'Erro interno ao emitir ticket: {str(e)}'}), 500
         
-    return app
