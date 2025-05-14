@@ -1405,7 +1405,7 @@ def init_branch_admin_routes(app):
 
             redis_client.delete(f"cache:queues:{branch_id}")
             emit_ticket_update(ticket)
-            emit_dashboard_update(
+            QueueService.emit_dashboard_update(
                 institution_id=queue.department.branch.institution_id,
                 queue_id=queue_id,
                 event_type='ticket_called',
@@ -1499,7 +1499,7 @@ def init_branch_admin_routes(app):
 
             redis_client.delete(f"cache:queues:{branch_id}")
             emit_ticket_update(ticket)
-            emit_dashboard_update(
+            QueueService.emit_dashboard_update(
                 institution_id=queue.department.branch.institution_id,
                 queue_id=queue_id,
                 event_type='ticket_completed',
@@ -1630,7 +1630,7 @@ def init_branch_admin_routes(app):
 
         try:
             emit_ticket_update(ticket)
-            emit_dashboard_update(
+            QueueService.emit_dashboard_update(
                 institution_id=queue.department.branch.institution_id,
                 queue_id=queue_id,
                 event_type='ticket_called',
@@ -1693,7 +1693,7 @@ def init_branch_admin_routes(app):
 
             redis_client.delete(f"cache:queues:{branch_id}")
             emit_ticket_update(ticket)
-            emit_dashboard_update(
+            QueueService.emit_dashboard_update(
                 institution_id=queue.department.branch.institution_id,
                 queue_id=queue_id,
                 event_type='ticket_cancelled',
