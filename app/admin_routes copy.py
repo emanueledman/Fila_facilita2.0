@@ -1424,3 +1424,5 @@ def init_admin_routes(app):
         except Exception as e:
             logger.error(f"Erro ao buscar informações do usuário para user_id={user.id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao buscar informações do usuário'}), 500
+        
+    

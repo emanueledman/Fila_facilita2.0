@@ -1438,6 +1438,52 @@ def init_branch_admin_routes(app):
             logger.error(f"Erro ao adicionar fila à tela: {str(e)}")
             return jsonify({'error': 'Erro ao adicionar fila à tela'}), 500
 
+
+    @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>', methods=['PUT'])
+    @require_auth
+    def update_branch_queue(branch_id, queue_id):
+        user = User.query.get(request.user_id)
+        if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
+            logger.warning(f"Tentativa não autorizada de atualizar fila por user_id={request.user_id}")
+            return jsonify({'error': 'Acesso restrito a administradores da filial'}), 403
+
+        queue = Queue.query.get(queue_id)
+        if not queue or queue.department.branch_id != branch_id:
+            logger.warning(f"Fila {queue_id} não encontrada")
+            return jsonify({'error': 'Fila não encontrada'}), 404
+
+        data = request.get_json()
+        required_fields = ['department_id', 'service_id', 'prefix', 'daily_limit', 'num_counters']
+        if not data or not all(field in data for field in required_fields):
+            logger.warning("Campos obrigatórios faltando na atualização de fila")
+            return jsonify({'error': 'Campos obrigatórios faltando'}), 400
+
+        try:
+            queue.department_id = data['department_id']
+            queue.service_id = data['service_id']
+            queue.prefix = data['prefix']
+            queue.daily_limit = data['daily_limit']
+            queue.num_counters = data['num_counters']
+            db.session.commit()
+
+            redis_client.delete(f"cache:queues:{branch_id}")
+            socketio.emit('queue_updated', {
+                'queue_id': queue.id,
+                'prefix': queue.prefix
+            }, namespace='/branch_admin')
+            AuditLog.create(
+                user_id=user.id,
+                action='update_queue',
+                resource_type='queue',
+                resource_id=queue.id,
+                details=f"Fila {queue.prefix} atualizada por {user.email}"
+            )
+            logger.info(f"Fila {queue.prefix} atualizada por user_id={user.id}")
+            return jsonify({'message': 'Fila atualizada com sucesso'}), 200
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao atualizar fila: {str(e)}")
+            return jsonify({'error': 'Erro ao atualizar fila'}), 500
     # Remover Fila da Tela de Acompanhamento
     @app.route('/api/branch_admin/branches/<branch_id>/display/queues/<queue_id>', methods=['DELETE'])
     @require_auth
