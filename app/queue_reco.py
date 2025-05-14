@@ -271,7 +271,7 @@ def init_queue_reco(app):
 
     @app.route('/api/tickets/<ticket_id>/complete', methods=['POST'])
     @require_auth
-    def complete_ticket(ticket_id):
+    def complete_ticke(ticket_id):
         """Marca um ticket como atendido."""
         user_id = request.user_id
         user = User.query.get(user_id)
