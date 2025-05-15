@@ -1238,6 +1238,124 @@ def init_queue_reco(app):
             logger.error(f"Erro ao gerar PDF para ticket {ticket_id}: {e}")
             return jsonify({'error': 'Erro ao gerar PDF'}), 500
 
+    @app.route('/api/recommendation/autocomplete', methods=['GET'])
+    def autocomplete():
+        """Sugestões de autocompletar para a barra de pesquisa."""
+        try:
+            query = request.args.get('query', '').strip()
+            user_id = request.args.get('user_id')
+            user_lat = request.args.get('latitude')
+            user_lon = request.args.get('longitude')
+            limit = request.args.get('limit', '10')
+
+            if query and not re.match(r'^[A-Za-zÀ-ÿ\s]{1,100}$', query):
+                logger.warning(f"Query inválida: {query}")
+                return jsonify({'error': 'Query inválida'}), 400
+            if user_lat:
+                try:
+                    user_lat = float(user_lat)
+                except (ValueError, TypeError):
+                    logger.warning(f"Latitude inválida: {user_lat}")
+                    return jsonify({'error': 'Latitude deve ser um número'}), 400
+            if user_lon:
+                try:
+                    user_lon = float(user_lon)
+                except (ValueError, TypeError):
+                    logger.warning(f"Longitude inválida: {user_lon}")
+                    return jsonify({'error': 'Longitude deve ser um número'}), 400
+            try:
+                limit = int(limit)
+                if limit < 1:
+                    raise ValueError
+            except (ValueError, TypeError):
+                logger.warning(f"limit inválido: {limit}")
+                return jsonify({'error': 'limit deve ser um número positivo'}), 400
+
+            cache_key = f"cache:autocomplete:{query}:{user_id}:{user_lat}:{user_lon}:{limit}"
+            if redis_client:
+                try:
+                    cached = redis_client.get(cache_key)
+                    if cached:
+                        logger.info(f"Cache hit para {cache_key}")
+                        return jsonify(json.loads(cached)), 200
+                except Exception as e:
+                    logger.warning(f"Erro ao acessar cache Redis: {e}")
+
+            result = {
+                'institution_types': [],
+                'institutions': [],
+                'services': [],
+                'neighborhoods': []
+            }
+
+            if query:
+                institution_types = InstitutionType.query.filter(
+                    InstitutionType.name.ilike(f'%{query}%')
+                ).limit(limit).all()
+                result['institution_types'] = [{
+                    'id': t.id,
+                    'name': t.name,
+                    'icon': t.icon_url if hasattr(t, 'icon_url') else 'https://www.bancobai.ao/media/1635/icones-104.png'
+                } for t in institution_types]
+
+                institutions = Institution.query.filter(
+                    Institution.name.ilike(f'%{query}%')
+                ).limit(limit).all()
+                for inst in institutions:
+                    distance = None
+                    if user_lat and user_lon:
+                        branches = Branch.query.filter_by(institution_id=inst.id).all()
+                        distances = [
+                            geodesic((user_lat, user_lon), (b.latitude, b.longitude)).km
+                            for b in branches if b.latitude and b.longitude
+                        ]
+                        distance = min(distances) if distances else None
+                    result['institutions'].append({
+                        'id': inst.id,
+                        'name': inst.name,
+                        'type_id': inst.institution_type_id,
+                        'distance_km': float(distance) if distance is not None else 'Desconhecida'
+                    })
+
+                services = RecommendationService.search_services(
+                    query=query,
+                    user_id=user_id,
+                    user_lat=user_lat,
+                    user_lon=user_lon,
+                    max_results=limit,
+                    max_distance_km=10.0
+                )['services']
+                result['services'] = [{
+                    'queue_id': s['queue']['id'],
+                    'service': s['queue']['service'],
+                    'institution_id': s['institution']['id'],
+                    'institution_name': s['institution']['name'],
+                    'branch_id': s['queue']['branch_id'],
+                    'branch_name': s['queue']['branch'],
+                    'distance_km': s['queue']['distance'],
+                    'wait_time': s['queue']['wait_time']
+                } for s in services]
+
+                neighborhoods = Branch.query.filter(
+                    Branch.neighborhood.ilike(f'%{query}%')
+                ).distinct(Branch.neighborhood).limit(limit).all()
+                result['neighborhoods'] = [n.neighborhood for n in neighborhoods if n.neighborhood]
+
+            if redis_client:
+                try:
+                    redis_client.setex(cache_key, 300, json.dumps(result, default=str))
+                    logger.info(f"Cache armazenado para {cache_key}")
+                except Exception as e:
+                    logger.warning(f"Erro ao salvar cache Redis: {e}")
+
+            logger.info(f"Autocompletar retornado para query={query}: {len(result['services'])} serviços")
+            return jsonify(result), 200
+        except Exception as e:
+            logger.error(f"Erro ao gerar autocompletar: {str(e)}")
+            return jsonify({'error': 'Erro ao gerar autocompletar'}), 500
+        
+
+
     @app.route('/api/ticket/<ticket_id>', methods=['GET'])
     @require_auth
     def ticket_status(ticket_id):
