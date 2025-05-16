@@ -95,7 +95,7 @@ class QueueService:
             if not queue or not queue.department or not queue.department.branch or not queue.department.branch.institution or not queue.service:
                 logger.error(f"Dados incompletos para o ticket {ticket.id}")
                 raise ValueError("Fila, departamento, instituição ou serviço associado ao ticket não encontrado")
-            institution_type_name = queue.department.branch.institution.institution_type.name if queue.department.branch.institution.institution_type else "Desconhecido"
+            institution_type_name = queue.department.branch.institution.type.name if queue.department.branch.institution.type else "Desconhecido"
             receipt = (
                 "=== Comprovante Facilita 2.0 ===\n"
                 f"Tipo de Instituição: {institution_type_name}\n"
@@ -124,7 +124,7 @@ class QueueService:
             if not ticket.queue or not ticket.queue.department or not ticket.queue.department.branch or not ticket.queue.department.branch.institution or not ticket.queue.service:
                 logger.error(f"Dados incompletos para o ticket {ticket.id}")
                 raise ValueError("Fila, departamento, instituição ou serviço associado ao ticket não encontrado")
-            institution_type_name = ticket.queue.department.branch.institution.institution_type.name if ticket.queue.department.branch.institution.institution_type else "Desconhecido"
+            institution_type_name = ticket.queue.department.branch.institution.type.name if ticket.queue.department.branch.institution.type else "Desconhecido"
             if position is None:
                 position = max(0, ticket.ticket_number - ticket.queue.current_ticket)
             if wait_time is None:
