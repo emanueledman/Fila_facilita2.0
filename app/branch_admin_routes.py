@@ -1876,7 +1876,7 @@ def init_branch_admin_routes(app):
     def generate_totem_tickets(branch_id):
         # Validação por token de totem
         token = request.headers.get('Totem-Token')
-        expected_token = app.config.get('TOTEM_TOKEN', 'seu-token-secreto-para-totem')
+        expected_token = app.config.get('TOTEM_TOKEN', 'h0gmVAmsj5kyhyVIlkZFF3lG4GJiqomF')
         if not token or token != expected_token:
             app.logger.warning(f"Token de totem inválido para IP {request.remote_addr}")
             return jsonify({'error': 'Token de totem inválido'}), 401
