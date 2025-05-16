@@ -1872,10 +1872,11 @@ def init_branch_admin_routes(app):
             logger.error(f"Erro ao criar fila: {str(e)}")
             return jsonify({'error': 'Erro ao criar fila'}), 500
 
+
     @app.route('/api/branch_admin/branches/<branch_id>/queues/totem', methods=['POST'])
     def generate_totem_tickets(branch_id):
         token = request.headers.get('Totem-Token')
-        expected_token = app.config.get('TOTEM_TOKEN', 'h0gmVAmsj5kyhyVIlkZFF3lG4GJiqomF')
+        expected_token = app.config.get('TOTEM_TOKEN', 'seu-token-secreto-para-totem')
         if not token or token != expected_token:
             app.logger.warning(f"Token de totem inválido para IP {request.remote_addr}")
             return jsonify({'error': 'Token de totem inválido'}), 401
@@ -1899,9 +1900,6 @@ def init_branch_admin_routes(app):
             app.logger.warning(f"Fila {queue_id} não encontrada ou não pertence à filial {branch_id}")
             return jsonify({'error': 'Fila não encontrada ou não pertence à filial'}), 404
 
-        # Mapear queue_id para o nome do serviço
-        service = queue.service.name if queue.service else queue.name
-
         cache_key = f"totem:throttle:{client_ip}"
         if app.redis_client.get(cache_key):
             app.logger.warning(f"Limite de emissão atingido para IP {client_ip}")
@@ -1910,7 +1908,7 @@ def init_branch_admin_routes(app):
 
         try:
             result = QueueService.generate_physical_ticket_for_totem(
-                service=service,
+                queue_id=queue_id,
                 branch_id=branch_id,
                 client_ip=client_ip
             )
@@ -1950,7 +1948,7 @@ def init_branch_admin_routes(app):
         except Exception as e:
             app.logger.error(f"Erro inesperado ao emitir ticket via totem: {str(e)}")
             return jsonify({'error': f'Erro interno ao emitir ticket: {str(e)}'}), 500
-
+    
     # Rota para pausar/retomar fila (modificada)
     @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/pause', methods=['POST'])
     @require_auth

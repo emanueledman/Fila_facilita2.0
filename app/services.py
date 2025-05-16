@@ -629,12 +629,12 @@ class QueueService:
             raise
         
     @staticmethod
-    def generate_physical_ticket_for_totem(service, branch_id, client_ip):
-        """Gera um ticket físico via totem para um usuário anônimo, baseado no serviço selecionado."""
+    def generate_physical_ticket_for_totem(queue_id, branch_id, client_ip):
+        """Gera um ticket físico via totem para um usuário anônimo, baseado na fila selecionada."""
         try:
-            if not isinstance(service, str) or not service.strip():
-                logger.error("Serviço inválido")
-                raise ValueError("Serviço inválido")
+            if not isinstance(queue_id, str) or not queue_id:
+                logger.error("queue_id inválido")
+                raise ValueError("queue_id inválido")
             if not isinstance(branch_id, str) or not branch_id:
                 logger.error(f"branch_id inválido: {branch_id}")
                 raise ValueError("branch_id inválido")
@@ -645,32 +645,13 @@ class QueueService:
             if not branch:
                 logger.error(f"Filial não encontrada: branch_id={branch_id}")
                 raise ValueError("Filial não encontrada")
-            service_id = QueueService.get_service_id_from_query(service)
-            if not service_id:
-                logger.warning(f"Serviço '{service}' não encontrado, usando consulta textual")
-            query = Queue.query.join(Department).join(Branch).join(InstitutionService).filter(Branch.id == branch_id)
-            if service_id:
-                query = query.filter(Queue.service_id == service_id)
-            else:
-                search_terms = re.sub(r'[^\w\sÀ-ÿ]', '', service.lower()).split()
-                if search_terms:
-                    search_query = ' & '.join(search_terms)
-                    query = query.filter(
-                        or_(
-                            func.to_tsvector('portuguese', func.concat(
-                                InstitutionService.name, ' ', InstitutionService.description
-                            )).op('@@')(func.to_tsquery('portuguese', search_query)),
-                            Queue.id.in_(
-                                db.session.query(ServiceTag.queue_id).filter(
-                                    ServiceTag.tag.ilike(f'%{service.lower()}%')
-                                )
-                            )
-                        )
-                    )
-            queue = query.first()
+            queue = Queue.query.get(queue_id)
             if not queue:
-                logger.error(f"Fila não encontrada para serviço: {service}, branch_id: {branch_id}")
-                raise ValueError(f"O serviço '{service}' não está disponível nesta filial")
+                logger.error(f"Fila não encontrada: queue_id={queue_id}")
+                raise ValueError("Fila não encontrada")
+            if queue.department.branch_id != branch_id:
+                logger.error(f"Fila {queue_id} não pertence à filial {branch_id}")
+                raise ValueError("Fila não pertence à filial especificada")
             if not QueueService.is_queue_open(queue):
                 logger.warning(f"Fila {queue.id} está fechada")
                 raise ValueError("Fila está fechada (fora do horário da filial)")
@@ -727,7 +708,7 @@ class QueueService:
                     'message': f"Nova senha emitida: {queue.prefix}{ticket_number}"
                 }, namespace='/', room=str(queue.id))
             QueueService.update_queue_metrics(queue.id)
-            logger.info(f"Ticket físico {ticket.id} gerado para serviço {service} na filial {branch_id}")
+            logger.info(f"Ticket físico {ticket.id} gerado para fila {queue_id} na filial {branch_id}")
             return {
                 'ticket': {
                     'id': ticket.id,
@@ -742,10 +723,8 @@ class QueueService:
             }
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Erro ao gerar ticket físico para serviço {service}, branch_id={branch_id}: {e}")
+            logger.error(f"Erro ao gerar ticket físico para queue_id={queue_id}, branch_id={branch_id}: {e}")
             raise
-
-
 
     @staticmethod
     def call_next(queue_id, counter):
