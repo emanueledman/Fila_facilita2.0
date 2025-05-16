@@ -5,8 +5,6 @@ from sqlalchemy.orm import joinedload
 from . import db, socketio, redis_client
 from .models import AuditLog, User, Queue, Ticket, Branch, UserRole, Department, BranchSchedule, AttendantQueue, DisplayQueue, InstitutionService
 from .auth import require_auth
-from flask_limiter import limiter
-from flask_limiter.util import get_remote_address
 from .services import QueueService
 from sqlalchemy.exc import SQLAlchemyError
 import logging
@@ -1875,7 +1873,6 @@ def init_branch_admin_routes(app):
             return jsonify({'error': 'Erro ao criar fila'}), 500
 
     @app.route('/api/branch_admin/branches/<branch_id>/queues/totem', methods=['POST'])
-    @limiter.limit("10 per minute")  # Limite de 10 requisições por minuto por IP
     def generate_totem_tickets(branch_id):
         # Validação por token de totem
         token = request.headers.get('Totem-Token')
@@ -1943,6 +1940,7 @@ def init_branch_admin_routes(app):
         except Exception as e:
             app.logger.error(f"Erro inesperado ao emitir ticket via totem: {str(e)}")
             return jsonify({'error': f'Erro interno ao emitir ticket: {str(e)}'}), 500
+
 
     # Rota para pausar/retomar fila (modificada)
     @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/pause', methods=['POST'])
