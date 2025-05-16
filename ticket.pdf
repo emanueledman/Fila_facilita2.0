@@ -1,1 +1,1 @@
-{"error":"Erro interno ao emitir ticket: QueueService.generate_physical_ticket_for_totem() got an unexpected keyword argument 'queue_id'"}
+{"error":"Token de totem inv\u00e1lido"}
