@@ -1158,26 +1158,21 @@ def init_queue_reco(app):
         return jsonify({'message': 'FCM token atualizado com sucesso'}), 200
 
 
-    @app.route('/api/ticket/validate', methods=['POST'])
-    def validate_ticket():
+    @app.route('/api/ticket/<ticket_id>/validate', methods=['POST'])
+    @require_auth
+    def validate_ticket_by_id(ticket_id):
+        ticket = Ticket.query.get_or_404(ticket_id)
+
+        # Verifica se o usuário tem permissão para validar o ticket
+        if ticket.user_id != request.user_id and ticket.user_id != 'PRESENCIAL':
+            logger.warning(f"Tentativa não autorizada de validar ticket {ticket_id} por user_id={request.user_id}")
+            return jsonify({'error': 'Não autorizado'}), 403
+
         data = request.get_json() or {}
-        qr_code = data.get('qr_code')
-        ticket_number = data.get('ticket_number')
-        queue_id = data.get('queue_id')
         user_lat = data.get('user_lat')
         user_lon = data.get('user_lon')
 
-        if not qr_code and not (ticket_number and queue_id):
-            logger.warning("Requisição de validação sem qr_code ou ticket_number/queue_id")
-            return jsonify({'error': 'Forneça qr_code ou ticket_number e queue_id'}), 400
-
-        if ticket_number is not None:
-            try:
-                ticket_number = int(ticket_number)
-            except (ValueError, TypeError):
-                logger.warning(f"ticket_number inválido: {ticket_number}")
-                return jsonify({'error': 'ticket_number deve ser um número inteiro'}), 400
-
+        # Validação de latitude e longitude, se fornecidas
         if user_lat is not None and user_lon is not None:
             try:
                 user_lat = float(user_lat)
@@ -1187,10 +1182,9 @@ def init_queue_reco(app):
                 return jsonify({'error': 'Latitude e longitude devem ser números'}), 400
 
         try:
+            # Valida a presença usando o ticket diretamente
             ticket = QueueService.validate_presence(
-                qr_code=qr_code,
-                ticket_number=ticket_number,
-                queue_id=queue_id,
+                ticket_id=ticket_id,
                 user_lat=user_lat,
                 user_lon=user_lon
             )
@@ -1206,17 +1200,19 @@ def init_queue_reco(app):
                 }
             )
             logger.info(f"Presença validada para ticket {ticket.id}")
-            QueueService.send_fcm_notification(ticket.user_id, f"Presença validada para ticket {ticket.queue.prefix}{ticket.ticket_number}")
+            QueueService.send_fcm_notification(
+                ticket.user_id,
+                f"Presença validada para ticket {ticket.queue.prefix}{ticket.ticket_number}"
+            )
             return jsonify({'message': 'Presença validada com sucesso', 'ticket_id': ticket.id}), 200
         except ValueError as e:
-            logger.error(f"Erro ao validar ticket (qr_code={qr_code}, ticket_number={ticket_number}): {str(e)}")
+            logger.error(f"Erro ao validar ticket {ticket_id}: {str(e)}")
             return jsonify({'error': str(e)}), 400
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Erro inesperado ao validar ticket: {str(e)}")
+            logger.error(f"Erro inesperado ao validar ticket {ticket_id}: {str(e)}")
             return jsonify({'error': f'Erro ao validar ticket: {str(e)}'}), 500
-
-
+    
     @app.route('/api/ticket/<ticket_id>/pdf', methods=['GET'])
     @require_auth
     def download_ticket_pdf(ticket_id):
