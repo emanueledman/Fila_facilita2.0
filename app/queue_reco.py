@@ -1157,7 +1157,6 @@ def init_queue_reco(app):
         QueueService.check_proximity_notifications(user_id, user.last_known_lat, user.last_known_lon)
         return jsonify({'message': 'FCM token atualizado com sucesso'}), 200
 
-
     @app.route('/api/ticket/<ticket_id>/validate', methods=['POST'])
     @require_auth
     def validate_ticket_by_id(ticket_id):
@@ -1190,7 +1189,7 @@ def init_queue_reco(app):
             )
             emit_ticket_update(ticket)
             emit_dashboard_update(
-                institution_id=ticket.queue.department.institution_id,
+                institution_id=ticket.queue.department.branch.institution_id,  # Corrigido
                 queue_id=ticket.queue_id,
                 event_type='call_completed',
                 data={
