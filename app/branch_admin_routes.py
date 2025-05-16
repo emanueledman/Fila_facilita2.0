@@ -1,10 +1,14 @@
-from flask import jsonify, request
+import io
+from flask import jsonify, request, send_file
 from sqlalchemy import and_, String, func
 from sqlalchemy.orm import joinedload
 from . import db, socketio, redis_client
 from .models import AuditLog, User, Queue, Ticket, Branch, UserRole, Department, BranchSchedule, AttendantQueue, DisplayQueue, InstitutionService
 from .auth import require_auth
+from flask_limiter import limiter
+from flask_limiter.util import get_remote_address
 from .services import QueueService
+from sqlalchemy.exc import SQLAlchemyError
 import logging
 import json
 import re
@@ -1869,6 +1873,76 @@ def init_branch_admin_routes(app):
             db.session.rollback()
             logger.error(f"Erro ao criar fila: {str(e)}")
             return jsonify({'error': 'Erro ao criar fila'}), 500
+
+    @app.route('/api/branch_admin/branches/<branch_id>/queues/totem', methods=['POST'])
+    @limiter.limit("10 per minute")  # Limite de 10 requisições por minuto por IP
+    def generate_totem_tickets(branch_id):
+        # Validação por token de totem
+        token = request.headers.get('Totem-Token')
+        expected_token = app.config.get('TOTEM_TOKEN', 'seu-token-secreto-para-totem')
+        if not token or token != expected_token:
+            app.logger.warning(f"Token de totem inválido para IP {request.remote_addr}")
+            return jsonify({'error': 'Token de totem inválido'}), 401
+
+        branch = db.session.get(Branch, branch_id)
+        if not branch:
+            app.logger.warning(f"Filial {branch_id} não encontrada")
+            return jsonify({'error': 'Filial não encontrada'}), 404
+
+        data = request.get_json() or {}
+        queue_id = data.get('queue_id')
+        client_ip = request.remote_addr
+
+        if not queue_id:
+            app.logger.warning("queue_id não fornecido")
+            return jsonify({'error': 'queue_id é obrigatório'}), 400
+
+        queue = db.session.get(Queue, queue_id)
+        department_ids = [d.id for d in Department.query.filter_by(branch_id=branch_id).all()]
+        if not queue or queue.department_id not in department_ids:
+            app.logger.warning(f"Fila {queue_id} não encontrada ou não pertence à filial {branch_id}")
+            return jsonify({'error': 'Fila não encontrada ou não pertence à filial'}), 404
+
+        cache_key = f"totem:throttle:{client_ip}"
+        if app.redis_client.get(cache_key):
+            app.logger.warning(f"Limite de emissão atingido para IP {client_ip}")
+            return jsonify({'error': 'Limite de emissão atingido. Tente novamente em 30 segundos'}), 429
+        app.redis_client.setex(cache_key, 30, "1")
+
+        try:
+            ticket, pdf_buffer = QueueService.generate_physical_ticket_for_totem(queue_id=queue_id)
+            socketio.emit('dashboard_update', {
+                'branch_id': branch_id,
+                'queue_id': queue_id,
+                'event_type': 'ticket_issued',
+                'data': {
+                    'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
+                    'timestamp': ticket.issued_at.isoformat()
+                }
+            }, room=branch_id, namespace='/dashboard')
+            AuditLog.create(
+                user_id=None,
+                action='generate_totem_ticket',
+                resource_type='ticket',
+                resource_id=ticket.id,
+                details=f"Ticket físico {ticket.queue.prefix}{ticket.ticket_number} emitido via totem (IP: {client_ip})"
+            )
+            app.logger.info(f"Ticket físico emitido via totem: {ticket.queue.prefix}{ticket.ticket_number} (IP: {client_ip})")
+            return send_file(
+                io.BytesIO(pdf_buffer.getvalue()),
+                as_attachment=True,
+                download_name=f"ticket_{ticket.queue.prefix}{ticket.ticket_number}.pdf",
+                mimetype='application/pdf'
+            )
+        except ValueError as e:
+            app.logger.error(f"Erro ao emitir ticket via totem para queue_id={queue_id}: {str(e)}")
+            return jsonify({'error': str(e)}), 400
+        except SQLAlchemyError as e:
+            app.logger.error(f"Erro no banco de dados ao emitir ticket via totem para queue_id={queue_id}: {str(e)}")
+            return jsonify({'error': 'Erro no banco de dados ao emitir ticket'}), 500
+        except Exception as e:
+            app.logger.error(f"Erro inesperado ao emitir ticket via totem: {str(e)}")
+            return jsonify({'error': f'Erro interno ao emitir ticket: {str(e)}'}), 500
 
     # Rota para pausar/retomar fila (modificada)
     @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/pause', methods=['POST'])
