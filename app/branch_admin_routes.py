@@ -1874,9 +1874,8 @@ def init_branch_admin_routes(app):
 
     @app.route('/api/branch_admin/branches/<branch_id>/queues/totem', methods=['POST'])
     def generate_totem_tickets(branch_id):
-        # Validação por token de totem
         token = request.headers.get('Totem-Token')
-        expected_token = app.config.get('TOTEM_TOKEN', 'h0gmVAmsj5kyhyVIlkZFF3lG4GJiqomF')
+        expected_token = app.config.get('TOTEM_TOKEN', 'seu-token-secreto-para-totem')
         if not token or token != expected_token:
             app.logger.warning(f"Token de totem inválido para IP {request.remote_addr}")
             return jsonify({'error': 'Token de totem inválido'}), 401
@@ -1900,6 +1899,9 @@ def init_branch_admin_routes(app):
             app.logger.warning(f"Fila {queue_id} não encontrada ou não pertence à filial {branch_id}")
             return jsonify({'error': 'Fila não encontrada ou não pertence à filial'}), 404
 
+        # Mapear queue_id para o nome do serviço
+        service = queue.service.name if queue.service else queue.name
+
         cache_key = f"totem:throttle:{client_ip}"
         if app.redis_client.get(cache_key):
             app.logger.warning(f"Limite de emissão atingido para IP {client_ip}")
@@ -1907,28 +1909,36 @@ def init_branch_admin_routes(app):
         app.redis_client.setex(cache_key, 30, "1")
 
         try:
-            ticket, pdf_buffer = QueueService.generate_physical_ticket_for_totem(queue_id=queue_id)
+            result = QueueService.generate_physical_ticket_for_totem(
+                service=service,
+                branch_id=branch_id,
+                client_ip=client_ip
+            )
+            ticket = result['ticket']
+            pdf_buffer = io.BytesIO(bytes.fromhex(result['pdf']))
+
             socketio.emit('dashboard_update', {
                 'branch_id': branch_id,
                 'queue_id': queue_id,
                 'event_type': 'ticket_issued',
                 'data': {
-                    'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
-                    'timestamp': ticket.issued_at.isoformat()
+                    'ticket_number': f"{queue.prefix}{ticket['ticket_number']}",
+                    'timestamp': ticket['issued_at']
                 }
             }, room=branch_id, namespace='/dashboard')
+
             AuditLog.create(
                 user_id=None,
                 action='generate_totem_ticket',
                 resource_type='ticket',
-                resource_id=ticket.id,
-                details=f"Ticket físico {ticket.queue.prefix}{ticket.ticket_number} emitido via totem (IP: {client_ip})"
+                resource_id=ticket['id'],
+                details=f"Ticket físico {queue.prefix}{ticket['ticket_number']} emitido via totem (IP: {client_ip})"
             )
-            app.logger.info(f"Ticket físico emitido via totem: {ticket.queue.prefix}{ticket.ticket_number} (IP: {client_ip})")
+            app.logger.info(f"Ticket físico emitido via totem: {queue.prefix}{ticket['ticket_number']} (IP: {client_ip})")
             return send_file(
-                io.BytesIO(pdf_buffer.getvalue()),
+                pdf_buffer,
                 as_attachment=True,
-                download_name=f"ticket_{ticket.queue.prefix}{ticket.ticket_number}.pdf",
+                download_name=f"ticket_{queue.prefix}{ticket['ticket_number']}.pdf",
                 mimetype='application/pdf'
             )
         except ValueError as e:
@@ -1940,7 +1950,6 @@ def init_branch_admin_routes(app):
         except Exception as e:
             app.logger.error(f"Erro inesperado ao emitir ticket via totem: {str(e)}")
             return jsonify({'error': f'Erro interno ao emitir ticket: {str(e)}'}), 500
-
 
     # Rota para pausar/retomar fila (modificada)
     @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/pause', methods=['POST'])
