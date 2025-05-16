@@ -1141,25 +1141,34 @@ class QueueService:
             raise
 
     @staticmethod
-    def validate_presence(qr_code, user_lat=None, user_lon=None):
-        """Valida a presença de um usuário com base no QR code, verificando proximidade."""
+    def validate_presence(ticket_id=None, qr_code=None, user_lat=None, user_lon=None):
+        """Valida a presença de um usuário com base no ticket_id ou QR code, verificando proximidade."""
         try:
-            if not isinstance(qr_code, str) or not qr_code:
-                logger.error("QR code inválido")
-                raise ValueError("QR code inválido")
-            ticket = Ticket.query.filter_by(qr_code=qr_code).first()
+            if not ticket_id and (not isinstance(qr_code, str) or not qr_code):
+                logger.error("Ticket ID ou QR code inválido")
+                raise ValueError("Ticket ID ou QR code inválido")
+            
+            ticket = None
+            if ticket_id:
+                ticket = Ticket.query.get(ticket_id)
+            elif qr_code:
+                ticket = Ticket.query.filter_by(qr_code=qr_code).first()
+            
             if not ticket or ticket.status != 'Chamado':
-                logger.warning(f"Tentativa inválida de validar presença com QR {qr_code}")
+                logger.warning(f"Tentativa inválida de validar presença com ticket_id={ticket_id} ou QR={qr_code}")
                 raise ValueError("Senha inválida ou não chamada")
+            
             if not QueueService.is_queue_open(ticket.queue):
                 logger.warning(f"Fila {ticket.queue.id} está fechada")
                 raise ValueError("Fila está fechada (fora do horário da filial)")
+            
             if user_lat and user_lon:
                 branch = ticket.queue.department.branch
                 distance = QueueService.calculate_distance(user_lat, user_lon, branch)
                 if distance and distance > QueueService.PRESENCE_PROXIMITY_THRESHOLD_KM:
                     logger.warning(f"Usuário muito longe: {distance} km para ticket {ticket.id}")
                     raise ValueError(f"Você está muito longe ({distance:.2f} km). Aproxime-se.")
+            
             ticket.status = 'Atendido'
             ticket.attended_at = datetime.utcnow()
             queue = ticket.queue
@@ -1168,16 +1177,18 @@ class QueueService:
             if last_ticket and last_ticket.attended_at:
                 ticket.service_time = (ticket.attended_at - last_ticket.attended_at).total_seconds() / 60.0
                 queue.last_service_time = ticket.service_time
+            
             db.session.commit()
             QueueService.update_queue_metrics(queue.id)
             message = f"Presença validada para senha {queue.prefix}{ticket.ticket_number} em {queue.service.name}."
             if ticket.user_id != 'PRESENCIAL':
                 QueueService.send_notification(None, message, ticket.id, via_websocket=True, user_id=ticket.user_id)
+            
             logger.info(f"Presença validada para ticket {ticket.id}")
             return ticket
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Erro ao validar presença com QR {qr_code}: {e}")
+            logger.error(f"Erro ao validar presença com ticket_id={ticket_id} ou QR={qr_code}: {e}")
             raise
 
     @staticmethod
