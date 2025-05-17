@@ -1878,13 +1878,21 @@ def init_branch_admin_routes(app):
             app.logger.warning("queue_id não fornecido")
             return jsonify({'error': 'queue_id é obrigatório'}), 400
 
+        # Carregar e validar a fila
         queue = db.session.get(Queue, queue_id)
-        department_ids = [d.id for d in Department.query.filter_by(branch_id=branch_id).all()]
-        if not queue or queue.department_id not in department_ids:
-            app.logger.warning(f"Fila {queue_id} não encontrada ou não pertence à filial {branch_id}")
-            return jsonify({'error': 'Fila não encontrada ou não pertence à filial'}), 404
+        if not queue:
+            app.logger.warning(f"Fila {queue_id} não encontrada")
+            return jsonify({'error': 'Fila não encontrada'}), 404
 
-        # Validar e corrigir prefix
+        department_ids = [d.id for d in Department.query.filter_by(branch_id=branch_id).all()]
+        if queue.department_id not in department_ids:
+            app.logger.warning(f"Fila {queue_id} não pertence à filial {branch_id}")
+            return jsonify({'error': 'Fila não pertence à filial'}), 404
+
+        # Logar o prefix para depuração
+        app.logger.info(f"Fila {queue_id} carregada com prefix={queue.prefix}")
+
+        # Verificar se o prefix é válido
         if not queue.prefix or queue.prefix.strip() == '':
             app.logger.warning(f"Fila {queue_id} tem prefix nulo ou vazio; corrigindo para 'A'")
             queue.prefix = 'A'
@@ -1910,10 +1918,17 @@ def init_branch_admin_routes(app):
             ticket = result['ticket']
             pdf_buffer = io.BytesIO(bytes.fromhex(result['pdf']))
 
+            # Recarregar o ticket para garantir que ticket.queue esteja disponível
+            db_ticket = db.session.get(Ticket, ticket['id'])
+            if not db_ticket or not db_ticket.queue:
+                app.logger.error(f"Relação ticket.queue não carregada para ticket {ticket['id']}")
+                return jsonify({'error': 'Erro ao carregar a fila associada ao ticket'}), 500
+
             ticket_data = {
-                'ticket_number': f"{queue.prefix}{ticket['ticket_number']}",
+                'ticket_number': f"{db_ticket.queue.prefix}{ticket['ticket_number']}",
                 'timestamp': ticket['issued_at']
             }
+            app.logger.info(f"Ticket gerado: {ticket_data['ticket_number']} para queue_id={queue_id}")
             emit_dashboard_update(socketio, branch_id, queue_id, 'ticket_issued', ticket_data)
             emit_display_update(socketio, branch_id, 'ticket_issued', ticket_data)
 
@@ -1922,13 +1937,13 @@ def init_branch_admin_routes(app):
                 action='generate_totem_ticket',
                 resource_type='ticket',
                 resource_id=ticket['id'],
-                details=f"Ticket físico {queue.prefix}{ticket['ticket_number']} emitido via totem (IP: {client_ip})"
+                details=f"Ticket físico {db_ticket.queue.prefix}{ticket['ticket_number']} emitido via totem (IP: {client_ip})"
             )
-            app.logger.info(f"Ticket físico emitido via totem: {queue.prefix}{ticket['ticket_number']} (IP: {client_ip})")
+            app.logger.info(f"Ticket físico emitido via totem: {db_ticket.queue.prefix}{ticket['ticket_number']} (IP: {client_ip})")
             return send_file(
                 pdf_buffer,
                 as_attachment=True,
-                download_name=f"ticket_{queue.prefix}{ticket['ticket_number']}.pdf",
+                download_name=f"ticket_{db_ticket.queue.prefix}{ticket['ticket_number']}.pdf",
                 mimetype='application/pdf'
             )
         except ValueError as e:
@@ -1940,7 +1955,7 @@ def init_branch_admin_routes(app):
         except Exception as e:
             app.logger.error(f"Erro inesperado ao emitir ticket via totem para queue_id={queue_id}: {str(e)}", exc_info=True)
             return jsonify({'error': f'Erro interno ao emitir ticket: {str(e)}'}), 500
-  
+
     # Rota para pausar/retomar fila (modificada)
     @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/pause', methods=['POST'])
     @require_auth

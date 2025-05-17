@@ -657,12 +657,8 @@ class QueueService:
                 logger.error(f"Dados incompletos para queue_id={queue_id}: falta serviço, departamento, filial ou instituição")
                 raise ValueError("Fila, departamento, instituição ou serviço associado ao ticket não encontrado")
 
-            # Validar e corrigir prefix
-            if not queue.prefix or queue.prefix.strip() == '':
-                logger.warning(f"Fila {queue_id} tem prefix nulo ou vazio; corrigindo para 'A'")
-                queue.prefix = 'A'
-                db.session.add(queue)
-                db.session.commit()
+            # Logar o prefix para depuração
+            logger.info(f"Fila {queue_id} carregada com prefix={queue.prefix}")
 
             branch = Branch.query.get(branch_id)
             if not branch:
@@ -722,13 +718,22 @@ class QueueService:
             db.session.add(audit_log)
             db.session.commit()
 
+            # Recarregar ticket para garantir que ticket.queue esteja disponível
+            db.session.refresh(ticket)
+            if not ticket.queue:
+                logger.error(f"Relação ticket.queue não carregada para ticket {ticket.id}")
+                raise ValueError("Erro ao carregar a fila associada")
+
+            # Logar o prefix do ticket
+            logger.info(f"Ticket {ticket.id} criado com prefix={ticket.queue.prefix}")
+
             # Emitir evento
             if socketio:
                 emit('queue_update', {
                     'queue_id': queue.id,
                     'active_tickets': queue.active_tickets,
                     'current_ticket': queue.current_ticket,
-                    'message': f"Nova senha emitida: {queue.prefix}{ticket_number}"
+                    'message': f"Nova senha emitida: {ticket.queue.prefix}{ticket_number}"
                 }, namespace='/', room=str(queue.id))
 
             QueueService.update_queue_metrics(queue.id)
@@ -741,18 +746,19 @@ class QueueService:
                     'qr_code': ticket.qr_code,
                     'status': ticket.status,
                     'issued_at': ticket.issued_at.isoformat(),
-                    'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None
+                    'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None,
+                    'prefix': ticket.queue.prefix  # Adicionar prefix explicitamente
                 },
                 'pdf': pdf_base64
             }
 
         except ValueError as e:
             db.session.rollback()
-            logger.error(f"Erro de validação: {str(e)}")
+            logger.error(f"Erro de validação ao emitir ticket para queue_id={queue_id}: {str(e)}")
             raise
         except SQLAlchemyError as e:
             db.session.rollback()
-            logger.error(f"Erro no banco de dados: {str(e)}")
+            logger.error(f"Erro no banco de dados ao emitir ticket para queue_id={queue_id}: {str(e)}")
             raise
         except Exception as e:
             db.session.rollback()
