@@ -6,6 +6,8 @@ from reportlab.graphics import renderPDF
 from reportlab.graphics.shapes import Drawing, String
 from reportlab.graphics.barcode.qr import QrCodeWidget
 from svglib.svglib import svg2rlg
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 
 
@@ -73,7 +75,7 @@ def generate_ticket_pdf(ticket, institution_name, service, position, wait_time):
 def generate_physical_ticket_pdf(ticket, position):
     """
     Gera um PDF para um ticket físico emitido via totem.
-    Implementação melhorada para evitar erros com QR code.
+    Implementação melhorada para evitar erros com QR code e fontes não disponíveis.
     """
     try:
         buffer = io.BytesIO()
@@ -82,8 +84,15 @@ def generate_physical_ticket_pdf(ticket, position):
         margin = 20 * mm
         center_x = width / 2
         
-        # Iniciar canvas
+        # Iniciar canvas - importante verificar quais fontes estão disponíveis
         c = canvas.Canvas(buffer, pagesize=A4)
+        
+        # Fontes base padrão do ReportLab que estão sempre disponíveis:
+        # - Helvetica (normal, bold, oblique)
+        # - Times-Roman (normal, bold, italic)
+        # - Courier (normal, bold, oblique)
+        # - Symbol
+        # - ZapfDingbats
         
         # Validar informações da fila
         queue = ticket.queue
@@ -168,8 +177,8 @@ def generate_physical_ticket_pdf(ticket, position):
         # Adicionar linha separadora no rodapé
         c.line(margin, margin + 30, width - margin, margin + 30)
         
-        # Adicionar mensagem de rodapé
-        c.setFont("Helvetica-Italic", 9)
+        # Adicionar mensagem de rodapé (usando Helvetica padrão em vez de Helvetica-Italic)
+        c.setFont("Helvetica", 9)
         c.drawCentredString(center_x, margin + 15, "Obrigado pela preferência")
         
         # Finalizar página e salvar o documento
