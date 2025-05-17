@@ -68,7 +68,7 @@ def generate_physical_ticket_pdf(ticket, position):
     """
     Gera um PDF para um ticket físico emitido via totem.
     """
-    buffer = io.BytesIO()
+    buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     
     # Configurações de layout
@@ -78,10 +78,17 @@ def generate_physical_ticket_pdf(ticket, position):
     
     # Carregar informações da fila, serviço, departamento e instituição
     queue = ticket.queue
-    service_name = queue.service.name if queue and queue.service else "Desconhecido"
+    if not queue:
+        logger.error(f"Relação ticket.queue não carregada para ticket {ticket.id}")
+        raise ValueError("Fila associada ao ticket não encontrada")
+
+    # Logar o prefix para depuração
+    logger.info(f"Gerando PDF para ticket {ticket.id} com prefix={queue.prefix}")
+
+    service_name = queue.service.name if queue.service else "Desconhecido"
     institution_name = (
         queue.department.branch.institution.name
-        if queue and queue.department and queue.department.branch and queue.department.branch.institution
+        if queue.department and queue.department.branch and queue.department.branch.institution
         else "Desconhecido"
     )
     
@@ -97,14 +104,13 @@ def generate_physical_ticket_pdf(ticket, position):
     c.setFont("Helvetica", 12)
     c.drawCentredString(center_x, height - margin - 60, f"Serviço: {service_name}")
     
-    # Número da senha (ex.: B1)
+    # Número da senha (ex.: BI123)
     c.setFont("Helvetica-Bold", 40)
     c.drawCentredString(center_x, height - margin - 90, f"{queue.prefix}{ticket.ticket_number}")
     
     # QR Code
     qr = QrCodeWidget(ticket.qr_code)
-    d = Drawing(100, 100)
-    d.add(qr)
+    d = svg2rlg(qr)
     renderPDF.draw(d, c, center_x - 50, height - margin - 190)
     
     # Balcão (guichê)

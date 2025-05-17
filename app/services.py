@@ -629,6 +629,7 @@ class QueueService:
             logger.error(f"Erro ao adicionar ticket à fila {queue_id or service}: {e}")
             raise
 
+
     @staticmethod
     def generate_physical_ticket_for_totem(queue_id: str, branch_id: str, client_ip: str) -> Dict[str, Any]:
         try:
@@ -693,12 +694,6 @@ class QueueService:
                 receipt_data=None
             )
 
-            # Gerar PDF e comprovante
-            position = max(0, ticket.ticket_number - queue.current_ticket)
-            pdf_buffer = generate_physical_ticket_pdf(ticket, position)
-            pdf_base64 = pdf_buffer.getvalue().hex()
-            ticket.receipt_data = QueueService.generate_receipt(ticket)
-
             # Atualizar fila
             queue.active_tickets += 1
 
@@ -713,7 +708,7 @@ class QueueService:
                 timestamp=datetime.utcnow()
             )
 
-            # Persistir
+            # Persistir ticket e auditoria
             db.session.add(ticket)
             db.session.add(audit_log)
             db.session.commit()
@@ -726,6 +721,16 @@ class QueueService:
 
             # Logar o prefix do ticket
             logger.info(f"Ticket {ticket.id} criado com prefix={ticket.queue.prefix}")
+
+            # Gerar PDF e comprovante após commit
+            position = max(0, ticket.ticket_number - queue.current_ticket)
+            pdf_buffer = generate_physical_ticket_pdf(ticket, position)
+            pdf_base64 = pdf_buffer.getvalue().hex()
+            ticket.receipt_data = QueueService.generate_receipt(ticket)
+
+            # Persistir receipt_data
+            db.session.add(ticket)
+            db.session.commit()
 
             # Emitir evento
             if socketio:
@@ -747,7 +752,7 @@ class QueueService:
                     'status': ticket.status,
                     'issued_at': ticket.issued_at.isoformat(),
                     'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None,
-                    'prefix': ticket.queue.prefix  # Adicionar prefix explicitamente
+                    'prefix': ticket.queue.prefix
                 },
                 'pdf': pdf_base64
             }
