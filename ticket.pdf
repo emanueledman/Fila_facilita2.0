@@ -1,1 +1,1 @@
-{"error":"Erro interno ao emitir ticket: name 'BytesIO' is not defined"}
+{"error":"Erro interno ao emitir ticket: 'NoneType' object has no attribute 'renderScale'"}
