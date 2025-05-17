@@ -97,9 +97,19 @@ class Branch(db.Model):
     neighborhood = Column(String(100), nullable=True)
     latitude = Column(Float)
     longitude = Column(Float)
+    totem_password_hash = Column(String(128), nullable=True)  # Novo campo para senha do totem
     institution = relationship('Institution', backref=db.backref('branches', lazy='dynamic'))
     schedules = relationship('BranchSchedule', back_populates='branch', cascade='all, delete-orphan')
-    
+
+    def set_totem_password(self, password):
+        if password:
+            self.totem_password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+    def check_totem_password(self, password):
+        if not self.totem_password_hash or not password:
+            return False
+        return bcrypt.checkpw(password.encode('utf-8'), self.totem_password_hash.encode('utf-8'))
+
     def __repr__(self):
         return f'<Branch {self.name} of {self.institution.name}>'
 

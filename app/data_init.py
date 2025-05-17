@@ -3422,7 +3422,34 @@ def populate_initial_data(app):
                         app.logger.debug(f"Serviço criado: {service_data['name']} para {institution.name}")
                     return InstitutionService.query.filter_by(institution_id=institution.id, name=service_data["name"]).first()
 
+                def exists(model, **kwargs):
+                    """Verifica se um registro existe no banco com os filtros fornecidos."""
+                    return model.query.filter_by(**kwargs).first() is not None
+
+                def generate_unique_totem_password(base_password, branch_id):
+                    """Gera uma senha única baseada no nome, adicionando sufixos numéricos se necessário."""
+                    password = base_password
+                    suffix = 0
+                    
+                    # Verificar se a senha já existe em outra filial (excluindo a própria filial)
+                    while True:
+                        # Buscar filiais com o mesmo hash de senha
+                        hash_to_check = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                        existing_branch = Branch.query.filter(
+                            Branch.totem_password_hash == hash_to_check,
+                            Branch.id != branch_id
+                        ).first()
+                        
+                        if not existing_branch:
+                            return password
+                        
+                        # Se houver colisão, adicionar sufixo numérico
+                        suffix += 1
+                        password = f"{base_password}_{suffix}"
+                        app.logger.debug(f"Tentando senha alternativa para evitar colisão: {password}")
+
                 def create_branch(institution, branch_data):
+                    """Cria ou retorna uma filial existente para a instituição."""
                     if not exists(Branch, institution_id=institution.id, name=branch_data["name"]):
                         branch = Branch(
                             id=str(uuid.uuid4()),
@@ -3433,13 +3460,24 @@ def populate_initial_data(app):
                             latitude=branch_data["latitude"],
                             longitude=branch_data["longitude"]
                         )
+                        # Usar o nome da filial como base para a senha
+                        base_password = branch_data["name"]
+                        totem_password = generate_unique_totem_password(base_password, branch.id)
+                        branch.set_totem_password(totem_password)
                         db.session.add(branch)
                         db.session.flush()
-                        app.logger.debug(f"Filial criada: {branch_data['name']} para {institution.name}")
+                        app.logger.info(f"Filial criada: {branch_data['name']} para {institution.name} com senha de totem: {totem_password}")
                     else:
                         branch = Branch.query.filter_by(institution_id=institution.id, name=branch_data["name"]).first()
+                        # Garantir que filiais existentes tenham senha (caso não tenham)
+                        if not branch.totem_password_hash:
+                            base_password = branch_data["name"]
+                            totem_password = generate_unique_totem_password(base_password, branch.id)
+                            branch.set_totem_password(totem_password)
+                            db.session.flush()
+                            app.logger.info(f"Senha de totem definida para filial existente: {branch_data['name']} com senha: {totem_password}")
                     return branch
-
+                
                 def create_branch_schedule(branch):
                     for day in Weekday:
                         if not exists(BranchSchedule, branch_id=branch.id, weekday=day):

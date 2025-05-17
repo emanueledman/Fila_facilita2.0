@@ -1,7 +1,9 @@
 import io
+import jwt
 from flask import jsonify, request, send_file
 from sqlalchemy import and_
 from sqlalchemy.orm import joinedload
+from functools import wraps
 from . import db, socketio, redis_client
 from .models import Branch, Queue, Department, InstitutionService, ServiceCategory, BranchSchedule, Ticket, AuditLog, DisplayQueue
 from .services import QueueService
@@ -9,24 +11,120 @@ from .utils.websocket_utils import emit_dashboard_update, emit_display_update
 from sqlalchemy.exc import SQLAlchemyError
 import logging
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def require_totem_auth(f):
+    """Decorador para validar JWT de totem."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get('Authorization')
+        if not token:
+            logger.warning(f"Token de autenticação ausente (IP: {request.remote_addr})")
+            return jsonify({'error': 'Token de autenticação ausente'}), 401
+
+        if token.startswith('Bearer '):
+            token = token[7:]
+
+        try:
+            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            if payload['type'] != 'totem' or payload['branch_id'] != kwargs.get('branch_id'):
+                logger.warning(f"Token inválido ou sem permissão para filial {kwargs.get('branch_id')} (IP: {request.remote_addr})")
+                return jsonify({'error': 'Token inválido ou sem permissão'}), 403
+        except jwt.ExpiredSignatureError:
+            logger.warning(f"Token expirado (IP: {request.remote_addr})")
+            return jsonify({'error': 'Token expirado'}), 401
+        except jwt.InvalidTokenError:
+            logger.warning(f"Token inválido (IP: {request.remote_addr})")
+            return jsonify({'error': 'Token inválido'}), 401
+
+        return f(*args, **kwargs)
+    return decorated
+
 def init_totem_routes(app):
     """Inicializa rotas para totens físicos em filiais."""
 
+    @app.route('/api/totem/login', methods=['POST'])
+    def totem_login():
+        """Autentica um totem físico com base no branch_id e senha."""
+        data = request.get_json() or {}
+        branch_id = data.get('branch_id')
+        password = data.get('password')
+        client_ip = request.remote_addr
+
+        if not branch_id or not password:
+            logger.warning(f"Tentativa de login de totem sem branch_id ou senha (IP: {client_ip})")
+            AuditLog.create(
+                user_id=None,
+                action='totem_login_failed',
+                resource_type='branch',
+                resource_id=branch_id or 'unknown',
+                details=f"Tentativa de login sem branch_id ou senha (IP: {client_ip})"
+            )
+            return jsonify({'error': 'branch_id e senha são obrigatórios'}), 400
+
+        branch = db.session.get(Branch, branch_id)
+        if not branch:
+            logger.warning(f"Filial {branch_id} não encontrada (IP: {client_ip})")
+            AuditLog.create(
+                user_id=None,
+                action='totem_login_failed',
+                resource_type='branch',
+                resource_id=branch_id,
+                details=f"Filial não encontrada (IP: {client_ip})"
+            )
+            return jsonify({'error': 'Filial não encontrada'}), 404
+
+        if not branch.check_totem_password(password):
+            logger.warning(f"Senha incorreta para totem da filial {branch_id} (IP: {client_ip})")
+            AuditLog.create(
+                user_id=None,
+                action='totem_login_failed',
+                resource_type='branch',
+                resource_id=branch_id,
+                details=f"Senha incorreta (IP: {client_ip})"
+            )
+            return jsonify({'error': 'Senha incorreta'}), 401
+
+        try:
+            # Gerar JWT para o totem
+            token = jwt.encode({
+                'branch_id': branch_id,
+                'type': 'totem',
+                'exp': datetime.utcnow() + timedelta(hours=24)
+            }, app.config['SECRET_KEY'], algorithm='HS256')
+
+            # Registrar log de auditoria
+            AuditLog.create(
+                user_id=None,
+                action='totem_login',
+                resource_type='branch',
+                resource_id=branch_id,
+                details=f"Totem autenticado para filial {branch_id} (IP: {client_ip})"
+            )
+
+            logger.info(f"Totem autenticado com sucesso para filial {branch_id} (IP: {client_ip})")
+            return jsonify({
+                'success': True,
+                'token': token,
+                'branch_id': branch_id,
+                'branch_name': branch.name
+            }), 200
+
+        except SQLAlchemyError as e:
+            logger.error(f"Erro no banco de dados ao autenticar totem para filial {branch_id}: {str(e)}")
+            return jsonify({'error': 'Erro no banco de dados'}), 500
+        except Exception as e:
+            logger.error(f"Erro inesperado ao autenticar totem para filial {branch_id}: {str(e)}")
+            return jsonify({'error': 'Erro interno ao autenticar totem'}), 500
+
     @app.route('/api/totem/branches/<branch_id>/services', methods=['GET'])
+    @require_totem_auth
     def list_branch_services(branch_id):
         """Lista serviços disponíveis em uma filial, agrupados por categorias."""
-        token = request.headers.get('Totem-Token')
-        expected_token = app.config.get('TOTEM_TOKEN', 'h0gmVAmsj5kyhyVIlkZFF3lG4GJiqomF')
-        if not token or token != expected_token:
-            logger.warning(f"Token de totem inválido para IP {request.remote_addr}")
-            return jsonify({'error': 'Token de totem inválido'}), 401
-
         branch = db.session.get(Branch, branch_id)
         if not branch:
             logger.warning(f"Filial {branch_id} não encontrada")
@@ -116,14 +214,9 @@ def init_totem_routes(app):
         return jsonify(response), 200
 
     @app.route('/api/totem/branches/<branch_id>/categories/<category_id>/services', methods=['GET'])
+    @require_totem_auth
     def list_category_services(branch_id, category_id):
         """Lista serviços de uma categoria específica em uma filial."""
-        token = request.headers.get('Totem-Token')
-        expected_token = app.config.get('TOTEM_TOKEN', 'h0gmVAmsj5kyhyVIlkZFF3lG4GJiqomF')
-        if not token or token != expected_token:
-            logger.warning(f"Token de totem inválido para IP {request.remote_addr}")
-            return jsonify({'error': 'Token de totem inválido'}), 401
-
         branch = db.session.get(Branch, branch_id)
         if not branch:
             logger.warning(f"Filial {branch_id} não encontrada")
@@ -199,14 +292,9 @@ def init_totem_routes(app):
         return jsonify(response), 200
 
     @app.route('/api/totem/branches/<branch_id>/services/<service_id>/ticket', methods=['POST'])
+    @require_totem_auth
     def generate_service_totem_ticket(branch_id, service_id):
         """Gera uma senha física para um serviço específico em uma filial."""
-        token = request.headers.get('Totem-Token')
-        expected_token = app.config.get('TOTEM_TOKEN', 'h0gmVAmsj5kyhyVIlkZFF3lG4GJiqomF')
-        if not token or token != expected_token:
-            logger.warning(f"Token de totem inválido para IP {request.remote_addr}")
-            return jsonify({'error': 'Token de totem inválido'}), 401
-
         branch = db.session.get(Branch, branch_id)
         if not branch:
             logger.warning(f"Filial {branch_id} não encontrada")
@@ -281,14 +369,9 @@ def init_totem_routes(app):
             return jsonify({'error': 'Erro interno ao emitir ticket'}), 500
 
     @app.route('/api/totem/branches/<branch_id>/display_queues', methods=['GET'])
+    @require_totem_auth
     def list_display_queues(branch_id):
         """Retorna filas ativas para exibição na tela do totem."""
-        token = request.headers.get('Totem-Token')
-        expected_token = app.config.get('TOTEM_TOKEN', 'h0gmVAmsj5kyhyVIlkZFF3lG4GJiqomF')
-        if not token or token != expected_token:
-            logger.warning(f"Token de totem inválido para IP {request.remote_addr}")
-            return jsonify({'error': 'Token de totem inválido'}), 401
-
         branch = db.session.get(Branch, branch_id)
         if not branch:
             logger.warning(f"Filial {branch_id} não encontrada")
