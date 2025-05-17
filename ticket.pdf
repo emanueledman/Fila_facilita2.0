@@ -1,1 +1,1 @@
-{"error":"Fila, departamento, institui\u00e7\u00e3o ou servi\u00e7o associado ao ticket n\u00e3o encontrado"}
+{"error":"Erro interno ao emitir ticket: 'NoneType' object has no attribute 'prefix'"}

@@ -639,8 +639,11 @@ class QueueService:
                 raise ValueError("branch_id inválido")
             if not isinstance(client_ip, str) or not client_ip:
                 raise ValueError("client_ip inválido")
-            uuid.UUID(queue_id)
-            uuid.UUID(branch_id)
+            try:
+                uuid.UUID(queue_id)
+                uuid.UUID(branch_id)
+            except ValueError:
+                raise ValueError("queue_id ou branch_id não é um UUID válido")
 
             # Buscar fila com relacionamentos
             queue = Queue.query.options(
@@ -648,13 +651,17 @@ class QueueService:
                 selectinload(Queue.department).selectinload(Department.branch).selectinload(Branch.institution)
             ).get(queue_id)
             if not queue:
+                logger.error(f"Fila não encontrada para queue_id={queue_id}")
                 raise ValueError("Fila não encontrada")
             if not queue.service or not queue.department or not queue.department.branch or not queue.department.branch.institution:
+                logger.error(f"Dados incompletos para queue_id={queue_id}: falta serviço, departamento, filial ou instituição")
                 raise ValueError("Fila, departamento, instituição ou serviço associado ao ticket não encontrado")
             branch = Branch.query.get(branch_id)
             if not branch:
+                logger.error(f"Filial não encontrada para branch_id={branch_id}")
                 raise ValueError("Filial não encontrada")
             if queue.department.branch_id != branch_id:
+                logger.error(f"Fila {queue_id} não pertence à filial {branch_id}")
                 raise ValueError("Fila não pertence à filial")
 
             # Verificar disponibilidade
@@ -750,7 +757,7 @@ class QueueService:
             db.session.rollback()
             logger.error(f"Erro inesperado: {str(e)}")
             raise
-
+    
     @staticmethod
     def call_next(queue_id, counter):
         """Chama o próximo ticket na fila especificada, atribuindo um guichê específico.
