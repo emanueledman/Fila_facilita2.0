@@ -633,15 +633,20 @@ class QueueService:
     def generate_physical_ticket_for_totem(queue_id: str, branch_id: str, client_ip: str) -> Dict[str, Any]:
         try:
             # Validações
-            if not isinstance(queue_id, str) or not uuid.UUID(queue_id):
+            if not isinstance(queue_id, str) or not queue_id:
                 raise ValueError("queue_id inválido")
-            if not isinstance(branch_id, str) or not uuid.UUID(branch_id):
+            if not isinstance(branch_id, str) or not branch_id:
                 raise ValueError("branch_id inválido")
             if not isinstance(client_ip, str) or not client_ip:
                 raise ValueError("client_ip inválido")
+            uuid.UUID(queue_id)
+            uuid.UUID(branch_id)
 
-            # Buscar fila e filial
-            queue = Queue.query.get(queue_id)
+            # Buscar fila com relacionamentos
+            queue = Queue.query.options(
+                selectinload(Queue.service),
+                selectinload(Queue.department).selectinload(Department.branch).selectinload(Branch.institution).selectinload(Institution.type)
+            ).get(queue_id)
             if not queue:
                 raise ValueError("Fila não encontrada")
             branch = Branch.query.get(branch_id)
@@ -683,9 +688,8 @@ class QueueService:
             )
 
             # Gerar PDF e comprovante
-            wait_time = QueueService.calculate_wait_time(queue.id, ticket_number, 0)
             position = max(0, ticket.ticket_number - queue.current_ticket)
-            pdf_buffer = QueueService.generate_pdf_ticket(ticket, position, wait_time)
+            pdf_buffer = QueueService.generate_pdf_ticket(ticket, position, "N/A")  # Passar "N/A" para wait_time
             pdf_base64 = pdf_buffer.getvalue().hex()
             ticket.receipt_data = QueueService.generate_receipt(ticket)
 
