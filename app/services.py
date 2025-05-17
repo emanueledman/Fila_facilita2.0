@@ -627,52 +627,50 @@ class QueueService:
             db.session.rollback()
             logger.error(f"Erro ao adicionar ticket à fila {queue_id or service}: {e}")
             raise
-        
+
     @staticmethod
-    def generate_physical_ticket_for_totem(queue_id, branch_id, client_ip):
-        """Gera um ticket físico via totem para um usuário anônimo, baseado na fila selecionada."""
+    def generate_physical_ticket_for_totem(queue_id: str, branch_id: str, client_ip: str) -> Dict[str, Any]:
         try:
-            if not isinstance(queue_id, str) or not queue_id:
-                logger.error("queue_id inválido")
+            # Validações
+            if not isinstance(queue_id, str) or not uuid.UUID(queue_id):
                 raise ValueError("queue_id inválido")
-            if not isinstance(branch_id, str) or not branch_id:
-                logger.error(f"branch_id inválido: {branch_id}")
+            if not isinstance(branch_id, str) or not uuid.UUID(branch_id):
                 raise ValueError("branch_id inválido")
             if not isinstance(client_ip, str) or not client_ip:
-                logger.error("client_ip inválido")
                 raise ValueError("client_ip inválido")
-            branch = Branch.query.get(branch_id)
-            if not branch:
-                logger.error(f"Filial não encontrada: branch_id={branch_id}")
-                raise ValueError("Filial não encontrada")
+
+            # Buscar fila e filial
             queue = Queue.query.get(queue_id)
             if not queue:
-                logger.error(f"Fila não encontrada: queue_id={queue_id}")
                 raise ValueError("Fila não encontrada")
+            branch = Branch.query.get(branch_id)
+            if not branch:
+                raise ValueError("Filial não encontrada")
             if queue.department.branch_id != branch_id:
-                logger.error(f"Fila {queue_id} não pertence à filial {branch_id}")
-                raise ValueError("Fila não pertence à filial especificada")
+                raise ValueError("Fila não pertence à filial")
+
+            # Verificar disponibilidade
             if not QueueService.is_queue_open(queue):
-                logger.warning(f"Fila {queue.id} está fechada")
-                raise ValueError("Fila está fechada (fora do horário da filial)")
+                raise ValueError("Fila está fechada")
             if queue.active_tickets >= queue.daily_limit:
                 alternatives = QueueService.suggest_alternative_queues(queue.id)
                 alt_message = "Alternativas: " + ", ".join([f"{alt['service']} ({alt['branch']}, {alt['wait_time']})" for alt in alternatives])
-                logger.warning(f"Fila {queue.id} cheia")
                 raise ValueError(f"Limite diário atingido. {alt_message}")
+
+            # Verificar limite de IP
             cache_key = f'ticket_limit:{client_ip}:{branch_id}'
-            emission_count = redis_client.get(cache_key)
-            emission_count = int(emission_count) if emission_count else 0
+            emission_count = int(redis_client.get(cache_key) or 0)
             if emission_count >= 5:
-                logger.warning(f"Limite de emissões atingido para IP {client_ip} na filial {branch_id}")
                 raise ValueError("Limite de emissões por hora atingido")
             redis_client.setex(cache_key, 3600, emission_count + 1)
+
+            # Criar ticket
             ticket_number = queue.active_tickets + 1
             qr_code = QueueService.generate_qr_code()
             ticket = Ticket(
                 id=str(uuid.uuid4()),
                 queue_id=queue.id,
-                user_id='PRESENCIAL',
+                user_id=None,
                 ticket_number=ticket_number,
                 qr_code=qr_code,
                 priority=0,
@@ -682,24 +680,34 @@ class QueueService:
                 expires_at=datetime.utcnow() + timedelta(hours=4),
                 receipt_data=None
             )
-            queue.active_tickets += 1
-            db.session.add(ticket)
+
+            # Gerar PDF e comprovante
             wait_time = QueueService.calculate_wait_time(queue.id, ticket_number, 0)
             position = max(0, ticket.ticket_number - queue.current_ticket)
             pdf_buffer = QueueService.generate_pdf_ticket(ticket, position, wait_time)
             pdf_base64 = pdf_buffer.getvalue().hex()
             ticket.receipt_data = QueueService.generate_receipt(ticket)
+
+            # Atualizar fila
+            queue.active_tickets += 1
+
+            # Log de auditoria
             audit_log = AuditLog(
                 id=str(uuid.uuid4()),
                 user_id=None,
-                action='GENERATE_USER_PHYSICAL_TICKET',
+                action='GENERATE_PHYSICAL_TICKET',
                 resource_type='Ticket',
                 resource_id=ticket.id,
                 details=f"Ticket {qr_code} gerado via totem para fila {queue.service.name} (IP: {client_ip}, Filial: {branch_id})",
                 timestamp=datetime.utcnow()
             )
+
+            # Persistir
+            db.session.add(ticket)
             db.session.add(audit_log)
             db.session.commit()
+
+            # Emitir evento
             if socketio:
                 emit('queue_update', {
                     'queue_id': queue.id,
@@ -707,8 +715,9 @@ class QueueService:
                     'current_ticket': queue.current_ticket,
                     'message': f"Nova senha emitida: {queue.prefix}{ticket_number}"
                 }, namespace='/', room=str(queue.id))
+
             QueueService.update_queue_metrics(queue.id)
-            logger.info(f"Ticket físico {ticket.id} gerado para fila {queue_id} na filial {branch_id}")
+
             return {
                 'ticket': {
                     'id': ticket.id,
@@ -721,11 +730,20 @@ class QueueService:
                 },
                 'pdf': pdf_base64
             }
+
+        except ValueError as e:
+            db.session.rollback()
+            logger.error(f"Erro de validação: {str(e)}")
+            raise
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            logger.error(f"Erro no banco de dados: {str(e)}")
+            raise
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Erro ao gerar ticket físico para queue_id={queue_id}, branch_id={branch_id}: {e}")
+            logger.error(f"Erro inesperado: {str(e)}")
             raise
-
+    
     @staticmethod
     def call_next(queue_id, counter):
         """Chama o próximo ticket na fila especificada, atribuindo um guichê específico.

@@ -174,12 +174,13 @@ class Queue(db.Model):
         return f'<Queue {self.service.name} at {self.department.name}>'
 
 # Tabela para tickets
+
 class Ticket(db.Model):
     __tablename__ = 'ticket'
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     queue_id = Column(String(36), ForeignKey('queue.id'), nullable=False, index=True)
-    user_id = Column(String(36), ForeignKey('user.id'), nullable=True, index=True)
-    ticket_number = Column(Integer, nullable=False)  # Alterado de Integer para String(50)
+    user_id = Column(String(36), ForeignKey('user.id'), nullable=True, index=True)  # Tornar nullable
+    ticket_number = Column(Integer, nullable=False)
     qr_code = Column(String(50), nullable=False, unique=True)
     priority = Column(Integer, default=0)
     is_physical = Column(Boolean, default=False)
@@ -194,7 +195,7 @@ class Ticket(db.Model):
     trade_available = Column(Boolean, default=False)
     queue = relationship('Queue', backref=db.backref('tickets', lazy='dynamic'))
     user = relationship('User', backref=db.backref('tickets', lazy='dynamic'))
-    
+
     def __repr__(self):
         return f'<Ticket {self.ticket_number} for Queue {self.queue_id}>'
 
