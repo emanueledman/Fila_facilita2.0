@@ -1,9 +1,11 @@
+from venv import logger
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
 from reportlab.graphics import renderPDF
 from reportlab.graphics.shapes import Drawing, String
 from reportlab.graphics.barcode.qr import QrCodeWidget
+from svglib.svglib import svg2rlg
 import io
 from datetime import datetime
 
@@ -68,7 +70,7 @@ def generate_physical_ticket_pdf(ticket, position):
     """
     Gera um PDF para um ticket físico emitido via totem.
     """
-    buffer = BytesIO()
+    buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     
     # Configurações de layout
