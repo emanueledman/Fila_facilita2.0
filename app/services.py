@@ -11,7 +11,7 @@ from datetime import datetime, time, timedelta
 from .models import Queue, Ticket, AuditLog, Department, Institution, User, UserPreference, Weekday, Branch, InstitutionService, ServiceCategory, ServiceTag, UserBehavior, UserLocationFallback, NotificationLog, BranchSchedule
 from .ml_models import wait_time_predictor, service_recommendation_predictor, clustering_model, demand_model
 from . import db, redis_client, socketio
-from .utils.pdf_generator import generate_ticket_pdf
+from .utils.pdf_generator import generate_ticket_pdf, generate_physical_ticket_pdf
 from firebase_admin import messaging
 from sqlalchemy.exc import SQLAlchemyError
 from flask_socketio import emit
@@ -645,10 +645,12 @@ class QueueService:
             # Buscar fila com relacionamentos
             queue = Queue.query.options(
                 selectinload(Queue.service),
-                selectinload(Queue.department).selectinload(Department.branch).selectinload(Branch.institution).selectinload(Institution.type)
+                selectinload(Queue.department).selectinload(Department.branch).selectinload(Branch.institution)
             ).get(queue_id)
             if not queue:
                 raise ValueError("Fila não encontrada")
+            if not queue.service or not queue.department or not queue.department.branch or not queue.department.branch.institution:
+                raise ValueError("Fila, departamento, instituição ou serviço associado ao ticket não encontrado")
             branch = Branch.query.get(branch_id)
             if not branch:
                 raise ValueError("Filial não encontrada")
@@ -689,7 +691,7 @@ class QueueService:
 
             # Gerar PDF e comprovante
             position = max(0, ticket.ticket_number - queue.current_ticket)
-            pdf_buffer = QueueService.generate_pdf_ticket(ticket, position, "N/A")  # Passar "N/A" para wait_time
+            pdf_buffer = generate_physical_ticket_pdf(ticket, position)
             pdf_base64 = pdf_buffer.getvalue().hex()
             ticket.receipt_data = QueueService.generate_receipt(ticket)
 
@@ -748,7 +750,7 @@ class QueueService:
             db.session.rollback()
             logger.error(f"Erro inesperado: {str(e)}")
             raise
-    
+
     @staticmethod
     def call_next(queue_id, counter):
         """Chama o próximo ticket na fila especificada, atribuindo um guichê específico.
