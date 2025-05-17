@@ -723,11 +723,14 @@ class QueueService:
 
             # Emitir evento
             if socketio:
+                ticket_prefix = queue.prefix if queue.prefix else "A"
+                if not queue.prefix:
+                    logger.warning(f"queue_id={queue.id} tem prefix nulo ou vazio; usando padrão 'A'")
                 emit('queue_update', {
                     'queue_id': queue.id,
                     'active_tickets': queue.active_tickets,
                     'current_ticket': queue.current_ticket,
-                    'message': f"Nova senha emitida: {queue.prefix}{ticket_number}"
+                    'message': f"Nova senha emitida: {ticket_prefix}{ticket_number}"
                 }, namespace='/', room=str(queue.id))
 
             QueueService.update_queue_metrics(queue.id)
@@ -757,7 +760,7 @@ class QueueService:
             db.session.rollback()
             logger.error(f"Erro inesperado: {str(e)}")
             raise
-    
+ 
     @staticmethod
     def call_next(queue_id, counter):
         """Chama o próximo ticket na fila especificada, atribuindo um guichê específico.
