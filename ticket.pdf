@@ -1,1 +1,1 @@
-{"error":"Limite de emiss\u00f5es por hora atingido"}
+{"error":"Erro interno ao emitir ticket: 'NoneType' object has no attribute 'prefix'"}

@@ -656,6 +656,12 @@ class QueueService:
             if not queue.service or not queue.department or not queue.department.branch or not queue.department.branch.institution:
                 logger.error(f"Dados incompletos para queue_id={queue_id}: falta serviço, departamento, filial ou instituição")
                 raise ValueError("Fila, departamento, instituição ou serviço associado ao ticket não encontrado")
+            
+            # Validate queue.prefix
+            if not queue.prefix or queue.prefix.strip() == '':
+                logger.warning(f"queue_id={queue.id} tem prefix nulo ou vazio; usando padrão 'A'")
+                queue.prefix = 'A'
+
             branch = Branch.query.get(branch_id)
             if not branch:
                 logger.error(f"Filial não encontrada para branch_id={branch_id}")
@@ -671,14 +677,6 @@ class QueueService:
                 alternatives = QueueService.suggest_alternative_queues(queue.id)
                 alt_message = "Alternativas: " + ", ".join([f"{alt['service']} ({alt['branch']}, {alt['wait_time']})" for alt in alternatives])
                 raise ValueError(f"Limite diário atingido. {alt_message}")
-
-            # Remover verificação de limite por IP
-            # O código abaixo foi removido:
-            # cache_key = f'ticket_limit:{client_ip}:{branch_id}'
-            # emission_count = int(redis_client.get(cache_key) or 0)
-            # if emission_count >= 5:
-            #     raise ValueError("Limite de emissões por hora atingido")
-            # redis_client.setex(cache_key, 3600, emission_count + 1)
 
             # Criar ticket
             ticket_number = queue.active_tickets + 1
@@ -724,14 +722,11 @@ class QueueService:
 
             # Emitir evento
             if socketio:
-                ticket_prefix = queue.prefix if queue.prefix else "A"
-                if not queue.prefix:
-                    logger.warning(f"queue_id={queue.id} tem prefix nulo ou vazio; usando padrão 'A'")
                 emit('queue_update', {
                     'queue_id': queue.id,
                     'active_tickets': queue.active_tickets,
                     'current_ticket': queue.current_ticket,
-                    'message': f"Nova senha emitida: {ticket_prefix}{ticket_number}"
+                    'message': f"Nova senha emitida: {queue.prefix}{ticket_number}"
                 }, namespace='/', room=str(queue.id))
 
             QueueService.update_queue_metrics(queue.id)

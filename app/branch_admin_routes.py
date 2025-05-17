@@ -1856,8 +1856,6 @@ def init_branch_admin_routes(app):
             logger.error(f"Erro ao criar fila: {str(e)}")
             return jsonify({'error': 'Erro ao criar fila'}), 500
 
-
-    
     @app.route('/api/branch_admin/branches/<branch_id>/queues/totem', methods=['POST'])
     def generate_totem_tickets(branch_id):
         token = request.headers.get('Totem-Token')
@@ -1884,6 +1882,11 @@ def init_branch_admin_routes(app):
         if not queue or queue.department_id not in department_ids:
             app.logger.warning(f"Fila {queue_id} não encontrada ou não pertence à filial {branch_id}")
             return jsonify({'error': 'Fila não encontrada ou não pertence à filial'}), 404
+
+        # Validate queue.prefix
+        if not queue.prefix or queue.prefix.strip() == '':
+            app.logger.warning(f"Fila {queue_id} tem prefix nulo ou vazio; usando padrão 'A'")
+            queue.prefix = 'A'  # Set default prefix
 
         cache_key = f"totem:throttle:{client_ip}"
         if app.redis_client.get(cache_key):
@@ -1928,9 +1931,10 @@ def init_branch_admin_routes(app):
             app.logger.error(f"Erro no banco de dados ao emitir ticket via totem para queue_id={queue_id}: {str(e)}")
             return jsonify({'error': 'Erro no banco de dados ao emitir ticket'}), 500
         except Exception as e:
-            app.logger.error(f"Erro inesperado ao emitir ticket via totem: {str(e)}")
+            app.logger.error(f"Erro inesperado ao emitir ticket via totem para queue_id={queue_id}: {str(e)}")
             return jsonify({'error': f'Erro interno ao emitir ticket: {str(e)}'}), 500
-        
+
+  
     # Rota para pausar/retomar fila (modificada)
     @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/pause', methods=['POST'])
     @require_auth
