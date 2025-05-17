@@ -672,12 +672,13 @@ class QueueService:
                 alt_message = "Alternativas: " + ", ".join([f"{alt['service']} ({alt['branch']}, {alt['wait_time']})" for alt in alternatives])
                 raise ValueError(f"Limite diário atingido. {alt_message}")
 
-            # Verificar limite de IP
-            cache_key = f'ticket_limit:{client_ip}:{branch_id}'
-            emission_count = int(redis_client.get(cache_key) or 0)
-            if emission_count >= 5:
-                raise ValueError("Limite de emissões por hora atingido")
-            redis_client.setex(cache_key, 3600, emission_count + 1)
+            # Remover verificação de limite por IP
+            # O código abaixo foi removido:
+            # cache_key = f'ticket_limit:{client_ip}:{branch_id}'
+            # emission_count = int(redis_client.get(cache_key) or 0)
+            # if emission_count >= 5:
+            #     raise ValueError("Limite de emissões por hora atingido")
+            # redis_client.setex(cache_key, 3600, emission_count + 1)
 
             # Criar ticket
             ticket_number = queue.active_tickets + 1
@@ -760,7 +761,7 @@ class QueueService:
             db.session.rollback()
             logger.error(f"Erro inesperado: {str(e)}")
             raise
- 
+
     @staticmethod
     def call_next(queue_id, counter):
         """Chama o próximo ticket na fila especificada, atribuindo um guichê específico.
