@@ -26,3 +26,5 @@ geopy==2.4.1
 prophet==1.1.2
 cmdstanpy==1.2.0
 holidays==0.24
+lxml>=4.9.3
+svglib>=1.5.1
