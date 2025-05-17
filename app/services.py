@@ -656,11 +656,13 @@ class QueueService:
             if not queue.service or not queue.department or not queue.department.branch or not queue.department.branch.institution:
                 logger.error(f"Dados incompletos para queue_id={queue_id}: falta serviço, departamento, filial ou instituição")
                 raise ValueError("Fila, departamento, instituição ou serviço associado ao ticket não encontrado")
-            
-            # Validate queue.prefix
+
+            # Validar e corrigir prefix
             if not queue.prefix or queue.prefix.strip() == '':
-                logger.warning(f"queue_id={queue.id} tem prefix nulo ou vazio; usando padrão 'A'")
+                logger.warning(f"Fila {queue_id} tem prefix nulo ou vazio; corrigindo para 'A'")
                 queue.prefix = 'A'
+                db.session.add(queue)
+                db.session.commit()
 
             branch = Branch.query.get(branch_id)
             if not branch:
@@ -754,7 +756,7 @@ class QueueService:
             raise
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Erro inesperado: {str(e)}")
+            logger.error(f"Erro inesperado ao emitir ticket para queue_id={queue_id}: {str(e)}", exc_info=True)
             raise
 
     @staticmethod
