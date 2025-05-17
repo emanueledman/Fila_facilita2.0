@@ -99,6 +99,7 @@ def create_app():
     from .user_routes import init_user_routes
     from .admin_routes import init_admin_routes
     from .queue_reco import init_queue_reco
+    from .totem_routes import init_totem_routes
     from .queue_filial import init_queue_filial
     from .attendent import init_attendant_routes
     from .branch_admin_routes import init_branch_admin_routes
@@ -109,6 +110,7 @@ def create_app():
     init_admin_routes(app)
     init_queue_reco(app)
     init_queue_filial(app)
+    init_totem_routes(app)
     init_attendant_routes(app)
     init_branch_admin_routes(app)
 

@@ -14,6 +14,7 @@ from flask import jsonify, request
 from sqlalchemy import desc
 from datetime import datetime
 from flask_socketio import emit
+from .utils.websocket_utils import emit_dashboard_update, emit_display_update
 
 import uuid
 from datetime import datetime, timedelta
@@ -22,23 +23,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def init_branch_admin_routes(app):
-    def emit_dashboard_update(branch_id, queue_id, event_type, data):
-        try:
-            socketio.emit(event_type, data, room=f'branch_{branch_id}', namespace='/branch_admin')
-            logger.info(f"Evento {event_type} emitido para branch_id={branch_id}, queue_id={queue_id}")
-        except Exception as e:
-            logger.error(f"Erro ao emitir evento {event_type}: {str(e)}")
-
-    def emit_display_update(branch_id, event_type, data):
-        try:
-            socketio.emit('display_updated', {
-                'branch_id': branch_id,
-                'event_type': event_type,
-                'data': data
-            }, room=f'display_{branch_id}', namespace='/display')
-            logger.info(f"Atualização de tela emitida: branch_id={branch_id}, event_type={event_type}")
-        except Exception as e:
-            logger.error(f"Erro ao emitir atualização de tela: {str(e)}")
 
     def emit_ticket_update(ticket):
         try:
@@ -1873,6 +1857,7 @@ def init_branch_admin_routes(app):
             return jsonify({'error': 'Erro ao criar fila'}), 500
 
 
+    
     @app.route('/api/branch_admin/branches/<branch_id>/queues/totem', methods=['POST'])
     def generate_totem_tickets(branch_id):
         token = request.headers.get('Totem-Token')
@@ -1915,15 +1900,12 @@ def init_branch_admin_routes(app):
             ticket = result['ticket']
             pdf_buffer = io.BytesIO(bytes.fromhex(result['pdf']))
 
-            socketio.emit('dashboard_update', {
-                'branch_id': branch_id,
-                'queue_id': queue_id,
-                'event_type': 'ticket_issued',
-                'data': {
-                    'ticket_number': f"{queue.prefix}{ticket['ticket_number']}",
-                    'timestamp': ticket['issued_at']
-                }
-            }, room=branch_id, namespace='/dashboard')
+            ticket_data = {
+                'ticket_number': f"{queue.prefix}{ticket['ticket_number']}",
+                'timestamp': ticket['issued_at']
+            }
+            emit_dashboard_update(socketio, branch_id, queue_id, 'ticket_issued', ticket_data)
+            emit_display_update(socketio, branch_id, 'ticket_issued', ticket_data)
 
             AuditLog.create(
                 user_id=None,
@@ -1948,7 +1930,7 @@ def init_branch_admin_routes(app):
         except Exception as e:
             app.logger.error(f"Erro inesperado ao emitir ticket via totem: {str(e)}")
             return jsonify({'error': f'Erro interno ao emitir ticket: {str(e)}'}), 500
-    
+        
     # Rota para pausar/retomar fila (modificada)
     @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/pause', methods=['POST'])
     @require_auth
