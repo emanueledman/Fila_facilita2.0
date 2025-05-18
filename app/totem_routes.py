@@ -1,5 +1,5 @@
 import io
-from flask import  app,jsonify, request, send_file
+from flask import jsonify, request, send_file
 from sqlalchemy import and_
 from sqlalchemy.orm import joinedload
 from functools import wraps
@@ -10,6 +10,8 @@ from .utils.websocket_utils import emit_dashboard_update, emit_display_update
 from sqlalchemy.exc import SQLAlchemyError
 import logging
 import json
+from app import app  # <-- isso é a instância criada no seu __init__.py
+
 from datetime import datetime, timedelta
 import pytz
 
