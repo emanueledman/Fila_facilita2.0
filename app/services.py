@@ -505,7 +505,9 @@ class QueueService:
             logger.error(f"Erro geral ao enviar notificação para user_id={user_id}: {str(e)}")
             db.session.rollback()
 
-
+class QueueService:
+    """Serviço para gerenciamento de filas, tickets, notificações e dashboard, com foco em serviços semelhantes."""
+    
     @staticmethod
     def add_to_queue(queue_id=None, service=None, user_id=None, priority=0, is_physical=False, fcm_token=None, branch_id=None, user_lat=None, user_lon=None):
         """Adiciona um ticket à fila, usando queue_id diretamente se fornecido, ou buscando por serviço e filial."""
@@ -579,37 +581,58 @@ class QueueService:
             if Ticket.query.filter_by(user_id=user_id, queue_id=queue.id, status='Pendente').first():
                 logger.warning(f"Usuário {user_id} já possui senha ativa na fila {queue.id}")
                 raise ValueError("Você já possui uma senha ativa")
-            ticket_number = queue.active_tickets + 1
-            qr_code = QueueService.generate_qr_code()
-            expires_at = None
-            ticket = Ticket(
-                id=str(uuid.uuid4()),
-                queue_id=queue.id,
-                user_id=user_id,
-                ticket_number=ticket_number,
-                qr_code=qr_code,
-                priority=priority,
-                is_physical=False,
-                expires_at=expires_at,
-                issued_at=datetime.utcnow(),
-                status='Pendente'
-            )
-            queue.active_tickets += 1
-            db.session.add(ticket)
-            service_id = queue.service_id
-            if service_id:
-                behavior = UserBehavior(
+
+            # Obter o maior ticket_number emitido hoje para a fila
+            local_tz = pytz.timezone('Africa/Luanda')
+            today_start = datetime.now(local_tz).replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end = today_start + timedelta(days=1)
+            with db.session.begin():
+                last_ticket = Ticket.query.filter(
+                    Ticket.queue_id == queue.id,
+                    Ticket.issued_at >= today_start,
+                    Ticket.issued_at < today_end
+                ).order_by(Ticket.ticket_number.desc()).first()
+                ticket_number = last_ticket.ticket_number + 1 if last_ticket else 1
+
+                # Criar ticket
+                qr_code = QueueService.generate_qr_code()
+                expires_at = None
+                ticket = Ticket(
+                    id=str(uuid.uuid4()),
+                    queue_id=queue.id,
                     user_id=user_id,
-                    service_id=service_id,
-                    action='ticket_emission',
-                    timestamp=datetime.utcnow()
+                    ticket_number=ticket_number,
+                    qr_code=qr_code,
+                    priority=priority,
+                    is_physical=False,
+                    expires_at=expires_at,
+                    issued_at=datetime.utcnow(),
+                    status='Pendente'
                 )
-                db.session.add(behavior)
-            db.session.commit()
+                queue.active_tickets += 1
+                db.session.add(ticket)
+
+                # Registrar comportamento do usuário, se aplicável
+                service_id = queue.service_id
+                if service_id:
+                    behavior = UserBehavior(
+                        user_id=user_id,
+                        service_id=service_id,
+                        action='ticket_emission',
+                        timestamp=datetime.utcnow()
+                    )
+                    db.session.add(behavior)
+
+            # Commit já é feito pelo with db.session.begin()
+
             db.session.refresh(ticket)
             if not ticket.queue:
                 logger.error(f"Relação ticket.queue não carregada para ticket {ticket.id}")
                 raise ValueError("Erro ao carregar a fila associada")
+
+            # Logar o ticket criado
+            logger.info(f"Ticket {ticket.id} criado com prefix={queue.prefix}, ticket_number={ticket_number} para user_id={user_id}")
+
             wait_time = QueueService.calculate_wait_time(queue.id, ticket_number, priority, user_id, user_lat, user_lon)
             position = max(0, ticket.ticket_number - queue.current_ticket)
             message = f"Senha {queue.prefix}{ticket_number} emitida (virtual, via telefone) para {queue.service.name}. QR: {qr_code}. Espera: {wait_time if wait_time != 'N/A' else 'Aguardando início'} min"
