@@ -65,7 +65,7 @@ def create_app():
         cors_allowed_origins=[
             "http://127.0.0.1:5500",
             "https://frontfa.netlify.app",
-            "https://totemfacilita.netlify.app/",
+            "https://totemfacilita.netlify.app",
             "https://fila-facilita2-0-4uzw.onrender.com",
             "null"
         ],

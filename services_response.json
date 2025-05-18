@@ -1,5 +1,1 @@
-<!doctype html>
-<html lang=en>
-<title>500 Internal Server Error</title>
-<h1>Internal Server Error</h1>
-<p>The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application.</p>
+{"branch_id":"d0b19c4d-a9e4-46cf-a81a-714eab48ebbb","branch_status":{"is_open":true,"message":"Filial aberta"},"categories":[{"category_id":"085fdc28-b1c2-4ea5-ad40-836663cc8b80","category_name":"Documentos","services":[{"active_tickets":0,"estimated_wait_time":"Indispon\u00edvel","queue_id":"fb5a3707-2262-4266-bb4a-bf4078729a14","service_id":"64dea6a3-cf56-4d02-bbfb-f79caa81cd25","service_name":"Autentica\u00e7\u00e3o de Documentos"}]},{"category_id":"fd4bd065-7976-4c0d-b026-92b4c75d4e2a","category_name":"Registros","services":[{"active_tickets":0,"estimated_wait_time":"Indispon\u00edvel","queue_id":"1e7966ff-652a-4e3d-a22a-5d992e1e38df","service_id":"a26a5e64-03bd-4927-b7c8-4d3e58cac1a6","service_name":"Registo Comercial"},{"active_tickets":0,"estimated_wait_time":"Indispon\u00edvel","queue_id":"a43801b1-3d3d-48bd-8b39-1eb43fbe7db0","service_id":"36208027-572c-4c9c-899a-764e267938c7","service_name":"Registo Civil"}]}],"message":"Servi\u00e7os listados com sucesso","total_categories":2}
