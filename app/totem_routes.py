@@ -14,12 +14,11 @@ import json
 from datetime import datetime, timedelta
 import pytz
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def require_fixed_totem_token(f):
-    """Decorador para validar token fixo de totem."""
+    """Decorador para validar token fixo de totem e tela."""
     @wraps(f)
     def decorated(*args, **kwargs):
         token = request.headers.get('Totem-Token')
@@ -27,15 +26,15 @@ def require_fixed_totem_token(f):
         client_ip = request.remote_addr
 
         if not token or token != expected_token:
-            logger.warning(f"Token de totem inválido para IP {client_ip}")
+            logger.warning(f"Token de totem/tela inválido para IP {client_ip}")
             AuditLog.create(
                 user_id=None,
                 action='totem_auth_failed',
                 resource_type='branch',
                 resource_id=kwargs.get('branch_id', 'unknown'),
-                details=f"Token de totem inválido (IP: {client_ip})"
+                details=f"Token de totem/tela inválido (IP: {client_ip})"
             )
-            return jsonify({'error': 'Token de totem inválido'}), 401
+            return jsonify({'error': 'Token de totem/tela inválido'}), 401
 
         return f(*args, **kwargs)
     return decorated
@@ -67,7 +66,7 @@ def check_branch_open(branch_id):
     return True, 'Filial aberta', 200
 
 def init_totem_routes(app):
-    """Inicializa rotas para totens físicos em filiais."""
+    """Inicializa rotas para totens físicos e telas de acompanhamento em filiais."""
 
     @app.route('/api/totem/branches/<branch_id>/services', methods=['GET'])
     @require_fixed_totem_token
@@ -237,7 +236,7 @@ def init_totem_routes(app):
             logger.warning(f"Serviço {service_id} não encontrado")
             return jsonify({'error': 'Serviço não encontrado'}), 404
             
-        # Verificar horário de funcionamento (aqui mantemos a verificação)
+        # Verificar horário de funcionamento
         is_open, message, status_code = check_branch_open(branch_id)
         if not is_open:
             return jsonify({'error': message}), status_code
@@ -341,20 +340,109 @@ def init_totem_routes(app):
         logger.info(f"Filas de exibição retornadas para branch_id={branch_id}: {len(results)} filas")
         return jsonify(response), 200
 
-    @app.route('/api/branch_admin/branches/<branch_id>/queues/totem', methods=['POST'])
-    def generate_totem_tickets(branch_id):
-        token = request.headers.get('Totem-Token')
-        expected_token = app.config.get('TOTEM_TOKEN', 'h0gmVAmsj5kyhyVIlkZFF3lG4GJiqomF')
-        if not token or token != expected_token:
-            app.logger.warning(f"Token de totem inválido para IP {request.remote_addr}")
-            return jsonify({'error': 'Token de totem inválido'}), 401
+    @app.route('/api/totem/branches/<branch_id>/display', methods=['GET'])
+    @require_fixed_totem_token
+    def get_totem_display(branch_id):
+        """Retorna dados para a tela de acompanhamento de uma filial."""
+        client_ip = request.remote_addr
 
+        # Verificar limitação de taxa
+        cache_key = f"display:throttle:{client_ip}"
+        if redis_client.get(cache_key):
+            logger.warning(f"Limite de requisições atingido para IP {client_ip}")
+            return jsonify({'error': 'Limite de requisições atingido. Tente novamente em 30 segundos'}), 429
+        redis_client.setex(cache_key, 30, "1")
+
+        branch = Branch.query.get(branch_id)
+        if not branch:
+            logger.warning(f"Filial {branch_id} não encontrada")
+            return jsonify({'error': 'Filial não encontrada'}), 404
+
+        cache_key = f'display:{branch_id}'
+        refresh = request.args.get('refresh', 'false').lower() == 'true'
+        if not refresh:
+            try:
+                cached_data = redis_client.get(cache_key)
+                if cached_data:
+                    return jsonify(json.loads(cached_data))
+            except Exception as e:
+                logger.warning(f"Erro ao acessar Redis para tela {branch_id}: {str(e)}")
+
+        try:
+            display_queues = DisplayQueue.query.filter_by(branch_id=branch_id).options(
+                joinedload(DisplayQueue.queue)
+                    .joinedload(Queue.department)
+                    .joinedload(Queue.service)
+            ).order_by(DisplayQueue.display_order).all()
+
+            local_tz = pytz.timezone('Africa/Luanda')
+            now = datetime.now(local_tz)
+            current_weekday = now.strftime('%A').upper()
+            current_time = now.time()
+            schedule = Branch.query.get(branch_id).schedules.filter_by(weekday=current_weekday).first()
+
+            response = {
+                'branch_id': branch_id,
+                'branch_name': branch.name,
+                'queues': []
+            }
+
+            for dq in display_queues:
+                queue = dq.queue
+                is_open = False
+                is_paused = queue.daily_limit == 0
+                if schedule and not schedule.is_closed:
+                    is_open = (
+                        schedule.open_time and schedule.end_time and
+                        current_time >= schedule.open_time and
+                        current_time <= schedule.end_time and
+                        queue.active_tickets < queue.daily_limit
+                    )
+                status = 'Pausado' if is_paused else (
+                    'Aberto' if is_open else ('Lotado' if queue.active_tickets >= queue.daily_limit else 'Fechado')
+                )
+
+                current_ticket = Ticket.query.filter_by(queue_id=queue.id, status='Chamado').order_by(Ticket.issued_at.desc()).first()
+                if not current_ticket:
+                    current_ticket = Ticket.query.filter_by(queue_id=queue.id, status='Atendido').order_by(Ticket.attended_at.desc()).first()
+
+                response['queues'].append({
+                    'queue_id': queue.id,
+                    'prefix': queue.prefix,
+                    'service_name': queue.service.name if queue.service else 'N/A',
+                    'department_name': queue.department.name if queue.department else 'N/A',
+                    'status': status,
+                    'active_tickets': queue.active_tickets,
+                    'current_ticket': {
+                        'ticket_number': f"{queue.prefix}{current_ticket.ticket_number}" if current_ticket else 'N/A',
+                        'counter': f"Guichê {current_ticket.counter:02d}" if current_ticket and current_ticket.counter else 'N/A',
+                        'status': current_ticket.status if current_ticket else 'N/A'
+                    } if current_ticket else None,
+                    'estimated_wait_time': round(queue.estimated_wait_time, 2) if queue.estimated_wait_time else None,
+                    'display_order': dq.display_order
+                })
+
+            try:
+                redis_client.setex(cache_key, 300, json.dumps(response))
+            except Exception as e:
+                logger.warning(f"Erro ao salvar cache no Redis para tela {branch_id}: {str(e)}")
+
+            logger.info(f"Tela de acompanhamento retornada para branch_id={branch_id}")
+            return jsonify(response), 200
+        except Exception as e:
+            logger.error(f"Erro ao buscar tela de acompanhamento para branch_id={branch_id}: {str(e)}")
+            return jsonify({'error': 'Erro ao buscar tela de acompanhamento'}), 500
+
+    @app.route('/api/branch_admin/branches/<branch_id>/queues/totem', methods=['POST'])
+    @require_fixed_totem_token
+    def generate_totem_tickets(branch_id):
+        """Gera uma senha física para uma fila específica em uma filial."""
         branch = db.session.get(Branch, branch_id)
         if not branch:
-            app.logger.warning(f"Filial {branch_id} não encontrada")
+            logger.warning(f"Filial {branch_id} não encontrada")
             return jsonify({'error': 'Filial não encontrada'}), 404
             
-        # Verificar horário de funcionamento (aqui mantemos a verificação)
+        # Verificar horário de funcionamento
         is_open, message, status_code = check_branch_open(branch_id)
         if not is_open:
             return jsonify({'error': message}), status_code
@@ -364,27 +452,27 @@ def init_totem_routes(app):
         client_ip = request.remote_addr
 
         if not queue_id:
-            app.logger.warning("queue_id não fornecido")
+            logger.warning("queue_id não fornecido")
             return jsonify({'error': 'queue_id é obrigatório'}), 400
 
         queue = db.session.get(Queue, queue_id)
         if not queue:
-            app.logger.warning(f"Fila {queue_id} não encontrada")
+            logger.warning(f"Fila {queue_id} não encontrada")
             return jsonify({'error': 'Fila não encontrada'}), 404
 
         department_ids = [d.id for d in Department.query.filter_by(branch_id=branch_id).all()]
         if queue.department_id not in department_ids:
-            app.logger.warning(f"Fila {queue_id} não pertence à filial {branch_id}")
+            logger.warning(f"Fila {queue_id} não pertence à filial {branch_id}")
             return jsonify({'error': 'Fila não pertence à filial'}), 404
 
         # Logar o prefix para depuração
-        app.logger.info(f"Fila {queue_id} carregada com prefix={queue.prefix}")
+        logger.info(f"Fila {queue_id} carregada com prefix={queue.prefix}")
 
         cache_key = f"totem:throttle:{client_ip}"
-        if app.redis_client.get(cache_key):
-            app.logger.warning(f"Limite de emissão atingido para IP {client_ip}")
+        if redis_client.get(cache_key):
+            logger.warning(f"Limite de emissão atingido para IP {client_ip}")
             return jsonify({'error': 'Limite de emissão atingido. Tente novamente em 30 segundos'}), 429
-        app.redis_client.setex(cache_key, 30, "1")
+        redis_client.setex(cache_key, 30, "1")
 
         try:
             result = QueueService.generate_physical_ticket_for_totem(
@@ -396,12 +484,15 @@ def init_totem_routes(app):
             pdf_buffer = io.BytesIO(bytes.fromhex(result['pdf']))
 
             # Usar prefix retornado pelo serviço
-            prefix = ticket.get('prefix', 'A')
+            prefix = ticket.get('prefix', queue.prefix)
             ticket_data = {
+                'ticket_id': ticket['id'],
                 'ticket_number': f"{prefix}{ticket['ticket_number']}",
+                'queue_id': queue_id,
+                'service_name': queue.service.name if queue.service else 'Desconhecido',
                 'timestamp': ticket['issued_at']
             }
-            app.logger.info(f"Ticket gerado: {ticket_data['ticket_number']} para queue_id={queue_id}")
+            logger.info(f"Ticket gerado: {ticket_data['ticket_number']} para queue_id={queue_id}")
             emit_dashboard_update(socketio, branch_id, queue_id, 'ticket_issued', ticket_data)
             emit_display_update(socketio, branch_id, 'ticket_issued', ticket_data)
 
@@ -412,7 +503,7 @@ def init_totem_routes(app):
                 resource_id=ticket['id'],
                 details=f"Ticket físico {prefix}{ticket['ticket_number']} emitido via totem (IP: {client_ip})"
             )
-            app.logger.info(f"Ticket físico emitido via totem: {prefix}{ticket['ticket_number']} (IP: {client_ip})")
+            logger.info(f"Ticket físico emitido via totem: {prefix}{ticket['ticket_number']} (IP: {client_ip})")
             return send_file(
                 pdf_buffer,
                 as_attachment=True,
@@ -420,11 +511,11 @@ def init_totem_routes(app):
                 mimetype='application/pdf'
             )
         except ValueError as e:
-            app.logger.error(f"Erro ao emitir ticket via totem para queue_id={queue_id}: {str(e)}")
+            logger.error(f"Erro ao emitir ticket via totem para queue_id={queue_id}: {str(e)}")
             return jsonify({'error': str(e)}), 400
         except SQLAlchemyError as e:
-            app.logger.error(f"Erro no banco de dados ao emitir ticket via totem para queue_id={queue_id}: {str(e)}")
+            logger.error(f"Erro no banco de dados ao emitir ticket via totem para queue_id={queue_id}: {str(e)}")
             return jsonify({'error': 'Erro no banco de dados ao emitir ticket'}), 500
         except Exception as e:
-            app.logger.error(f"Erro inesperado ao emitir ticket via totem para queue_id={queue_id}: {str(e)}", exc_info=True)
+            logger.error(f"Erro inesperado ao emitir ticket via totem para queue_id={queue_id}: {str(e)}")
             return jsonify({'error': f'Erro interno ao emitir ticket: {str(e)}'}), 500

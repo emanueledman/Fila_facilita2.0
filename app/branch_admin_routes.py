@@ -1084,9 +1084,9 @@ def init_branch_admin_routes(app):
             return jsonify({'error': 'Erro ao configurar alertas'}), 500
 
     # Tela de Acompanhamento
-    @app.route('/api/branch_admin/branches/<branch_id>/display', methods=['GET'])
+    @app.route('/api/branch_adminn/branches/<branch_id>/display', methods=['GET'])
     @require_auth
-    def get_branch_display(branch_id):
+    def get_branch_displays(branch_id):
         user = User.query.get(request.user_id)
         if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
             logger.warning(f"Tentativa não autorizada de acessar tela de acompanhamento por user_id={request.user_id}")
