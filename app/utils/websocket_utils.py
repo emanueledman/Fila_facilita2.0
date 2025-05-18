@@ -1,10 +1,10 @@
 import logging
 from flask_socketio import SocketIO, emit, join_room, leave_room, ConnectionRefusedError
 from flask import request
-from .models import User, Queue, Ticket  # Importar modelos do código principal
-from .queue_service import QueueService  # Importar QueueService para notificações
+from ..models import User, Queue, Ticket  # Importar modelos do código principal
+from ..services import QueueService  # Importar QueueService para notificações
 from redis import Redis
-from . import db, socketio, redis_client
+from .. import db, socketio, redis_client
 
 # Configurar logging
 logger = logging.getLogger(__name__)
