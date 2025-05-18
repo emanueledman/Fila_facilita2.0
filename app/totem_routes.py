@@ -1,5 +1,5 @@
 import io
-from flask import app, jsonify, request, send_file
+from flask import jsonify, request, send_file
 from sqlalchemy import and_
 from sqlalchemy.orm import joinedload
 from functools import wraps
@@ -20,6 +20,7 @@ def require_fixed_totem_token(f):
     """Decorador para validar token fixo de totem."""
     @wraps(f)
     def decorated(*args, **kwargs):
+        from flask import current_app as app  # Importar a instância do Flask no contexto da requisição
         token = request.headers.get('Totem-Token')
         expected_token = app.config.get('TOTEM_TOKEN', 'h0gmVAmsj5kyhyVIlkZFF3lG4GJiqomF')
         client_ip = request.remote_addr
@@ -340,7 +341,10 @@ def init_totem_routes(app):
         return jsonify(response), 200
 
     @app.route('/api/branch_admin/branches/<branch_id>/queues/totem', methods=['POST'])
+    @require_fixed_totem_token
     def generate_totem_tickets(branch_id):
+        """Gera tickets físicos para uma fila específica via totem."""
+        from flask import current_app as app  # Importar a instância do Flask no contexto da requisição
         token = request.headers.get('Totem-Token')
         expected_token = app.config.get('TOTEM_TOKEN', 'h0gmVAmsj5kyhyVIlkZFF3lG4GJiqomF')
         if not token or token != expected_token:
@@ -352,7 +356,7 @@ def init_totem_routes(app):
             app.logger.warning(f"Filial {branch_id} não encontrada")
             return jsonify({'error': 'Filial não encontrada'}), 404
             
-        # Verificar horário de funcionamento (aqui mantemos a verificação)
+        # Verificar horário de funcionamento
         is_open, message, status_code = check_branch_open(branch_id)
         if not is_open:
             return jsonify({'error': message}), status_code
@@ -379,10 +383,10 @@ def init_totem_routes(app):
         app.logger.info(f"Fila {queue_id} carregada com prefix={queue.prefix}")
 
         cache_key = f"totem:throttle:{client_ip}"
-        if app.redis_client.get(cache_key):
+        if redis_client.get(cache_key):
             app.logger.warning(f"Limite de emissão atingido para IP {client_ip}")
             return jsonify({'error': 'Limite de emissão atingido. Tente novamente em 30 segundos'}), 429
-        app.redis_client.setex(cache_key, 30, "1")
+        redis_client.setex(cache_key, 30, "1")
 
         try:
             result = QueueService.generate_physical_ticket_for_totem(
