@@ -1856,8 +1856,8 @@ def init_branch_admin_routes(app):
             logger.error(f"Erro ao criar fila: {str(e)}")
             return jsonify({'error': 'Erro ao criar fila'}), 500
 
-    @app.route('/api/branch_admin/branches/<branch_id>/queues/totem', methods=['POST'])
-    def generate_totem_tickets(branch_id):
+    @app.route('/api/branch_adminn/branches/<branch_id>/queues/totem', methods=['POST'])
+    def generate_totem_ticketss(branch_id):
         token = request.headers.get('Totem-Token')
         expected_token = app.config.get('TOTEM_TOKEN', 'h0gmVAmsj5kyhyVIlkZFF3lG4GJiqomF')
         if not token or token != expected_token:
