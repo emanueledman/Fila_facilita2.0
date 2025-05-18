@@ -343,7 +343,7 @@ def init_totem_routes(app):
     @app.route('/api/totem/branches/<branch_id>/display', methods=['GET'])
     @require_fixed_totem_token
     def get_totem_display(branch_id):
-        """Retorna dados para a tela de acompanhamento de uma filial."""
+        """Retorna dados para a tela de acompanhamento de uma filial, listando todas as filas da filial."""
         client_ip = request.remote_addr
 
         # Verificar limitação de taxa
@@ -369,10 +369,13 @@ def init_totem_routes(app):
                 logger.warning(f"Erro ao acessar Redis para tela {branch_id}: {str(e)}")
 
         try:
-            display_queues = DisplayQueue.query.filter_by(branch_id=branch_id).options(
-                joinedload(DisplayQueue.queue).joinedload(Queue.department),
-                joinedload(DisplayQueue.queue).joinedload(Queue.service)
-            ).order_by(DisplayQueue.display_order).all()
+            # Buscar todas as filas da filial
+            queues = Queue.query.join(Department).filter(
+                Department.branch_id == branch_id
+            ).options(
+                joinedload(Queue.department),
+                joinedload(Queue.service)
+            ).all()
 
             local_tz = pytz.timezone('Africa/Luanda')
             now = datetime.now(local_tz)
@@ -386,8 +389,7 @@ def init_totem_routes(app):
                 'queues': []
             }
 
-            for dq in display_queues:
-                queue = dq.queue
+            for queue in queues:
                 is_open = False
                 is_paused = queue.daily_limit == 0
                 if schedule and not schedule.is_closed:
@@ -417,8 +419,7 @@ def init_totem_routes(app):
                         'counter': f"Guichê {current_ticket.counter:02d}" if current_ticket and current_ticket.counter else 'N/A',
                         'status': current_ticket.status if current_ticket else 'N/A'
                     } if current_ticket else None,
-                    'estimated_wait_time': round(queue.estimated_wait_time, 2) if queue.estimated_wait_time else None,
-                    'display_order': dq.display_order
+                    'estimated_wait_time': round(queue.estimated_wait_time, 2) if queue.estimated_wait_time else None
                 })
 
             try:
