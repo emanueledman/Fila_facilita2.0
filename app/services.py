@@ -649,8 +649,8 @@ class QueueService:
             db.session.rollback()
             logger.error(f"Erro ao adicionar ticket à fila {queue_id or service}: {e}")
             raise
-   
-   
+
+
     @staticmethod
     def generate_physical_ticket_for_totem(queue_id: str, branch_id: str, client_ip: str) -> Dict[str, Any]:
         try:
@@ -702,47 +702,47 @@ class QueueService:
             local_tz = pytz.timezone('Africa/Luanda')
             today_start = datetime.now(local_tz).replace(hour=0, minute=0, second=0, microsecond=0)
             today_end = today_start + timedelta(days=1)
-            with db.session.begin():
-                last_ticket = Ticket.query.filter(
-                    Ticket.queue_id == queue.id,
-                    Ticket.issued_at >= today_start,
-                    Ticket.issued_at < today_end
-                ).order_by(Ticket.ticket_number.desc()).first()
-                ticket_number = last_ticket.ticket_number + 1 if last_ticket else 1
+            last_ticket = Ticket.query.filter(
+                Ticket.queue_id == queue.id,
+                Ticket.issued_at >= today_start,
+                Ticket.issued_at < today_end
+            ).order_by(Ticket.ticket_number.desc()).first()
+            ticket_number = last_ticket.ticket_number + 1 if last_ticket else 1
 
-                # Criar ticket
-                qr_code = QueueService.generate_qr_code()
-                ticket = Ticket(
-                    id=str(uuid.uuid4()),
-                    queue_id=queue.id,
-                    user_id=None,
-                    ticket_number=ticket_number,
-                    qr_code=qr_code,
-                    priority=0,
-                    is_physical=True,
-                    status='Pendente',
-                    issued_at=datetime.utcnow(),
-                    expires_at=datetime.utcnow() + timedelta(hours=4),
-                    receipt_data=None
-                )
+            # Criar ticket
+            qr_code = QueueService.generate_qr_code()
+            ticket = Ticket(
+                id=str(uuid.uuid4()),
+                queue_id=queue.id,
+                user_id=None,
+                ticket_number=ticket_number,
+                qr_code=qr_code,
+                priority=0,
+                is_physical=True,
+                status='Pendente',
+                issued_at=datetime.utcnow(),
+                expires_at=datetime.utcnow() + timedelta(hours=4),
+                receipt_data=None
+            )
 
-                # Atualizar fila
-                queue.active_tickets += 1
+            # Atualizar fila
+            queue.active_tickets += 1
 
-                # Log de auditoria
-                audit_log = AuditLog(
-                    id=str(uuid.uuid4()),
-                    user_id=None,
-                    action='GENERATE_PHYSICAL_TICKET',
-                    resource_type='Ticket',
-                    resource_id=ticket.id,
-                    details=f"Ticket {qr_code} gerado via totem para fila {queue.service.name} (IP: {client_ip}, Filial: {branch_id})",
-                    timestamp=datetime.utcnow()
-                )
+            # Log de auditoria
+            audit_log = AuditLog(
+                id=str(uuid.uuid4()),
+                user_id=None,
+                action='GENERATE_PHYSICAL_TICKET',
+                resource_type='Ticket',
+                resource_id=ticket.id,
+                details=f"Ticket {qr_code} gerado via totem para fila {queue.service.name} (IP: {client_ip}, Filial: {branch_id})",
+                timestamp=datetime.utcnow()
+            )
 
-                # Persistir ticket e auditoria
-                db.session.add(ticket)
-                db.session.add(audit_log)
+            # Persistir ticket e auditoria
+            db.session.add(ticket)
+            db.session.add(audit_log)
+            db.session.commit()
 
             # Recarregar ticket para garantir que ticket.queue esteja disponível
             db.session.refresh(ticket)
@@ -800,7 +800,7 @@ class QueueService:
             db.session.rollback()
             logger.error(f"Erro inesperado ao emitir ticket para queue_id={queue_id}: {str(e)}", exc_info=True)
             raise
-        
+      
     @staticmethod
     def call_next(queue_id, counter):
         """Chama o próximo ticket na fila especificada, atribuindo um guichê específico.
