@@ -38,6 +38,32 @@ def require_fixed_totem_token(f):
         return f(*args, **kwargs)
     return decorated
 
+def check_branch_open(branch_id):
+    """Verifica se a filial está aberta no momento atual.
+    Retorna (is_open, mensagem, código_http)"""
+    local_tz = pytz.timezone('Africa/Luanda')
+    now = datetime.now(local_tz)
+    weekday_str = now.strftime('%A').upper()
+    
+    try:
+        from .models import Weekday
+        weekday_enum = Weekday[weekday_str]
+    except KeyError:
+        logger.error(f"Dia da semana inválido para filial {branch_id}: {weekday_str}")
+        return False, 'Dia da semana inválido', 400
+
+    schedule = BranchSchedule.query.filter_by(
+        branch_id=branch_id,
+        weekday=weekday_enum,
+        is_closed=False
+    ).first()
+    
+    if not schedule or now.time() < schedule.open_time or now.time() > schedule.end_time:
+        logger.warning(f"Filial {branch_id} está fechada ou fora do horário")
+        return False, 'Filial está fechada ou fora do horário de funcionamento', 400
+    
+    return True, 'Filial aberta', 200
+
 def init_totem_routes(app):
     """Inicializa rotas para totens físicos em filiais."""
 
@@ -50,29 +76,13 @@ def init_totem_routes(app):
             logger.warning(f"Filial {branch_id} não encontrada")
             return jsonify({'error': 'Filial não encontrada'}), 404
 
-        # Verificar horário de funcionamento
+        # Verificar cache
         local_tz = pytz.timezone('Africa/Luanda')
         now = datetime.now(local_tz)
         weekday_str = now.strftime('%A').upper()
-        try:
-            from .models import Weekday
-            weekday_enum = Weekday[weekday_str]
-        except KeyError:
-            logger.error(f"Dia da semana inválido para filial {branch_id}: {weekday_str}")
-            return jsonify({'error': 'Dia da semana inválido'}), 400
-
-        schedule = BranchSchedule.query.filter_by(
-            branch_id=branch_id,
-            weekday=weekday_enum,
-            is_closed=False
-        ).first()
-        if not schedule or now.time() < schedule.open_time or now.time() > schedule.end_time:
-            logger.warning(f"Filial {branch_id} está fechada ou fora do horário")
-            return jsonify({'error': 'Filial está fechada ou fora do horário de funcionamento'}), 400
-
-        # Verificar cache
         cache_key = f"totem:branch_services:{branch_id}:{weekday_str}"
         cached_result = redis_client.get(cache_key)
+        
         if cached_result:
             logger.debug(f"Cache hit para {cache_key}")
             return jsonify(json.loads(cached_result))
@@ -84,6 +94,13 @@ def init_totem_routes(app):
         ).options(
             joinedload(Queue.service).joinedload(InstitutionService.category)
         ).all()
+
+        # Verificar se a filial está aberta (apenas para informação, não impede a listagem)
+        is_open, message, _ = check_branch_open(branch_id)
+        branch_status = {
+            'is_open': is_open,
+            'message': message
+        }
 
         # Agrupar serviços por categoria
         categories = {}
@@ -118,6 +135,7 @@ def init_totem_routes(app):
 
         response = {
             'branch_id': branch_id,
+            'branch_status': branch_status,
             'categories': results,
             'total_categories': len(results),
             'message': 'Nenhum serviço disponível' if not results else 'Serviços listados com sucesso'
@@ -147,32 +165,23 @@ def init_totem_routes(app):
             logger.warning(f"Categoria {category_id} não encontrada")
             return jsonify({'error': 'Categoria não encontrada'}), 404
 
-        # Verificar horário de funcionamento
+        # Verificar cache
         local_tz = pytz.timezone('Africa/Luanda')
         now = datetime.now(local_tz)
         weekday_str = now.strftime('%A').upper()
-        try:
-            from .models import Weekday
-            weekday_enum = Weekday[weekday_str]
-        except KeyError:
-            logger.error(f"Dia da semana inválido para filial {branch_id}: {weekday_str}")
-            return jsonify({'error': 'Dia da semana inválido'}), 400
-
-        schedule = BranchSchedule.query.filter_by(
-            branch_id=branch_id,
-            weekday=weekday_enum,
-            is_closed=False
-        ).first()
-        if not schedule or now.time() < schedule.open_time or now.time() > schedule.end_time:
-            logger.warning(f"Filial {branch_id} está fechada ou fora do horário")
-            return jsonify({'error': 'Filial está fechada ou fora do horário de funcionamento'}), 400
-
-        # Verificar cache
         cache_key = f"totem:category_services:{branch_id}:{category_id}:{weekday_str}"
         cached_result = redis_client.get(cache_key)
+        
         if cached_result:
             logger.debug(f"Cache hit para {cache_key}")
             return jsonify(json.loads(cached_result))
+
+        # Verificar se a filial está aberta (apenas para informação, não impede a listagem)
+        is_open, message, _ = check_branch_open(branch_id)
+        branch_status = {
+            'is_open': is_open,
+            'message': message
+        }
 
         # Buscar serviços da categoria na filial
         queues = Queue.query.join(Department).join(InstitutionService).filter(
@@ -194,6 +203,7 @@ def init_totem_routes(app):
 
         response = {
             'branch_id': branch_id,
+            'branch_status': branch_status,
             'category_id': category_id,
             'category_name': category.name,
             'services': results,
@@ -224,6 +234,11 @@ def init_totem_routes(app):
         if not service:
             logger.warning(f"Serviço {service_id} não encontrado")
             return jsonify({'error': 'Serviço não encontrado'}), 404
+            
+        # Verificar horário de funcionamento (aqui mantemos a verificação)
+        is_open, message, status_code = check_branch_open(branch_id)
+        if not is_open:
+            return jsonify({'error': message}), status_code
 
         # Encontrar a fila correspondente ao serviço na filial
         queue = Queue.query.join(Department).filter(
@@ -336,6 +351,11 @@ def init_totem_routes(app):
         if not branch:
             app.logger.warning(f"Filial {branch_id} não encontrada")
             return jsonify({'error': 'Filial não encontrada'}), 404
+            
+        # Verificar horário de funcionamento (aqui mantemos a verificação)
+        is_open, message, status_code = check_branch_open(branch_id)
+        if not is_open:
+            return jsonify({'error': message}), status_code
 
         data = request.get_json() or {}
         queue_id = data.get('queue_id')
