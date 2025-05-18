@@ -629,7 +629,6 @@ class QueueService:
             logger.error(f"Erro ao adicionar ticket à fila {queue_id or service}: {e}")
             raise
 
-
     @staticmethod
     def generate_physical_ticket_for_totem(queue_id: str, branch_id: str, client_ip: str) -> Dict[str, Any]:
         try:
@@ -677,8 +676,11 @@ class QueueService:
                 alt_message = "Alternativas: " + ", ".join([f"{alt['service']} ({alt['branch']}, {alt['wait_time']})" for alt in alternatives])
                 raise ValueError(f"Limite diário atingido. {alt_message}")
 
+            # Obter o maior ticket_number já emitido para a fila
+            last_ticket = Ticket.query.filter_by(queue_id=queue.id).order_by(Ticket.ticket_number.desc()).first()
+            ticket_number = last_ticket.ticket_number + 1 if last_ticket else 1
+
             # Criar ticket
-            ticket_number = queue.active_tickets + 1
             qr_code = QueueService.generate_qr_code()
             ticket = Ticket(
                 id=str(uuid.uuid4()),
@@ -720,7 +722,7 @@ class QueueService:
                 raise ValueError("Erro ao carregar a fila associada")
 
             # Logar o prefix do ticket
-            logger.info(f"Ticket {ticket.id} criado com prefix={ticket.queue.prefix}")
+            logger.info(f"Ticket {ticket.id} criado com prefix={ticket.queue.prefix}, ticket_number={ticket.ticket_number}")
 
             # Gerar PDF e comprovante após commit
             position = max(0, ticket.ticket_number - queue.current_ticket)
