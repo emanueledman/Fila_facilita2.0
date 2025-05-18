@@ -8,14 +8,12 @@ from flask_socketio import SocketIO
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_cors import CORS
-
 from redis import Redis
 import os
 from dotenv import load_dotenv
-
 from flask import jsonify
-
 from sqlalchemy import text
+import json  # [ALTERAÇÃO] Adicionado para serialização JSON no Redis Pub/Sub
 
 load_dotenv()
 
@@ -23,6 +21,20 @@ db = SQLAlchemy()
 socketio = SocketIO()
 limiter = Limiter(key_func=get_remote_address)
 redis_client = Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379/0'))
+
+# [ALTERAÇÃO] Função para publicar atualizações de fila no Redis
+def publish_queue_update(queue_id, data):
+    redis_client.publish(f'queue:{queue_id}:updates', json.dumps(data))
+
+# [ALTERAÇÃO] Listener Redis para propagar atualizações via SocketIO
+def start_background_listener():
+    pubsub = redis_client.pubsub()
+    pubsub.psubscribe('queue:*:updates')
+    for message in pubsub.listen():
+        if message['type'] == 'pmessage':
+            queue_id = message['channel'].decode().split(':')[1]
+            data = json.loads(message['data'].decode())
+            socketio.emit('queue_update', data, namespace='/queue', room=f'queue_{queue_id}')
 
 def create_app():
     app = Flask(__name__)
@@ -38,6 +50,13 @@ def create_app():
         database_url = database_url.replace('postgres://', 'postgresql://')
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    # [ALTERAÇÃO] Adicionado opções de pool para robustez na conexão com o banco
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_size': 20,
+        'max_overflow': 10,
+        'pool_timeout': 30,
+        'pool_pre_ping': True
+    }
     
     app.redis_client = redis_client
     
@@ -63,6 +82,7 @@ def create_app():
         "origins": [
             "http://127.0.0.1:5500",
             "https://frontfa.netlify.app",
+            "https://fila-facilita2-0-juqg.onrender.com",
             "https://totemfacilita.netlify.app",
             "https://fila-facilita2-0-4uzw.onrender.com",
             "null"
@@ -79,6 +99,7 @@ def create_app():
         cors_allowed_origins=[
             "http://127.0.0.1:5500",
             "https://frontfa.netlify.app",
+            "https://fila-facilita2-0-juqg.onrender.com",
             "https://totemfacilita.netlify.app",
             "https://fila-facilita2-0-4uzw.onrender.com",
             "null"
@@ -87,11 +108,15 @@ def create_app():
         logger=os.getenv('FLASK_ENV') != 'production',
         engineio_logger=os.getenv('FLASK_ENV') != 'production',
         message_queue=os.getenv('REDIS_URL', 'rediss://red-d053vpre5dus738stejg:yUiGYAY9yrGzyXvw2LyUPzoRqkdwY3Og@oregon-keyvalue.render.com:6379/0'),
-        manage_session=False
+        manage_session=False,
+        namespace='/queue'  # [ALTERAÇÃO] Adicionado namespace para eventos de fila
     )
     limiter.init_app(app)
     
     limiter.storage_uri = os.getenv('REDIS_URL', 'rediss://red-d053vpre5dus738stejg:yUiGYAY9yrGzyXvw2LyUPzoRqkdwY3Og@oregon-keyvalue.render.com:6379/0')
+    
+    # [ALTERAÇÃO] Iniciar listener Redis
+    socketio.start_background_task(start_background_listener)
     
     from .routes import init_routes
     from .queue_routes import init_queue_routes
@@ -113,8 +138,27 @@ def create_app():
     init_attendant_routes(app)
     init_branch_admin_routes(app)
 
+    # [ALTERAÇÃO] Adicionado decorador para verificar Totem-Token
+    def require_fixed_totem_token(f):
+        def decorated(*args, **kwargs):
+            token = request.headers.get('Totem-Token')
+            if not token or not redis_client.get(f'totem_token:{token}'):
+                return jsonify({"status": "error", "message": "Token inválido"}), 401
+            return f(*args, **kwargs)
+        return decorated
+
+    # [ALTERAÇÃO] Rota para tela de acompanhamento de filas
+    @app.route('/api/totem/branches/<branch_id>/display', methods=['GET'])
+    @require_fixed_totem_token
+    def display_queues(branch_id):
+        queues = Queue.query.filter_by(branch_id=branch_id).all()
+        return jsonify([{
+            'id': q.id,
+            'name': q.name,
+            'current_number': q.current_number
+        } for q in queues])
+
     # Rota para inicializar o banco de dados
-    
     @app.route('/add-notification-type', methods=['POST'])
     @limiter.limit("5 per minute")
     def add_notification_type():
@@ -205,7 +249,6 @@ def create_app():
                     "status": "error",
                     "message": f"Erro ao inicializar banco de dados: {str(e)}"
                 }), 500
-
 
     if os.getenv('FLASK_ENV') == 'production':
         app.config['DEBUG'] = False
