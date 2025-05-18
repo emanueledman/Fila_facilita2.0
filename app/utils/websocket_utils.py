@@ -2,7 +2,6 @@ import logging
 from flask_socketio import SocketIO, emit, join_room, leave_room, ConnectionRefusedError
 from flask import request
 from ..models import User, Queue, Ticket  # Importar modelos do código principal
-from ..services import QueueService  # Importar QueueService para notificações
 from redis import Redis
 from .. import db, socketio, redis_client
 
@@ -38,8 +37,15 @@ def emit_display_update(socketio: SocketIO, branch_id: str, event_type: str = 'd
     except Exception as e:
         logger.error(f"Erro ao emitir atualização de tela: {str(e)}")
 
-def emit_ticket_update(socketio: SocketIO, redis_client: Redis, ticket: Ticket):
-    """Emite atualização de ticket para usuário, painel e tela de totem."""
+def emit_ticket_update(socketio: SocketIO, redis_client: Redis, ticket: Ticket, queue_service):
+    """Emite atualização de ticket para usuário, painel e tela de totem.
+
+    Args:
+        socketio (SocketIO): Instância do SocketIO.
+        redis_client (Redis): Cliente Redis para throttling.
+        ticket (Ticket): Objeto Ticket a ser atualizado.
+        queue_service: Instância do serviço de filas para enviar notificações.
+    """
     try:
         # Notificação para o usuário (namespace '/')
         if not ticket or not ticket.user_id or ticket.user_id == 'PRESENCIAL' or ticket.is_physical:
@@ -65,7 +71,7 @@ def emit_ticket_update(socketio: SocketIO, redis_client: Redis, ticket: Ticket):
 
         mensagens_status = {
             'Pendente': f"Sua senha {ticket_data['ticket_number']} está aguardando atendimento.",
-            'Chamado': f"Sua senha {ticket_data['ticket_number']} foi chamada no guichê {ticket_data['counter']}. Dirija-se ao atendimento.",
+            'Chamado': f"Sua senha {ticket_data['ticket_number']} foi chamada no balcão {ticket_data['counter']}. Dirija-se ao atendimento.",
             'Atendido': f"Sua senha {ticket_data['ticket_number']} foi atendida com sucesso.",
             'Cancelado': f"Sua senha {ticket_data['ticket_number']} foi cancelada."
         }
@@ -77,7 +83,7 @@ def emit_ticket_update(socketio: SocketIO, redis_client: Redis, ticket: Ticket):
             return
         redis_client.setex(cache_key, 60, "1")
 
-        QueueService.send_notification(
+        queue_service.send_notification(
             fcm_token=user.fcm_token,
             message=mensagem,
             ticket_id=ticket.id,
