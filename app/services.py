@@ -11,7 +11,7 @@ from .models import Queue, Ticket, AuditLog, Department, Institution, User, User
 from .ml_models import wait_time_predictor, service_recommendation_predictor, clustering_model, demand_model
 from . import db, redis_client, socketio
 from .utils.websocket_utils import emit_ticket_update, emit_dashboard_update
-from .app import publish_queue_update
+from . import publish_queue_update
 from .utils.pdf_generator import generate_ticket_pdf, generate_physical_ticket_pdf
 from firebase_admin import messaging
 from sqlalchemy.exc import SQLAlchemyError
