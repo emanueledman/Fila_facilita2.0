@@ -44,13 +44,72 @@ def require_totem_auth(f):
         return f(*args, **kwargs)
     return decorated
 
+def require_totem_token(f):
+    """Decorador para validar token fixo de totem (fallback)."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get('Totem-Token')
+        expected_token = app.config.get('TOTEM_TOKEN', 'h0gmVAmsj5kyhyVIlkZFF3lG4GJiqomF')
+        branch_id = kwargs.get('branch_id')
+
+        if not token or token != expected_token:
+            logger.warning(f"Token de totem inválido para filial {branch_id} (IP: {request.remote_addr})")
+            return jsonify({'error': 'Token de totem inválido'}), 401
+
+        branch = db.session.get(Branch, branch_id)
+        if not branch:
+            logger.warning(f"Filial {branch_id} não encontrada")
+            return jsonify({'error': 'Filial não encontrada'}), 404
+
+        return f(*args, **kwargs)
+    return decorated
+
+def validate_branch_schedule(branch_id):
+    """Valida se a filial está aberta com base no horário."""
+    cache_key = f"schedule:{branch_id}:{datetime.now().strftime('%A').upper()}"
+    cached_schedule = redis_client.get(cache_key)
+    if cached_schedule:
+        schedule_data = json.loads(cached_schedule)
+        if not schedule_data['is_open']:
+            logger.warning(f"Filial {branch_id} está fechada (cache)")
+            return False, jsonify({'error': 'Filial está fechada ou fora do horário de funcionamento'}), 400
+        return True, None, None
+
+    local_tz = pytz.timezone('Africa/Luanda')
+    now = datetime.now(local_tz)
+    weekday_str = now.strftime('%A').upper()
+    try:
+        from .models import Weekday
+        weekday_enum = Weekday[weekday_str]
+    except KeyError:
+        logger.error(f"Dia da semana inválido para filial {branch_id}: {weekday_str}")
+        return False, jsonify({'error': 'Dia da semana inválido'}), 400
+
+    schedule = BranchSchedule.query.filter_by(
+        branch_id=branch_id,
+        weekday=weekday_enum,
+        is_closed=False
+    ).first()
+    is_open = schedule and now.time() >= schedule.open_time and now.time() <= schedule.end_time
+
+    # Cachear resultado por 60 segundos
+    redis_client.setex(cache_key, 60, json.dumps({'is_open': is_open}))
+    if not is_open:
+        logger.warning(f"Filial {branch_id} está fechada ou fora do horário")
+        return False, jsonify({'error': 'Filial está fechada ou fora do horário de funcionamento'}), 400
+    return True, None, None
+
 def init_totem_routes(app):
     """Inicializa rotas para totens físicos em filiais."""
 
     @app.route('/api/totem/login', methods=['POST'])
     def totem_login():
         """Autentica um totem físico com base no branch_id e senha."""
-        data = request.get_json() or {}
+        data = request.get_json()
+        if not data or not isinstance(data, dict):
+            logger.warning(f"Tentativa de login de totem com corpo inválido (IP: {request.remote_addr})")
+            return jsonify({'error': 'Corpo da requisição inválido'}), 400
+
         branch_id = data.get('branch_id')
         password = data.get('password')
         client_ip = request.remote_addr
@@ -90,11 +149,11 @@ def init_totem_routes(app):
             return jsonify({'error': 'Senha incorreta'}), 401
 
         try:
-            # Gerar JWT para o totem
+            # Gerar JWT com validade de 30 dias
             token = jwt.encode({
                 'branch_id': branch_id,
                 'type': 'totem',
-                'exp': datetime.utcnow() + timedelta(hours=24)
+                'exp': datetime.utcnow() + timedelta(days=30)
             }, app.config['SECRET_KEY'], algorithm='HS256')
 
             # Registrar log de auditoria
@@ -125,33 +184,13 @@ def init_totem_routes(app):
     @require_totem_auth
     def list_branch_services(branch_id):
         """Lista serviços disponíveis em uma filial, agrupados por categorias."""
-        branch = db.session.get(Branch, branch_id)
-        if not branch:
-            logger.warning(f"Filial {branch_id} não encontrada")
-            return jsonify({'error': 'Filial não encontrada'}), 404
-
-        # Verificar horário de funcionamento
-        local_tz = pytz.timezone('Africa/Luanda')
-        now = datetime.now(local_tz)
-        weekday_str = now.strftime('%A').upper()
-        try:
-            from .models import Weekday
-            weekday_enum = Weekday[weekday_str]
-        except KeyError:
-            logger.error(f"Dia da semana inválido para filial {branch_id}: {weekday_str}")
-            return jsonify({'error': 'Dia da semana inválido'}), 400
-
-        schedule = BranchSchedule.query.filter_by(
-            branch_id=branch_id,
-            weekday=weekday_enum,
-            is_closed=False
-        ).first()
-        if not schedule or now.time() < schedule.open_time or now.time() > schedule.end_time:
-            logger.warning(f"Filial {branch_id} está fechada ou fora do horário")
-            return jsonify({'error': 'Filial está fechada ou fora do horário de funcionamento'}), 400
+        # Validar horário da filial
+        is_open, error_response, status_code = validate_branch_schedule(branch_id)
+        if not is_open:
+            return error_response, status_code
 
         # Verificar cache
-        cache_key = f"totem:branch_services:{branch_id}:{weekday_str}"
+        cache_key = f"totem:branch_services:{branch_id}:{datetime.now().strftime('%A').upper()}"
         cached_result = redis_client.get(cache_key)
         if cached_result:
             logger.debug(f"Cache hit para {cache_key}")
@@ -217,38 +256,18 @@ def init_totem_routes(app):
     @require_totem_auth
     def list_category_services(branch_id, category_id):
         """Lista serviços de uma categoria específica em uma filial."""
-        branch = db.session.get(Branch, branch_id)
-        if not branch:
-            logger.warning(f"Filial {branch_id} não encontrada")
-            return jsonify({'error': 'Filial não encontrada'}), 404
+        # Validar horário da filial
+        is_open, error_response, status_code = validate_branch_schedule(branch_id)
+        if not is_open:
+            return error_response, status_code
 
         category = db.session.get(ServiceCategory, category_id)
         if not category:
             logger.warning(f"Categoria {category_id} não encontrada")
             return jsonify({'error': 'Categoria não encontrada'}), 404
 
-        # Verificar horário de funcionamento
-        local_tz = pytz.timezone('Africa/Luanda')
-        now = datetime.now(local_tz)
-        weekday_str = now.strftime('%A').upper()
-        try:
-            from .models import Weekday
-            weekday_enum = Weekday[weekday_str]
-        except KeyError:
-            logger.error(f"Dia da semana inválido para filial {branch_id}: {weekday_str}")
-            return jsonify({'error': 'Dia da semana inválido'}), 400
-
-        schedule = BranchSchedule.query.filter_by(
-            branch_id=branch_id,
-            weekday=weekday_enum,
-            is_closed=False
-        ).first()
-        if not schedule or now.time() < schedule.open_time or now.time() > schedule.end_time:
-            logger.warning(f"Filial {branch_id} está fechada ou fora do horário")
-            return jsonify({'error': 'Filial está fechada ou fora do horário de funcionamento'}), 400
-
         # Verificar cache
-        cache_key = f"totem:category_services:{branch_id}:{category_id}:{weekday_str}"
+        cache_key = f"totem:category_services:{branch_id}:{category_id}:{datetime.now().strftime('%A').upper()}"
         cached_result = redis_client.get(cache_key)
         if cached_result:
             logger.debug(f"Cache hit para {cache_key}")
@@ -295,10 +314,10 @@ def init_totem_routes(app):
     @require_totem_auth
     def generate_service_totem_ticket(branch_id, service_id):
         """Gera uma senha física para um serviço específico em uma filial."""
-        branch = db.session.get(Branch, branch_id)
-        if not branch:
-            logger.warning(f"Filial {branch_id} não encontrada")
-            return jsonify({'error': 'Filial não encontrada'}), 404
+        # Validar horário da filial
+        is_open, error_response, status_code = validate_branch_schedule(branch_id)
+        if not is_open:
+            return error_response, status_code
 
         service = db.session.get(InstitutionService, service_id)
         if not service:
@@ -331,7 +350,6 @@ def init_totem_routes(app):
             ticket = result['ticket']
             pdf_buffer = io.BytesIO(bytes.fromhex(result['pdf']))
 
-            # Emitir atualização para o dashboard e tela
             ticket_data = {
                 'ticket_id': ticket['id'],
                 'ticket_number': f"{queue.prefix}{ticket['ticket_number']}",
@@ -342,7 +360,6 @@ def init_totem_routes(app):
             emit_dashboard_update(socketio, branch_id, queue.id, 'ticket_issued', ticket_data)
             emit_display_update(socketio, branch_id, 'ticket_issued', ticket_data)
 
-            # Registrar log de auditoria
             AuditLog.create(
                 user_id=None,
                 action='generate_service_totem_ticket',
@@ -372,10 +389,10 @@ def init_totem_routes(app):
     @require_totem_auth
     def list_display_queues(branch_id):
         """Retorna filas ativas para exibição na tela do totem."""
-        branch = db.session.get(Branch, branch_id)
-        if not branch:
-            logger.warning(f"Filial {branch_id} não encontrada")
-            return jsonify({'error': 'Filial não encontrada'}), 404
+        # Validar horário da filial
+        is_open, error_response, status_code = validate_branch_schedule(branch_id)
+        if not is_open:
+            return error_response, status_code
 
         # Buscar filas configuradas para exibição
         display_queues = DisplayQueue.query.filter_by(branch_id=branch_id).join(Queue).join(InstitutionService).options(
@@ -403,3 +420,165 @@ def init_totem_routes(app):
 
         logger.info(f"Filas de exibição retornadas para branch_id={branch_id}: {len(results)} filas")
         return jsonify(response), 200
+
+    @app.route('/api/totem/branches/<branch_id>/queues/totem', methods=['POST'])
+    @require_totem_auth
+    def generate_totem_tickets(branch_id):
+        """Gera uma senha física para uma fila específica em uma filial."""
+        # Validar horário da filial
+        is_open, error_response, status_code = validate_branch_schedule(branch_id)
+        if not is_open:
+            return error_response, status_code
+
+        data = request.get_json()
+        if not data or not isinstance(data, dict):
+            logger.warning(f"Corpo da requisição inválido para filial {branch_id} (IP: {request.remote_addr})")
+            return jsonify({'error': 'Corpo da requisição inválido'}), 400
+
+        queue_id = data.get('queue_id')
+        client_ip = request.remote_addr
+
+        if not queue_id:
+            logger.warning(f"queue_id não fornecido para filial {branch_id} (IP: {client_ip})")
+            return jsonify({'error': 'queue_id é obrigatório'}), 400
+
+        queue = db.session.get(Queue, queue_id)
+        if not queue:
+            logger.warning(f"Fila {queue_id} não encontrada para filial {branch_id}")
+            return jsonify({'error': 'Fila não encontrada'}), 404
+
+        department_ids = [d.id for d in Department.query.filter_by(branch_id=branch_id).all()]
+        if queue.department_id not in department_ids:
+            logger.warning(f"Fila {queue_id} não pertence à filial {branch_id}")
+            return jsonify({'error': 'Fila não pertence à filial'}), 404
+
+        cache_key = f"totem:throttle:{client_ip}"
+        if redis_client.get(cache_key):
+            logger.warning(f"Limite de emissão atingido para IP {client_ip}")
+            return jsonify({'error': 'Limite de emissão atingido. Tente novamente em 30 segundos'}), 429
+        redis_client.setex(cache_key, 30, "1")
+
+        try:
+            result = QueueService.generate_physical_ticket_for_totem(
+                queue_id=queue_id,
+                branch_id=branch_id,
+                client_ip=client_ip
+            )
+            ticket = result['ticket']
+            pdf_buffer = io.BytesIO(bytes.fromhex(result['pdf']))
+
+            ticket_data = {
+                'ticket_id': ticket['id'],
+                'ticket_number': f"{queue.prefix}{ticket['ticket_number']}",
+                'queue_id': queue.id,
+                'service_name': queue.service.name or 'Desconhecido',
+                'timestamp': ticket['issued_at']
+            }
+            emit_dashboard_update(socketio, branch_id, queue_id, 'ticket_issued', ticket_data)
+            emit_display_update(socketio, branch_id, 'ticket_issued', ticket_data)
+
+            AuditLog.create(
+                user_id=None,
+                action='generate_totem_ticket',
+                resource_type='ticket',
+                resource_id=ticket['id'],
+                details=f"Ticket físico {queue.prefix}{ticket['ticket_number']} emitido via totem (IP: {client_ip})"
+            )
+
+            logger.info(f"Ticket físico emitido via totem: {queue.prefix}{ticket['ticket_number']} (IP: {client_ip})")
+            return send_file(
+                pdf_buffer,
+                as_attachment=True,
+                download_name=f"ticket_{queue.prefix}{ticket['ticket_number']}.pdf",
+                mimetype='application/pdf'
+            )
+        except ValueError as e:
+            logger.error(f"Erro ao emitir ticket via totem para queue_id={queue_id}: {str(e)}")
+            return jsonify({'error': str(e)}), 400
+        except SQLAlchemyError as e:
+            logger.error(f"Erro no banco de dados ao emitir ticket via totem para queue_id={queue_id}: {str(e)}")
+            return jsonify({'error': 'Erro no banco de dados ao emitir ticket'}), 500
+        except Exception as e:
+            logger.error(f"Erro inesperado ao emitir ticket via totem para queue_id={queue_id}: {str(e)}")
+            return jsonify({'error': 'Erro interno ao emitir ticket'}), 500
+
+    @app.route('/api/totem/branches/<branch_id>/queues/totem/fallback', methods=['POST'])
+    @require_totem_token
+    def generate_totem_tickets_fallback(branch_id):
+        """Gera uma senha física para uma fila específica em uma filial (fallback com token fixo)."""
+        # Validar horário da filial
+        is_open, error_response, status_code = validate_branch_schedule(branch_id)
+        if not is_open:
+            return error_response, status_code
+
+        data = request.get_json()
+        if not data or not isinstance(data, dict):
+            logger.warning(f"Corpo da requisição inválido para filial {branch_id} (IP: {request.remote_addr})")
+            return jsonify({'error': 'Corpo da requisição inválido'}), 400
+
+        queue_id = data.get('queue_id')
+        client_ip = request.remote_addr
+
+        if not queue_id:
+            logger.warning(f"queue_id não fornecido para filial {branch_id} (IP: {client_ip})")
+            return jsonify({'error': 'queue_id é obrigatório'}), 400
+
+        queue = db.session.get(Queue, queue_id)
+        if not queue:
+            logger.warning(f"Fila {queue_id} não encontrada para filial {branch_id}")
+            return jsonify({'error': 'Fila não encontrada'}), 404
+
+        department_ids = [d.id for d in Department.query.filter_by(branch_id=branch_id).all()]
+        if queue.department_id not in department_ids:
+            logger.warning(f"Fila {queue_id} não pertence à filial {branch_id}")
+            return jsonify({'error': 'Fila não pertence à filial'}), 404
+
+        cache_key = f"totem:throttle:{client_ip}"
+        if redis_client.get(cache_key):
+            logger.warning(f"Limite de emissão atingido para IP {client_ip}")
+            return jsonify({'error': 'Limite de emissão atingido. Tente novamente em 30 segundos'}), 429
+        redis_client.setex(cache_key, 30, "1")
+
+        try:
+            result = QueueService.generate_physical_ticket_for_totem(
+                queue_id=queue_id,
+                branch_id=branch_id,
+                client_ip=client_ip
+            )
+            ticket = result['ticket']
+            pdf_buffer = io.BytesIO(bytes.fromhex(result['pdf']))
+
+            ticket_data = {
+                'ticket_id': ticket['id'],
+                'ticket_number': f"{queue.prefix}{ticket['ticket_number']}",
+                'queue_id': queue.id,
+                'service_name': queue.service.name or 'Desconhecido',
+                'timestamp': ticket['issued_at']
+            }
+            emit_dashboard_update(socketio, branch_id, queue_id, 'ticket_issued', ticket_data)
+            emit_display_update(socketio, branch_id, 'ticket_issued', ticket_data)
+
+            AuditLog.create(
+                user_id=None,
+                action='generate_totem_ticket_fallback',
+                resource_type='ticket',
+                resource_id=ticket['id'],
+                details=f"Ticket físico {queue.prefix}{ticket['ticket_number']} emitido via totem (fallback, IP: {client_ip})"
+            )
+
+            logger.info(f"Ticket físico emitido via totem (fallback): {queue.prefix}{ticket['ticket_number']} (IP: {client_ip})")
+            return send_file(
+                pdf_buffer,
+                as_attachment=True,
+                download_name=f"ticket_{queue.prefix}{ticket['ticket_number']}.pdf",
+                mimetype='application/pdf'
+            )
+        except ValueError as e:
+            logger.error(f"Erro ao emitir ticket via totem (fallback) para queue_id={queue_id}: {str(e)}")
+            return jsonify({'error': str(e)}), 400
+        except SQLAlchemyError as e:
+            logger.error(f"Erro no banco de dados ao emitir ticket via totem (fallback) para queue_id={queue_id}: {str(e)}")
+            return jsonify({'error': 'Erro no banco de dados ao emitir ticket'}), 500
+        except Exception as e:
+            logger.error(f"Erro inesperado ao emitir ticket via totem (fallback) para queue_id={queue_id}: {str(e)}")
+            return jsonify({'error': 'Erro interno ao emitir ticket'}), 500
