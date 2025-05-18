@@ -13,6 +13,8 @@ import json
 from datetime import datetime, timedelta
 import pytz
 
+import app
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
