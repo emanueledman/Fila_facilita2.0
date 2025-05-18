@@ -2,7 +2,7 @@ import io
 from flask import jsonify, request, send_file
 from sqlalchemy import and_, String, func
 from sqlalchemy.orm import joinedload
-from . import db, socketio, redis_client
+from . import db, publish_queue_update, socketio, redis_client
 from .models import AuditLog, User, Queue, Ticket, Branch, UserRole, Department, BranchSchedule, AttendantQueue, DisplayQueue, InstitutionService
 from .auth import require_auth
 from .services import QueueService
