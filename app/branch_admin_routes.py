@@ -1397,7 +1397,7 @@ def init_branch_admin_routes(app):
                 details=f"Ticket {ticket.queue.prefix}{ticket.ticket_number} chamado no guichê {counter}"
             )
 
-            # Verificar alertas (mantido do trecho original)
+            # Verificar alertas
             if queue.active_tickets >= queue.daily_limit and user.notification_enabled:
                 alerts = user.notification_preferences.get('admin_alerts', {})
                 if alerts.get('queue_full', {}).get('enabled', False):
@@ -1432,7 +1432,6 @@ def init_branch_admin_routes(app):
             logger.error(f"Erro inesperado ao chamar próximo ticket na fila {queue_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao chamar ticket'}), 500
 
-    # Rota para completar um ticket (modificada)
     @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/tickets/<ticket_id>/complete', methods=['POST'])
     @require_auth
     def complete_ticket(branch_id, queue_id, ticket_id):
@@ -1471,16 +1470,21 @@ def init_branch_admin_routes(app):
             db.session.commit()
 
             redis_client.delete(f"cache:queues:{branch_id}")
-            emit_ticket_update(ticket)
-            QueueService.emit_dashboard_update(
-                institution_id=queue.department.branch.institution_id,
-                queue_id=queue_id,
-                event_type='ticket_completed',
-                data={
-                    'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
-                    'timestamp': datetime.utcnow().isoformat()
-                }
-            )
+            # [ALTERAÇÃO] Corrigir chamada a emit_ticket_update
+            emit_ticket_update(socketio, redis_client, ticket)
+            # [ALTERAÇÃO] Substituir QueueService.emit_dashboard_update por emit_dashboard_update
+            dashboard_data = {
+                'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
+                'ticket_id': ticket.id,
+                'queue_id': queue_id,
+                'status': ticket.status,
+                'service_name': queue.service.name if queue.service else 'N/A',
+                'branch_id': branch_id,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            emit_dashboard_update(socketio, branch_id=branch_id, queue_id=queue_id, event_type='ticket_completed', data=dashboard_data)
+            # [ALTERAÇÃO] Publicar atualização via Redis
+            publish_queue_update(queue_id, dashboard_data)
 
             AuditLog.create(
                 user_id=request.user_id,
