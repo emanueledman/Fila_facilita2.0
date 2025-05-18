@@ -9,9 +9,8 @@ from .services import QueueService
 from .utils.websocket_utils import emit_dashboard_update, emit_display_update
 from sqlalchemy.exc import SQLAlchemyError
 import logging
+from flask import current_app
 import json
-from app import app  # <-- isso é a instância criada no seu __init__.py
-
 from datetime import datetime, timedelta
 import pytz
 
@@ -24,7 +23,7 @@ def require_fixed_totem_token(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         token = request.headers.get('Totem-Token')
-        expected_token = app.config.get('TOTEM_TOKEN', 'h0gmVAmsj5kyhyVIlkZFF3lG4GJiqomF')
+        expected_token = current_app.config.get('TOTEM_TOKEN', 'h0gmVAmsj5kyhyVIlkZFF3lG4GJiqomF')
         client_ip = request.remote_addr
 
         if not token or token != expected_token:
