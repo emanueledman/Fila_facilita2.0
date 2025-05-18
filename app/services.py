@@ -584,44 +584,43 @@ class QueueService:
             local_tz = pytz.timezone('Africa/Luanda')
             today_start = datetime.now(local_tz).replace(hour=0, minute=0, second=0, microsecond=0)
             today_end = today_start + timedelta(days=1)
-            with db.session.begin():
-                last_ticket = Ticket.query.filter(
-                    Ticket.queue_id == queue.id,
-                    Ticket.issued_at >= today_start,
-                    Ticket.issued_at < today_end
-                ).order_by(Ticket.ticket_number.desc()).first()
-                ticket_number = last_ticket.ticket_number + 1 if last_ticket else 1
+            last_ticket = Ticket.query.filter(
+                Ticket.queue_id == queue.id,
+                Ticket.issued_at >= today_start,
+                Ticket.issued_at < today_end
+            ).order_by(Ticket.ticket_number.desc()).first()
+            ticket_number = last_ticket.ticket_number + 1 if last_ticket else 1
 
-                # Criar ticket
-                qr_code = QueueService.generate_qr_code()
-                expires_at = None
-                ticket = Ticket(
-                    id=str(uuid.uuid4()),
-                    queue_id=queue.id,
+            # Criar ticket
+            qr_code = QueueService.generate_qr_code()
+            expires_at = None
+            ticket = Ticket(
+                id=str(uuid.uuid4()),
+                queue_id=queue.id,
+                user_id=user_id,
+                ticket_number=ticket_number,
+                qr_code=qr_code,
+                priority=priority,
+                is_physical=False,
+                expires_at=expires_at,
+                issued_at=datetime.utcnow(),
+                status='Pendente'
+            )
+            queue.active_tickets += 1
+            db.session.add(ticket)
+
+            # Registrar comportamento do usuário, se aplicável
+            service_id = queue.service_id
+            if service_id:
+                behavior = UserBehavior(
                     user_id=user_id,
-                    ticket_number=ticket_number,
-                    qr_code=qr_code,
-                    priority=priority,
-                    is_physical=False,
-                    expires_at=expires_at,
-                    issued_at=datetime.utcnow(),
-                    status='Pendente'
+                    service_id=service_id,
+                    action='ticket_emission',
+                    timestamp=datetime.utcnow()
                 )
-                queue.active_tickets += 1
-                db.session.add(ticket)
+                db.session.add(behavior)
 
-                # Registrar comportamento do usuário, se aplicável
-                service_id = queue.service_id
-                if service_id:
-                    behavior = UserBehavior(
-                        user_id=user_id,
-                        service_id=service_id,
-                        action='ticket_emission',
-                        timestamp=datetime.utcnow()
-                    )
-                    db.session.add(behavior)
-
-            # Commit já é feito pelo with db.session.begin()
+            db.session.commit()
 
             db.session.refresh(ticket)
             if not ticket.queue:
@@ -649,7 +648,6 @@ class QueueService:
             db.session.rollback()
             logger.error(f"Erro ao adicionar ticket à fila {queue_id or service}: {e}")
             raise
-
 
     @staticmethod
     def generate_physical_ticket_for_totem(queue_id: str, branch_id: str, client_ip: str) -> Dict[str, Any]:
