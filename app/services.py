@@ -10,7 +10,7 @@ from datetime import datetime, time, timedelta
 from .models import Queue, Ticket, AuditLog, Department, Institution, User, UserPreference, Weekday, Branch, InstitutionService, ServiceCategory, ServiceTag, UserBehavior, UserLocationFallback, NotificationLog, BranchSchedule
 from .ml_models import wait_time_predictor, service_recommendation_predictor, clustering_model, demand_model
 from . import db, redis_client, socketio
-from .updates import emit_ticket_update, emit_dashboard_update
+from .utils.websocket_utils import emit_ticket_update, emit_dashboard_update
 from .app import publish_queue_update
 from .utils.pdf_generator import generate_ticket_pdf, generate_physical_ticket_pdf
 from firebase_admin import messaging
