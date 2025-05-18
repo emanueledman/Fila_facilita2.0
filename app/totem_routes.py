@@ -1,5 +1,5 @@
 import io
-from flask import jsonify, request, send_file
+from flask import  app,jsonify, request, send_file
 from sqlalchemy import and_
 from sqlalchemy.orm import joinedload
 from functools import wraps
@@ -13,7 +13,6 @@ import json
 from datetime import datetime, timedelta
 import pytz
 
-import app
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
