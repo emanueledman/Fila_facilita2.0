@@ -1172,9 +1172,9 @@ def init_branch_admin_routes(app):
             return jsonify({'error': 'Erro ao buscar tela de acompanhamento'}), 500
 
     # Adicionar Fila à Tela de Acompanhamento
-    @app.route('/api/branch_admin/branches/<branch_id>/display/queues', methods=['POST'])
+    @app.route('/api/branch_adminn/branches/<branch_id>/display/queues', methods=['POST'])
     @require_auth
-    def add_queue_to_display(branch_id):
+    def add_queue_to_displays(branch_id):
         user = User.query.get(request.user_id)
         if not user or user.user_role != UserRole.BRANCH_ADMIN or user.branch_id != branch_id:
             logger.warning(f"Tentativa não autorizada de adicionar fila à tela por user_id={request.user_id}")
