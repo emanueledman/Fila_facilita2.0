@@ -1,4 +1,6 @@
 from flask import jsonify, request, send_file
+
+from app.utils.websocket_utils import emit_dashboard_update
 from . import db, socketio, redis_client
 from .models import AuditLog, InstitutionType, User, Queue, Ticket, Department, Institution, UserRole, Branch, ServiceCategory, ServiceTag, UserPreference
 from .auth import require_auth
@@ -17,88 +19,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def init_admin_routes(app):
-    def emit_dashboard_update(institution_id, queue_id, event_type, data):
-        """Função auxiliar para emitir atualizações ao painel via WebSocket."""
-        try:
-            socketio.emit('dashboard_update', {
-                'institution_id': institution_id,
-                'queue_id': queue_id,
-                'event_type': event_type,
-                'data': data
-            }, room=institution_id, namespace='/dashboard')
-            logger.info(f"Atualização de painel emitida: institution_id={institution_id}, event_type={event_type}")
-        except Exception as e:
-            logger.error(f"Erro ao emitir atualização de painel: {str(e)}")
-
-    @app.route('/api/admin/institutions', methods=['POST'])
-    @require_auth
-    def create_institution():
-        user = User.query.get(request.user_id)
-        if not user or user.user_role != UserRole.SYSTEM_ADMIN:
-            logger.warning(f"Tentativa não autorizada de criar instituição por user_id={request.user_id}")
-            return jsonify({'error': 'Acesso restrito a super administradores'}), 403
-
-        data = request.get_json()
-        required = ['name', 'institution_type_id', 'max_branches']
-        if not data or not all(f in data for f in required):
-            logger.warning("Campos obrigatórios faltando na criação de instituição")
-            return jsonify({'error': 'Campos obrigatórios faltando: name, institution_type_id, max_branches'}), 400
-
-        # Validações
-        if not re.match(r'^[A-Za-zÀ-ÿ\s0-9.,-]{1,100}$', data['name']):
-            logger.warning(f"Nome inválido para instituição: {data['name']}")
-            return jsonify({'error': 'Nome da instituição inválido'}), 400
-        if Institution.query.filter_by(name=data['name']).first():
-            logger.warning(f"Instituição com nome {data['name']} já existe")
-            return jsonify({'error': 'Instituição com este nome já existe'}), 400
-        if not InstitutionType.query.get(data['institution_type_id']):
-            logger.warning(f"Tipo de instituição {data['institution_type_id']} não encontrado")
-            return jsonify({'error': 'Tipo de instituição inválido'}), 400
-        if not isinstance(data['max_branches'], int) or data['max_branches'] < 1:
-            logger.warning(f"Limite de filiais inválido: {data['max_branches']}")
-            return jsonify({'error': 'O limite de filiais deve ser um número inteiro maior que 0'}), 400
-
-        try:
-            institution = Institution(
-                id=str(uuid.uuid4()),
-                name=data['name'],
-                institution_type_id=data['institution_type_id'],
-                description=data.get('description'),
-                max_branches=data['max_branches']
-            )
-            db.session.add(institution)
-            db.session.commit()
-
-            socketio.emit('institution_created', {
-                'institution_id': institution.id,
-                'name': institution.name,
-                'description': institution.description,
-                'max_branches': institution.max_branches
-            }, namespace='/admin')
-            AuditLog.create(
-                user_id=user.id,
-                action='create_institution',
-                resource_type='institution',
-                resource_id=institution.id,
-                details=f"Criada instituição {institution.name} com limite de {institution.max_branches} filiais"
-            )
-            logger.info(f"Instituição {institution.name} criada por user_id={user.id}")
-            redis_client.delete(f"cache:search:*")
-            return jsonify({
-                'message': 'Instituição criada com sucesso',
-                'institution': {
-                    'id': institution.id,
-                    'name': institution.name,
-                    'description': institution.description,
-                    'institution_type_id': institution.institution_type_id,
-                    'max_branches': institution.max_branches
-                }
-            }), 201
-        except Exception as e:
-            db.session.rollback()
-            logger.error(f"Erro ao criar instituição: {str(e)}")
-            return jsonify({'error': 'Erro interno ao criar instituição'}), 500
-
     @app.route('/api/admin/institutions/<institution_id>', methods=['PUT'])
     @require_auth
     def update_institution(institution_id):

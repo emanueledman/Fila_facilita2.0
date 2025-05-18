@@ -1,10 +1,11 @@
 from flask import jsonify, request
 from flask_socketio import emit
+
+from app.utils.websocket_utils import emit_ticket_update
 from . import db, socketio, redis_client
 from .models import AuditLog, User, Queue, Ticket, Department, Branch, Institution, UserRole, AttendantQueue
 from .auth import require_auth
 from .services import QueueService
-from .queue_reco import emit_ticket_update
 from sqlalchemy.orm import joinedload
 import logging
 import uuid

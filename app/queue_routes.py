@@ -30,73 +30,7 @@ def init_queue_routes(app):
         return f"{endpoint}:{params}"
 
 
-    @socketio.on('connect', namespace='/')
-    def handle_connect():
-        """Gerencia conexão WebSocket."""
-        try:
-            token = request.args.get('token')
-            if not token:
-                logger.warning("Token não fornecido na conexão WebSocket")
-                raise ConnectionRefusedError('Token não fornecido')
-
-            decoded_token = auth.verify_id_token(token)
-            user_id = decoded_token.get('uid')
-            if not user_id:
-                logger.warning("ID do usuário não encontrado no token")
-                raise ConnectionRefusedError('ID do usuário inválido')
-
-            join_room(user_id)
-            logger.info(f"Usuário {user_id} conectado ao WebSocket")
-        except Exception as e:
-            logger.error(f"Erro na conexão WebSocket: {str(e)}")
-            raise ConnectionRefusedError('Autenticação falhou')
-
-    @socketio.on('disconnect', namespace='/')
-    def handle_disconnect():
-        """Gerencia desconexão WebSocket."""
-        try:
-            user_id = request.sid
-            leave_room(user_id)
-            logger.info(f"Usuário {user_id} desconectado do WebSocket")
-        except Exception as e:
-            logger.error(f"Erro na desconexão WebSocket: {str(e)}")
-
-    @socketio.on('connect', namespace='/dashboard')
-    def handle_dashboard_connect():
-        """Gerencia conexão WebSocket para painel."""
-        try:
-            token = request.args.get('token')
-            if not token:
-                logger.warning("Token não fornecido na conexão WebSocket do painel")
-                raise ConnectionRefusedError('Token não fornecido')
-
-            decoded_token = auth.verify_id_token(token)
-            user_id = decoded_token.get('uid')
-            user = User.query.get(user_id)
-            if not user or user.user_role not in [UserRole.BRANCH_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.SYSTEM_ADMIN]:
-                logger.warning(f"Usuário {user_id} não autorizado para painel")
-                raise ConnectionRefusedError('Acesso não autorizado')
-
-            institution_id = user.institution_id if user.user_role == UserRole.INSTITUTION_ADMIN else request.args.get('institution_id')
-            if not institution_id:
-                logger.warning("institution_id não fornecido")
-                raise ConnectionRefusedError('institution_id não fornecido')
-
-            join_room(institution_id)
-            logger.info(f"Usuário {user_id} conectado ao painel WebSocket para institution_id={institution_id}")
-        except Exception as e:
-            logger.error(f"Erro na conexão WebSocket do painel: {str(e)}")
-            raise ConnectionRefusedError('Autenticação falhou')
-
-    @socketio.on('disconnect', namespace='/dashboard')
-    def handle_dashboard_disconnect():
-        """Gerencia desconexão WebSocket para painel."""
-        try:
-            user_id = request.sid
-            logger.info(f"Usuário {user_id} desconectado do painel WebSocket")
-        except Exception as e:
-            logger.error(f"Erro na desconexão WebSocket do painel: {str(e)}")
-            
+    
     @app.route("/api/ping")
     def ping():
         return "pong", 200

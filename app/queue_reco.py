@@ -1,5 +1,7 @@
 from flask import jsonify, request, send_file
 from flask_socketio import join_room, leave_room, ConnectionRefusedError
+
+from app.utils.websocket_utils import emit_dashboard_update, emit_ticket_update
 from . import db, socketio, redis_client
 from .models import AuditLog, Institution,Branch, Queue, Ticket, User, Department, UserRole, InstitutionType, InstitutionService, ServiceCategory, ServiceTag, UserPreference, BranchSchedule, UserBehavior, NotificationLog, Weekday
 from .services import QueueService
@@ -22,73 +24,6 @@ from sqlalchemy.exc import SQLAlchemyError
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Função de notificação (fornecida)
-def emit_ticket_update(ticket):
-    try:
-        if not ticket or not ticket.user_id or ticket.user_id == 'PRESENCIAL' or ticket.is_physical:
-            logger.warning(f"Não é possível emitir atualização para ticket_id={ticket.id}: usuário inválido ou ticket presencial")
-            return
-
-        user = User.query.get(ticket.user_id)
-        if not user:
-            logger.warning(f"Usuário não encontrado para ticket_id={ticket.id}, user_id={ticket.user_id}")
-            return
-
-        ticket_data = {
-            'ticket_id': ticket.id,
-            'queue_id': ticket.queue_id,
-            'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
-            'status': ticket.status,
-            'priority': ticket.priority,
-            'is_physical': ticket.is_physical,
-            'issued_at': ticket.issued_at.isoformat(),
-            'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None,
-            'counter': ticket.counter
-        }
-
-        mensagens_status = {
-            'Pendente': f"Sua senha {ticket_data['ticket_number']} está aguardando atendimento.",
-            'Chamado': f"Sua senha {ticket_data['ticket_number']} foi chamada no guichê {ticket_data['counter']}. Dirija-se ao atendimento.",
-            'Atendido': f"Sua senha {ticket_data['ticket_number']} foi atendida com sucesso.",
-            'Cancelado': f"Sua senha {ticket_data['ticket_number']} foi cancelada."
-        }
-        mensagem = mensagens_status.get(ticket.status, f"Sua senha {ticket_data['ticket_number']} foi atualizada: {ticket.status}")
-
-        cache_key = f"notificacao:throttle:{ticket.user_id}:{ticket.id}"
-        if redis_client.get(cache_key):
-            logger.debug(f"Notificação suprimida para ticket_id={ticket.id} devido a throttling")
-            return
-        redis_client.setex(cache_key, 60, "1")
-
-        QueueService.send_notification(
-            fcm_token=user.fcm_token,
-            message=mensagem,
-            ticket_id=ticket.id,
-            via_websocket=True,
-            user_id=ticket.user_id
-        )
-
-        try:
-            socketio.emit('ticket_update', ticket_data, namespace='/', room=str(ticket.user_id))
-            logger.info(f"Atualização de ticket emitida via WebSocket: ticket_id={ticket.id}, user_id={ticket.user_id}")
-        except Exception as e:
-            logger.error(f"Erro ao emitir atualização WebSocket para ticket_id={ticket.id}: {str(e)}")
-    except Exception as e:
-        logger.error(f"Erro geral ao processar atualização de ticket_id={ticket.id}: {str(e)}")
-
-
-def emit_dashboard_update(institution_id, queue_id, event_type, data):
-    try:
-        socketio.emit('dashboard_update', {
-            'institution_id': institution_id,
-            'queue_id': queue_id,
-            'event_type': event_type,
-            'data': data
-        }, room=institution_id, namespace='/dashboard')
-        logger.info(f"Atualização de painel emitida: institution_id={institution_id}, event_type={event_type}")
-    except Exception as e:
-        logger.error(f"Erro ao emitir atualização de painel: {str(e)}")
-        
 
 def init_queue_reco(app):
     

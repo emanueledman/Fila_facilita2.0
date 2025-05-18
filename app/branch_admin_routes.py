@@ -14,7 +14,7 @@ from flask import jsonify, request
 from sqlalchemy import desc
 from datetime import datetime
 from flask_socketio import emit
-from .utils.websocket_utils import emit_dashboard_update, emit_display_update
+from .utils.websocket_utils import emit_dashboard_update, emit_display_update, emit_ticket_update
 
 import uuid
 from datetime import datetime, timedelta
@@ -23,23 +23,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def init_branch_admin_routes(app):
-
-    def emit_ticket_update(ticket):
-        try:
-            branch_id = ticket.queue.department.branch_id
-            data = {
-                'ticket_id': ticket.id,
-                'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
-                'queue_id': ticket.queue_id,
-                'counter': f"Guichê {ticket.counter:02d}" if ticket.counter else 'N/A',
-                'status': ticket.status,
-                'service_name': ticket.queue.service.name if ticket.queue.service else 'N/A'
-            }
-            socketio.emit('ticket_updated', data, room=f'branch_{branch_id}', namespace='/branch_admin')
-            emit_display_update(branch_id, 'ticket_updated', data)
-            logger.info(f"Ticket atualizado: ticket_id={ticket.id}, status={ticket.status}")
-        except Exception as e:
-            logger.error(f"Erro ao emitir atualização de ticket: {str(e)}")
 
     # Perfil do Administrador
     @app.route('/api/branch_admin/profile', methods=['GET'])
@@ -1391,7 +1374,7 @@ def init_branch_admin_routes(app):
 
             redis_client.delete(f"cache:queues:{branch_id}")
             emit_ticket_update(ticket)
-            QueueService.emit_dashboard_update(
+            emit_dashboard_update(
                 institution_id=queue.department.branch.institution_id,
                 queue_id=queue_id,
                 event_type='ticket_called',

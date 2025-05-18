@@ -1,5 +1,7 @@
 from flask import jsonify, request, send_file
 from flask_socketio import join_room, leave_room, ConnectionRefusedError
+
+from app.utils.websocket_utils import emit_ticket_update
 from . import db, socketio, redis_client
 from .models import AuditLog, Institution,Branch, Queue, Ticket, User, Department, UserRole, InstitutionType, InstitutionService, ServiceCategory, ServiceTag, UserPreference, BranchSchedule, UserBehavior, NotificationLog, Weekday
 from .services import QueueService
