@@ -370,9 +370,8 @@ def init_totem_routes(app):
 
         try:
             display_queues = DisplayQueue.query.filter_by(branch_id=branch_id).options(
-                joinedload(DisplayQueue.queue)
-                    .joinedload(Queue.department)
-                    .joinedload(Queue.service)
+                joinedload(DisplayQueue.queue).joinedload(Queue.department),
+                joinedload(DisplayQueue.queue).joinedload(Queue.service)
             ).order_by(DisplayQueue.display_order).all()
 
             local_tz = pytz.timezone('Africa/Luanda')
