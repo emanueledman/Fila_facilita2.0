@@ -1314,7 +1314,7 @@ def init_branch_admin_routes(app):
             db.session.rollback()
             logger.error(f"Erro ao remover fila da tela: {str(e)}")
             return jsonify({'error': 'Erro ao remover fila da tela'}), 500
-        
+
     @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/call', methods=['POST'])
     @require_auth
     def call_next_ticket(branch_id, queue_id):
@@ -1373,17 +1373,21 @@ def init_branch_admin_routes(app):
             db.session.commit()
 
             redis_client.delete(f"cache:queues:{branch_id}")
-            emit_ticket_update(ticket)
-            emit_dashboard_update(
-                institution_id=queue.department.branch.institution_id,
-                queue_id=queue_id,
-                event_type='ticket_called',
-                data={
-                    'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
-                    'counter': counter,
-                    'timestamp': datetime.utcnow().isoformat()
-                }
-            )
+            # [ALTERAÇÃO] Corrigir chamada a emit_ticket_update
+            emit_ticket_update(socketio, redis_client, ticket)
+
+            # Publicar atualização via Redis para o listener
+            dashboard_data = {
+                'ticket_id': ticket.id,
+                'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
+                'counter': counter,
+                'queue_id': queue_id,
+                'status': ticket.status,
+                'service_name': queue.service.name if queue.service else 'N/A',
+                'branch_id': branch_id,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            publish_queue_update(queue_id, dashboard_data)
 
             AuditLog.create(
                 user_id=request.user_id,
@@ -1393,7 +1397,7 @@ def init_branch_admin_routes(app):
                 details=f"Ticket {ticket.queue.prefix}{ticket.ticket_number} chamado no guichê {counter}"
             )
 
-            # Verificar alertas (mantido do primeiro trecho)
+            # Verificar alertas (mantido do trecho original)
             if queue.active_tickets >= queue.daily_limit and user.notification_enabled:
                 alerts = user.notification_preferences.get('admin_alerts', {})
                 if alerts.get('queue_full', {}).get('enabled', False):
@@ -1427,7 +1431,7 @@ def init_branch_admin_routes(app):
             db.session.rollback()
             logger.error(f"Erro inesperado ao chamar próximo ticket na fila {queue_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao chamar ticket'}), 500
-    
+
     # Rota para completar um ticket (modificada)
     @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/tickets/<ticket_id>/complete', methods=['POST'])
     @require_auth
