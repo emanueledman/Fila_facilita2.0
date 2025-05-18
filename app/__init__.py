@@ -1,7 +1,5 @@
 import logging
 import eventlet
-
-from app.models import Queue
 eventlet.monkey_patch()
 
 from flask import Flask, jsonify, request

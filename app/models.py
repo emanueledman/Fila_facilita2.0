@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Float, Time, Boolean, DateTime, ForeignKey, Enum, Index, Text, JSON
 from sqlalchemy.orm import relationship
-from . import db
+from app import db
 from datetime import datetime
 import bcrypt
 import uuid
