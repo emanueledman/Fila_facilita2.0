@@ -378,7 +378,7 @@ def init_totem_routes(app):
             now = datetime.now(local_tz)
             current_weekday = now.strftime('%A').upper()
             current_time = now.time()
-            schedule = Branch.query.get(branch_id).schedules.filter_by(weekday=current_weekday).first()
+            schedule = BranchSchedule.query.filter_by(branch_id=branch_id, weekday=current_weekday).first()
 
             response = {
                 'branch_id': branch_id,
