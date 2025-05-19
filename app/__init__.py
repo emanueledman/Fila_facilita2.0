@@ -11,9 +11,8 @@ from flask_cors import CORS
 from redis import Redis
 import os
 from dotenv import load_dotenv
-from flask import jsonify
 from sqlalchemy import text
-import json  # [ALTERAÇÃO] Adicionado para serialização JSON no Redis Pub/Sub
+import json
 
 load_dotenv()
 
@@ -22,11 +21,11 @@ socketio = SocketIO()
 limiter = Limiter(key_func=get_remote_address)
 redis_client = Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379/0'))
 
-# [ALTERAÇÃO] Função para publicar atualizações de fila no Redis
+# Função para publicar atualizações de fila no Redis
 def publish_queue_update(queue_id, data):
     redis_client.publish(f'queue:{queue_id}:updates', json.dumps(data))
 
-# [ALTERAÇÃO] Listener Redis para propagar atualizações via SocketIO
+# Listener Redis para propagar atualizações via SocketIO
 def start_background_listener():
     pubsub = redis_client.pubsub()
     pubsub.psubscribe('queue:*:updates')
@@ -38,8 +37,8 @@ def start_background_listener():
 
 def create_app():
     app = Flask(__name__)
-    
-    # Configurações básicas (inalteradas)
+
+    # Configurações básicas
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', '1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0')
     app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', '1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0')
     database_url = os.getenv('DATABASE_URL')
@@ -50,17 +49,16 @@ def create_app():
         database_url = database_url.replace('postgres://', 'postgresql://')
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    # [ALTERAÇÃO] Adicionado opções de pool para robustez na conexão com o banco
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         'pool_size': 20,
         'max_overflow': 10,
         'pool_timeout': 30,
         'pool_pre_ping': True
     }
-    
+
     app.redis_client = redis_client
-    
-    # Configurar logging (inalterado)
+
+    # Configurar logging
     handler = logging.handlers.RotatingFileHandler(
         'queue_service.log', maxBytes=1024*1024, backupCount=10
     )
@@ -72,11 +70,11 @@ def create_app():
         app.logger.addHandler(handler)
     app.logger.setLevel(logging.INFO if os.getenv('FLASK_ENV') == 'production' else logging.DEBUG)
     app.logger.info(f"Iniciando com banco de dados: {app.config['SQLALCHEMY_DATABASE_URI']}")
-    
-    # Configurações do SocketIO (inalterado)
+
+    # Configurações do SocketIO
     app.config['SOCKETIO_LOGGER'] = os.getenv('FLASK_ENV') != 'production'
     app.config['SOCKETIO_ENGINEIO_LOGGER'] = os.getenv('FLASK_ENV') != 'production'
-    
+
     # Configurar CORS com Totem-Token
     CORS(app, resources={r"/api/*": {
         "origins": [
@@ -88,11 +86,10 @@ def create_app():
             "null"
         ],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization", "Totem-Token"],  # Adicionado Totem-Token
+        "allow_headers": ["Content-Type", "Authorization", "Totem-Token"],
         "supports_credentials": True
     }})
-    
-    # Resto do código permanece EXATAMENTE COMO ESTÁ
+
     db.init_app(app)
     socketio.init_app(
         app,
@@ -109,15 +106,15 @@ def create_app():
         engineio_logger=os.getenv('FLASK_ENV') != 'production',
         message_queue=os.getenv('REDIS_URL', 'rediss://red-d053vpre5dus738stejg:yUiGYAY9yrGzyXvw2LyUPzoRqkdwY3Og@oregon-keyvalue.render.com:6379/0'),
         manage_session=False,
-        namespace='/queue'  # [ALTERAÇÃO] Adicionado namespace para eventos de fila
+        namespace='/queue'
     )
     limiter.init_app(app)
-    
+
     limiter.storage_uri = os.getenv('REDIS_URL', 'rediss://red-d053vpre5dus738stejg:yUiGYAY9yrGzyXvw2LyUPzoRqkdwY3Og@oregon-keyvalue.render.com:6379/0')
-    
-    # [ALTERAÇÃO] Iniciar listener Redis
+
+    # Iniciar listener Redis
     socketio.start_background_task(start_background_listener)
-    
+
     from .routes import init_routes
     from .queue_routes import init_queue_routes
     from .user_routes import init_user_routes
@@ -138,7 +135,7 @@ def create_app():
     init_attendant_routes(app)
     init_branch_admin_routes(app)
 
-    # [ALTERAÇÃO] Adicionado decorador para verificar Totem-Token
+    # Decorador para verificar Totem-Token
     def require_fixed_totem_token(f):
         def decorated(*args, **kwargs):
             token = request.headers.get('Totem-Token')
@@ -147,7 +144,7 @@ def create_app():
             return f(*args, **kwargs)
         return decorated
 
-    # [ALTERAÇÃO] Rota para tela de acompanhamento de filas
+    # Rota para tela de acompanhamento de filas
     @app.route('/api/totem/branches/<branch_id>/display', methods=['GET'])
     @require_fixed_totem_token
     def display_queues(branch_id):
@@ -158,62 +155,50 @@ def create_app():
             'current_number': q.current_number
         } for q in queues])
 
-    # Rota para inicializar o banco de dados
+    # Rota para adicionar coluna de notificação
     @app.route('/add-notification-type', methods=['POST'])
     @limiter.limit("5 per minute")
     def add_notification_type():
         try:
             with db.engine.connect() as conn:
-                # Verifica se a coluna já existe
                 if db.engine.dialect.name == 'postgresql':
                     exists_query = text("SELECT column_name FROM information_schema.columns WHERE table_name='notification_log' AND column_name='type'")
                     result = conn.execute(exists_query).fetchone()
                     if not result:
-                        # Adiciona a coluna se não existir
                         conn.execute(text("ALTER TABLE notification_log ADD COLUMN type VARCHAR(50) DEFAULT 'standard' NOT NULL"))
                         conn.commit()
                 else:
-                    # Para SQLite
                     conn.execute(text("ALTER TABLE notification_log ADD COLUMN type VARCHAR(50) DEFAULT 'standard' NOT NULL"))
                     conn.commit()
-                
             return jsonify({"status": "success", "message": "Coluna 'type' adicionada à tabela notification_log"})
         except Exception as e:
             return jsonify({"status": "error", "message": str(e)})
 
+    # Rota para inicializar o banco de dados
     @app.route('/init-db', methods=['POST'])
-    @limiter.limit("5 per minute")  # Limitar a 5 requisições por minuto
+    @limiter.limit("5 per minute")
     def init_db():
         with app.app_context():
             from .models import Institution, Queue, User, Ticket, Department, UserPreference, UserRole, Branch, ServiceCategory, ServiceTag, AuditLog, BranchSchedule
             from .data_init import populate_initial_data
 
             try:
-                # Obter o engine do banco de dados
                 engine = db.get_engine()
                 with engine.connect() as conn:
-                    # Limpar completamente o banco de dados
                     if engine.dialect.name == 'postgresql':
-                        # Para PostgreSQL, dropar o esquema public e recriá-lo
                         conn.execute(text("DROP SCHEMA public CASCADE;"))
                         conn.execute(text("CREATE SCHEMA public;"))
                         conn.commit()
                         app.logger.info("Esquema 'public' do PostgreSQL limpo com DROP SCHEMA CASCADE e recriado.")
                     else:
-                        # Para outros bancos (SQLite, MySQL, etc.), usar db.drop_all()
                         db.drop_all()
                         app.logger.info("Todas as tabelas removidas usando db.drop_all().")
 
-                # Recriar todas as tabelas com base nos modelos
                 db.create_all()
                 app.logger.info("Tabelas criadas com sucesso no banco de dados.")
-
-                # Popular dados iniciais
                 populate_initial_data(app)
                 app.logger.info("Dados iniciais populados com sucesso usando populate_initial_data().")
 
-                # Opcional: Inicializar modelos de ML
-                app.logger.debug("Tentando importar e inicializar preditores de ML.")
                 try:
                     from .ml_models import wait_time_predictor, service_recommendation_predictor, collaborative_model, demand_model, clustering_model
                     app.logger.info("Preditores de ML importados com sucesso.")

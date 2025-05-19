@@ -1067,30 +1067,63 @@ def init_queue_reco(app):
     @app.route('/api/update_fcm_token', methods=['POST'])
     @require_auth
     def update_fcm_token():
+        """Atualiza o FCM token do usuário e verifica notificações pendentes."""
         user_id = request.user_id
         data = request.get_json()
         fcm_token = data.get('fcm_token')
         email = data.get('email')
 
+        # Validação de entrada
         if not fcm_token or not email:
             logger.error(f"FCM token ou email não fornecidos por user_id={user_id}")
             return jsonify({'error': 'FCM token e email são obrigatórios'}), 400
 
-        user = User.query.get(user_id)
-        if not user:
-            user = User(id=user_id, email=email, name="Usuário Desconhecido", active=True)
-            db.session.add(user)
-            logger.info(f"Novo usuário criado: user_id={user_id}, email={email}")
-        else:
-            if user.email != email:
-                logger.warning(f"Email fornecido ({email}) não corresponde ao user_id={user_id}")
-                return jsonify({'error': 'Email não corresponde ao usuário autenticado'}), 403
-            user.fcm_token = fcm_token
+        # Validação básica do fcm_token (exemplo: não vazio e string)
+        if not isinstance(fcm_token, str) or len(fcm_token.strip()) < 10:  # Tamanho mínimo arbitrário
+            logger.error(f"FCM token inválido fornecido por user_id={user_id}: {fcm_token}")
+            return jsonify({'error': 'FCM token inválido'}), 400
 
-        db.session.commit()
-        logger.info(f"FCM token atualizado para user_id={user_id}, email={email}")
-        QueueService.check_proximity_notifications(user_id, user.last_known_lat, user.last_known_lon)
-        return jsonify({'message': 'FCM token atualizado com sucesso'}), 200
+        try:
+            user = User.query.get(user_id)
+            if not user:
+                user = User(id=user_id, email=email, name="Usuário Desconhecido", active=True, fcm_token=fcm_token)
+                db.session.add(user)
+                logger.info(f"Novo usuário criado: user_id={user_id}, email={email}, fcm_token={fcm_token[:20]}...")
+            else:
+                if user.email != email:
+                    logger.warning(f"Email fornecido ({email}) não corresponde ao user_id={user_id} (email registrado: {user.email})")
+                    return jsonify({'error': 'Email não corresponde ao usuário autenticado'}), 403
+                user.fcm_token = fcm_token
+                logger.info(f"FCM token atualizado para user_id={user_id}, email={email}, fcm_token={fcm_token[:20]}...")
+
+            db.session.commit()
+
+            # Verificar notificações de proximidade, se localização disponível
+            if user.last_known_lat and user.last_known_lon:
+                try:
+                    QueueService.check_proximity_notifications(user_id, user.last_known_lat, user.last_known_lon)
+                    logger.debug(f"Verificação de notificações de proximidade executada para user_id={user_id}")
+                except Exception as e:
+                    logger.error(f"Erro ao verificar notificações de proximidade para user_id={user_id}: {str(e)}")
+
+            # Verificar tickets pendentes e enviar notificações proativas
+            try:
+                tickets = Ticket.query.filter_by(user_id=user_id, status='Pendente').order_by(Ticket.issued_at.desc()).limit(5).all()
+                for ticket in tickets:
+                    emit_ticket_update(socketio, redis_client, ticket, QueueService)
+                    logger.info(f"Notificação proativa enviada para ticket_id={ticket.id}, user_id={user_id}, status={ticket.status}")
+            except Exception as e:
+                logger.error(f"Erro ao verificar tickets pendentes para user_id={user_id}: {str(e)}")
+
+            return jsonify({'message': 'FCM token atualizado com sucesso'}), 200
+
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            logger.error(f"Erro no banco de dados ao atualizar FCM token para user_id={user_id}: {str(e)}")
+            return jsonify({'error': 'Erro interno ao processar a solicitação'}), 500
+        except Exception as e:
+            logger.error(f"Erro inesperado ao atualizar FCM token para user_id={user_id}: {str(e)}")
+            return jsonify({'error': 'Erro inesperado'}), 500
 
     @app.route('/api/ticket/<ticket_id>/validate', methods=['POST'])
     @require_auth

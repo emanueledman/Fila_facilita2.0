@@ -1,7 +1,7 @@
 import logging
 from flask_socketio import SocketIO, emit, join_room, leave_room, ConnectionRefusedError
 from flask import request
-from ..models import User, Queue, Ticket  # Importar modelos do código principal
+from ..models import User, Queue, Ticket
 from redis import Redis
 from .. import db, socketio, redis_client
 import firebase_admin
@@ -52,25 +52,13 @@ def emit_display_update(socketio: SocketIO, branch_id: str, event_type: str = 'd
         logger.error(f"Erro ao emitir atualização de tela: {str(e)}")
 
 def emit_ticket_update(socketio: SocketIO, redis_client: Redis, ticket: Ticket, queue_service):
-    """Emite atualização de ticket para usuário, painel e tela de totem.
-
-    Args:
-        socketio (SocketIO): Instância do SocketIO.
-        redis_client (Redis): Cliente Redis para throttling.
-        ticket (Ticket): Objeto Ticket a ser atualizado.
-        queue_service: Instância do serviço de filas para enviar notificações.
-    """
+    """Emite atualização de ticket para usuário, painel e tela de totem."""
     try:
-        # Notificação para o usuário (namespace '/queue')
-        if not ticket or not ticket.user_id or ticket.user_id == 'PRESENCIAL' or ticket.is_physical:
-            logger.warning(f"Não é possível emitir atualização para ticket_id={ticket.id}: usuário inválido ou ticket presencial")
+        if not ticket:
+            logger.warning(f"Ticket inválido fornecido")
             return
 
-        user = User.query.get(ticket.user_id)
-        if not user:
-            logger.warning(f"Usuário não encontrado para ticket_id={ticket.id}, user_id={ticket.user_id}")
-            return
-
+        # Preparar dados do ticket
         ticket_data = {
             'ticket_id': ticket.id,
             'queue_id': ticket.queue_id,
@@ -93,22 +81,38 @@ def emit_ticket_update(socketio: SocketIO, redis_client: Redis, ticket: Ticket, 
         }
         mensagem = mensagens_status.get(ticket.status, f"Sua senha {ticket_data['ticket_number']} foi atualizada: {ticket.status}")
 
-        cache_key = f"notificacao:throttle:{ticket.user_id}:{ticket.id}"
-        if redis_client.get(cache_key):
-            logger.debug(f"Notificação suprimida para ticket_id={ticket.id} devido a throttling")
-            return
-        redis_client.setex(cache_key, 60, "1")
+        # Notificação para o usuário
+        if ticket.user_id and ticket.user_id != 'PRESENCIAL' and not ticket.is_physical:
+            user = User.query.get(ticket.user_id)
+            if not user:
+                logger.warning(f"Usuário não encontrado para ticket_id={ticket.id}, user_id={ticket.user_id}")
+                return
 
-        queue_service.send_notification(
-            fcm_token=user.fcm_token,
-            message=mensagem,
-            ticket_id=ticket.id,
-            via_websocket=True,
-            user_id=ticket.user_id
-        )
+            # Throttling de notificações
+            cache_key = f"notificacao:throttle:{ticket.user_id}:{ticket.id}"
+            if redis_client.get(cache_key):
+                logger.debug(f"Notificação suprimida para ticket_id={ticket.id} devido a throttling")
+                return
+            redis_client.setex(cache_key, 60, "1")
 
-        socketio.emit('ticket_update', {'event': 'ticket_update', 'data': ticket_data}, namespace='/queue', room=str(ticket.user_id))
-        logger.info(f"Atualização de ticket emitida via WebSocket: ticket_id={ticket.id}, user_id={ticket.user_id}")
+            # Enviar notificação via FCM (mesmo se WebSocket não estiver ativo)
+            queue_service.send_notification(
+                fcm_token=user.fcm_token,
+                message=mensagem,
+                ticket_id=ticket.id,
+                via_websocket=True,
+                user_id=ticket.user_id
+            )
+
+            # Tentar enviar via WebSocket (se usuário estiver conectado)
+            try:
+                socketio.emit('ticket_update', {'event': 'ticket_update', 'data': ticket_data}, namespace='/queue', room=str(ticket.user_id))
+                logger.info(f"Atualização de ticket emitida via WebSocket: ticket_id={ticket.id}, user_id={ticket.user_id}")
+            except Exception as e:
+                logger.debug(f"Usuário {ticket.user_id} não conectado ao WebSocket: {str(e)}. Notificação FCM já enviada.")
+
+        else:
+            logger.warning(f"Não é possível emitir atualização para ticket_id={ticket.id}: usuário inválido ou ticket presencial")
 
         # Notificação para painel e tela de totem
         branch_id = ticket.queue.department.branch_id
@@ -128,98 +132,55 @@ def emit_ticket_update(socketio: SocketIO, redis_client: Redis, ticket: Ticket, 
         logger.error(f"Erro geral ao processar atualização de ticket_id={ticket.id}: {str(e)}")
 
 # Manipuladores de conexão/desconexão
-@socketio.on('connect', namespace='/')
-def handle_connect():
-    """Gerencia conexão WebSocket para usuários."""
-    try:
-        token = request.args.get('token') or request.headers.get('Totem-Token')
-        if not token or not redis_client.get(f'totem_token:{token}'):
-            logger.warning("Token inválido ou não fornecido na conexão WebSocket")
-            raise ConnectionRefusedError('Token inválido')
-        
-        user_id = request.args.get('user_id')
-        if not user_id:
-            logger.warning("ID do usuário não fornecido")
-            raise ConnectionRefusedError('ID do usuário inválido')
-
-        join_room(user_id)
-        logger.info(f"Usuário {user_id} conectado ao WebSocket")
-    except Exception as e:
-        logger.error(f"Erro na conexão WebSocket: {str(e)}")
-        raise ConnectionRefusedError('Autenticação falhou')
-
-@socketio.on('disconnect', namespace='/')
-def handle_disconnect():
-    """Gerencia desconexão WebSocket para usuários."""
-    try:
-        user_id = request.sid
-        leave_room(user_id)
-        logger.info(f"Usuário {user_id} desconectado do WebSocket")
-    except Exception as e:
-        logger.error(f"Erro na desconexão WebSocket: {str(e)}")
-
 @socketio.on('connect', namespace='/queue')
 def handle_queue_connect():
     """Gerencia conexão WebSocket para usuários no namespace /queue."""
     try:
-        token = request.args.get('token')
         user_id = request.args.get('user_id')
-        logger.debug(f"WebSocket /queue connect attempt: token={token[:20]}..., user_id={user_id}, sid={request.sid}")
+        token = request.args.get('token')
 
-        if not token or not user_id:
-            logger.warning(f"Missing token or user_id: token={token}, user_id={user_id}")
-            raise ConnectionRefusedError('Missing token or user_id')
+        if not user_id:
+            logger.warning("ID do usuário não fornecido")
+            raise ConnectionRefusedError('ID do usuário inválido')
 
-        # Verificar token Firebase
+        # Verificação simplificada do token
+        if not token:
+            logger.warning("Token não fornecido")
+            raise ConnectionRefusedError('Token não fornecido')
+
+        # Verificar token Firebase apenas para autenticidade básica
         try:
             decoded_token = auth.verify_id_token(token)
             if decoded_token.get('uid') != user_id:
-                logger.warning(f"Token UID ({decoded_token.get('uid')}) does not match user_id ({user_id})")
-                raise ConnectionRefusedError('Invalid user_id')
-        except auth.InvalidIdTokenError as e:
-            logger.error(f"Invalid Firebase token: {str(e)}")
-            raise ConnectionRefusedError('Invalid Firebase token')
-        except auth.ExpiredIdTokenError as e:
-            logger.error(f"Expired Firebase token: {str(e)}")
-            raise ConnectionRefusedError('Expired Firebase token')
+                logger.warning(f"Token UID ({decoded_token.get('uid')}) não corresponde ao user_id ({user_id})")
+                raise ConnectionRefusedError('Token inválido')
+        except (auth.InvalidIdTokenError, auth.ExpiredIdTokenError) as e:
+            logger.error(f"Erro no token Firebase: {str(e)}")
+            raise ConnectionRefusedError('Token inválido ou expirado')
         except Exception as e:
-            logger.error(f"Firebase token verification failed: {str(e)}")
-            raise ConnectionRefusedError(f'Firebase token verification failed: {str(e)}')
+            logger.error(f"Falha na verificação do token: {str(e)}")
+            raise ConnectionRefusedError('Falha na verificação do token')
 
         join_room(user_id)
-        logger.info(f"User {user_id} connected to WebSocket on /queue, room={user_id}")
+        logger.info(f"Usuário {user_id} conectado ao WebSocket no namespace /queue")
         emit('connection_success', {'status': 'connected', 'user_id': user_id}, namespace='/queue', room=user_id)
+
     except ConnectionRefusedError as e:
-        logger.error(f"WebSocket /queue connection refused: {str(e)}")
+        logger.error(f"Conexão WebSocket /queue recusada: {str(e)}")
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in WebSocket /queue connection: {str(e)}")
-        raise ConnectionRefusedError(f'Unexpected error: {str(e)}')
-
-@socketio.on('join', namespace='/queue')
-def handle_queue_join(data):
-    """Gerencia mensagem de join no namespace /queue."""
-    try:
-        user_id = data.get('data')
-        logger.debug(f"WebSocket /queue join attempt: user_id={user_id}, data={data}")
-        if not user_id:
-            logger.warning("Missing user_id in join message")
-            return
-        join_room(user_id)
-        logger.info(f"User {user_id} joined room via join message on /queue")
-        emit('join_success', {'status': 'joined', 'user_id': user_id}, namespace='/queue', room=user_id)
-    except Exception as e:
-        logger.error(f"Error processing join message on /queue: {str(e)}")
+        logger.error(f"Erro inesperado na conexão WebSocket /queue: {str(e)}")
+        raise ConnectionRefusedError(f'Erro inesperado: {str(e)}')
 
 @socketio.on('disconnect', namespace='/queue')
 def handle_queue_disconnect():
     """Gerencia desconexão WebSocket no namespace /queue."""
     try:
         user_id = request.sid
-        logger.info(f"User {user_id} disconnected from WebSocket on /queue")
         leave_room(user_id)
+        logger.info(f"Usuário {user_id} desconectado do WebSocket no namespace /queue")
     except Exception as e:
-        logger.error(f"Error during WebSocket /queue disconnect: {str(e)}")
+        logger.error(f"Erro na desconexão WebSocket /queue: {str(e)}")
 
 @socketio.on('connect', namespace='/dashboard')
 def handle_dashboard_connect():
