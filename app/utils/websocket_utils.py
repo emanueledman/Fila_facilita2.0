@@ -69,8 +69,11 @@ def emit_ticket_update(socketio: SocketIO, redis_client: Redis, ticket: Ticket, 
             'issued_at': ticket.issued_at.isoformat(),
             'expires_at': ticket.expires_at.isoformat() if ticket.expires_at else None,
             'counter': ticket.counter,
-            'service': ticket.queue.service.name if ticket.queue.service else 'N/A',
-            'institution': ticket.queue.department.institution.name if ticket.queue.department.institution else 'N/A'
+            'service': ticket.queue.service.name if ticket.queue and ticket.queue.service else 'N/A',
+            'institution': (ticket.queue.department.branch.institution.name 
+                           if ticket.queue and ticket.queue.department and 
+                           ticket.queue.department.branch and 
+                           ticket.queue.department.branch.institution else 'N/A')
         }
 
         mensagens_status = {
@@ -95,7 +98,7 @@ def emit_ticket_update(socketio: SocketIO, redis_client: Redis, ticket: Ticket, 
                 return
             redis_client.setex(cache_key, 60, "1")
 
-            # Enviar notificação via FCM (mesmo se WebSocket não estiver ativo)
+            # Enviar notificação via FCM e/ou WebSocket
             queue_service.send_notification(
                 fcm_token=user.fcm_token,
                 message=mensagem,
@@ -104,7 +107,7 @@ def emit_ticket_update(socketio: SocketIO, redis_client: Redis, ticket: Ticket, 
                 user_id=ticket.user_id
             )
 
-            # Tentar enviar via WebSocket (se usuário estiver conectado)
+            # Tentar enviar via WebSocket
             try:
                 socketio.emit('ticket_update', {'event': 'ticket_update', 'data': ticket_data}, namespace='/queue', room=str(ticket.user_id))
                 logger.info(f"Atualização de ticket emitida via WebSocket: ticket_id={ticket.id}, user_id={ticket.user_id}")
@@ -115,22 +118,25 @@ def emit_ticket_update(socketio: SocketIO, redis_client: Redis, ticket: Ticket, 
             logger.warning(f"Não é possível emitir atualização para ticket_id={ticket.id}: usuário inválido ou ticket presencial")
 
         # Notificação para painel e tela de totem
-        branch_id = ticket.queue.department.branch_id
-        dashboard_data = {
-            'ticket_id': ticket.id,
-            'ticket_number': ticket_data['ticket_number'],
-            'queue_id': ticket.queue_id,
-            'counter': f"Guichê {ticket.counter:02d}" if ticket.counter else 'N/A',
-            'status': ticket.status,
-            'service_name': ticket.queue.service.name if ticket.queue.service else 'N/A'
-        }
-        emit_dashboard_update(socketio, branch_id=branch_id, queue_id=ticket.queue_id, event_type='ticket_updated', data=dashboard_data)
-        emit_display_update(socketio, branch_id, event_type='ticket_updated', data=dashboard_data)
-        logger.info(f"Ticket atualizado para painel e totem: ticket_id={ticket.id}, status={ticket.status}")
+        branch_id = ticket.queue.department.branch_id if ticket.queue and ticket.queue.department else None
+        if branch_id:
+            dashboard_data = {
+                'ticket_id': ticket.id,
+                'ticket_number': ticket_data['ticket_number'],
+                'queue_id': ticket.queue_id,
+                'counter': f"Guichê {ticket.counter:02d}" if ticket.counter else 'N/A',
+                'status': ticket.status,
+                'service_name': ticket.queue.service.name if ticket.queue and ticket.queue.service else 'N/A'
+            }
+            emit_dashboard_update(socketio, branch_id=branch_id, queue_id=ticket.queue_id, event_type='ticket_updated', data=dashboard_data)
+            emit_display_update(socketio, branch_id, event_type='ticket_updated', data=dashboard_data)
+            logger.info(f"Ticket atualizado para painel e totem: ticket_id={ticket.id}, status={ticket.status}")
+        else:
+            logger.warning(f"Não foi possível emitir atualização para painel/totem: branch_id inválido para ticket_id={ticket.id}")
 
     except Exception as e:
         logger.error(f"Erro geral ao processar atualização de ticket_id={ticket.id}: {str(e)}")
-
+        
 # Manipuladores de conexão/desconexão
 @socketio.on('connect', namespace='/queue')
 def handle_queue_connect():
