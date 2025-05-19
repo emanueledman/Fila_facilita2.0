@@ -754,7 +754,6 @@ class QueueService:
             logger.error(f"Erro inesperado ao emitir ticket para queue_id={queue_id}: {str(e)}", exc_info=True)
             raise
 
-    @staticmethod
     def call_next(self, queue_id, counter):
         """Chama o próximo ticket na fila especificada, atribuindo um guichê específico."""
         try:
