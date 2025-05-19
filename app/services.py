@@ -7,7 +7,7 @@ import numpy as np
 import json
 from sqlalchemy.orm import selectinload
 import re
-from sqlalchemy import and_, func, or_
+from sqlalchemy import UUID, and_, func, or_
 from datetime import datetime, time, timedelta
 from .models import Queue, Ticket, AuditLog, Department, Institution, User, UserPreference, Weekday, Branch, InstitutionService, ServiceCategory, ServiceTag, UserBehavior, UserLocationFallback, NotificationLog, BranchSchedule
 from .ml_models import wait_time_predictor, service_recommendation_predictor, clustering_model, demand_model
@@ -753,16 +753,16 @@ class QueueService:
             db.session.rollback()
             logger.error(f"Erro inesperado ao emitir ticket para queue_id={queue_id}: {str(e)}", exc_info=True)
             raise
-      
+
     @staticmethod
-    def call_next(queue_id, counter):
+    def call_next(self, queue_id, counter):
         """Chama o próximo ticket na fila especificada, atribuindo um guichê específico."""
         try:
             if not isinstance(queue_id, str):
                 logger.error(f"queue_id inválido: {queue_id} (deve ser string)")
                 raise ValueError("queue_id inválido")
             try:
-                uuid.UUID(queue_id)
+                UUID(queue_id)
             except ValueError:
                 logger.error(f"queue_id inválido: {queue_id} (não é UUID)")
                 raise ValueError("queue_id inválido")
@@ -773,7 +773,7 @@ class QueueService:
             if not queue:
                 logger.warning(f"Fila não encontrada: queue_id={queue_id}")
                 raise ValueError("Fila não encontrada")
-            if not QueueService.is_queue_open(queue):
+            if not self.is_queue_open(queue):
                 logger.warning(f"Fila {queue_id} fechada (serviço: {queue.service.name})")
                 raise ValueError("Fila está fechada (fora do horário da filial)")
             if queue.active_tickets == 0:
@@ -792,7 +792,7 @@ class QueueService:
                 logger.warning(f"Nenhum ticket pendente na fila {queue_id}")
                 raise ValueError("Nenhum ticket pendente")
             now = datetime.utcnow()
-            next_ticket.expires_at = now + timedelta(minutes=QueueService.CALL_TIMEOUT_MINUTES)
+            next_ticket.expires_at = now + timedelta(minutes=self.CALL_TIMEOUT_MINUTES)
             queue.current_ticket = next_ticket.ticket_number
             queue.active_tickets = max(0, queue.active_tickets - 1)
             queue.last_counter = counter
@@ -800,7 +800,8 @@ class QueueService:
             next_ticket.counter = counter
             next_ticket.attended_at = now
             db.session.commit()
-            emit_ticket_update(socketio, redis_client, next_ticket)
+            # Chamar emit_ticket_update com todos os argumentos necessários
+            emit_ticket_update(socketio, redis_client, next_ticket, self)
             dashboard_data = {
                 'ticket_id': next_ticket.id,
                 'ticket_number': f"{queue.prefix}{next_ticket.ticket_number}",
@@ -813,7 +814,7 @@ class QueueService:
             }
             emit_dashboard_update(socketio, branch_id=queue.department.branch_id, queue_id=queue.id, event_type='ticket_called', data=dashboard_data)
             publish_queue_update(queue.id, dashboard_data)
-            QueueService.update_queue_metrics(queue_id)
+            self.update_queue_metrics(queue_id)
             logger.info(f"Ticket {next_ticket.id} chamado na fila {queue.service.name} (guichê {counter})")
             return next_ticket
         except ValueError as e:
