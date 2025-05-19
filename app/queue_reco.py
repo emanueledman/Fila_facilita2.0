@@ -939,7 +939,6 @@ def init_queue_reco(app):
             logger.error(f"Erro ao obter logs de auditoria para queue_id={queue_id}: {str(e)}")
             return jsonify({'error': 'Erro ao obter logs de auditoria'}), 500
 
-
     @app.route('/api/queues/<queue_id>/ticket', methods=['POST'])
     @require_auth
     def generate_ticket(queue_id):
@@ -1029,7 +1028,9 @@ def init_queue_reco(app):
             # Chamar emit_ticket_update com todos os argumentos necessários
             emit_ticket_update(socketio, redis_client, ticket, queue_service)
 
+            # Chamar emit_dashboard_update com socketio
             emit_dashboard_update(
+                socketio,
                 institution_id=queue.department.branch.institution_id,
                 queue_id=queue_id,
                 event_type='ticket_issued',
@@ -1068,7 +1069,7 @@ def init_queue_reco(app):
             db.session.rollback()
             logger.error(f"Erro inesperado ao gerar ticket para queue_id={queue_id}, user_id={user_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao gerar ticket'}), 500
-
+        
     @app.route('/api/update_fcm_token', methods=['POST'])
     @require_auth
     def update_fcm_token():
