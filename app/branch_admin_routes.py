@@ -1362,19 +1362,25 @@ def init_branch_admin_routes(app):
                 return jsonify({'error': f'Guichê inválido: {counter}'}), 400
 
         try:
-            ticket = QueueService.call_next(queue_id, counter)
+            # Instanciar QueueService
+            queue_service = QueueService()
+
+            # Chamar o próximo ticket
+            ticket = queue_service.call_next(queue_id, counter)
             if not ticket:
                 logger.info(f"Nenhum ticket pendente para chamar na fila {queue_id}")
                 return jsonify({'message': 'Nenhum ticket pendente para chamar'}), 200
 
-            # Ajuste: Não incrementar active_tickets, pois call_next_ticket já decrementa
+            # Ajuste: Não incrementar active_tickets, pois call_next já decrementa
             queue.current_ticket = ticket.ticket_number
             queue.update_estimated_wait_time()
             db.session.commit()
 
+            # Limpar cache
             redis_client.delete(f"cache:queues:{branch_id}")
-            # [ALTERAÇÃO] Corrigir chamada a emit_ticket_update
-            emit_ticket_update(socketio, redis_client, ticket)
+
+            # Corrigir chamada a emit_ticket_update, incluindo queue_service
+            emit_ticket_update(socketio, redis_client, ticket, queue_service)
 
             # Publicar atualização via Redis para o listener
             dashboard_data = {
@@ -1401,14 +1407,14 @@ def init_branch_admin_routes(app):
             if queue.active_tickets >= queue.daily_limit and user.notification_enabled:
                 alerts = user.notification_preferences.get('admin_alerts', {})
                 if alerts.get('queue_full', {}).get('enabled', False):
-                    QueueService.send_fcm_notification(
+                    queue_service.send_fcm_notification(
                         user.id,
                         f"Fila {queue.prefix} atingiu o limite diário na filial {queue.department.branch.name}"
                     )
             if queue.estimated_wait_time and queue.estimated_wait_time > 30:
                 alerts = user.notification_preferences.get('admin_alerts', {})
                 if alerts.get('long_wait_time', {}).get('enabled', False):
-                    QueueService.send_fcm_notification(
+                    queue_service.send_fcm_notification(
                         user.id,
                         f"Tempo de espera na fila {queue.prefix} excede 30 minutos"
                     )
