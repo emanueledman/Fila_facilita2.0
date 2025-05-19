@@ -19,21 +19,37 @@ load_dotenv()
 db = SQLAlchemy()
 socketio = SocketIO()
 limiter = Limiter(key_func=get_remote_address)
-redis_client = Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379/0'))
+redis_client = Redis.from_url(os.getenv('REDIS_URL', 'rediss://red-d0lltobe5dus73cn7du0:9ryeCMKr8tMRoUJgmdKQqzM7OHExeugd@oregon-keyvalue.render.com:6379'), decode_responses=True)
+
+# Testar conexão ao Redis na inicialização
+try:
+    redis_client.ping()
+    logging.info("Conexão com Redis bem-sucedida")
+except Exception as e:
+    logging.error(f"Falha na conexão com Redis: {str(e)}")
 
 # Função para publicar atualizações de fila no Redis
 def publish_queue_update(queue_id, data):
-    redis_client.publish(f'queue:{queue_id}:updates', json.dumps(data))
+    try:
+        redis_client.publish(f'queue:{queue_id}:updates', json.dumps(data))
+        logging.info(f"Atualização publicada para queue_id={queue_id}")
+    except Exception as e:
+        logging.error(f"Erro ao publicar no Redis: {str(e)}")
 
 # Listener Redis para propagar atualizações via SocketIO
 def start_background_listener():
-    pubsub = redis_client.pubsub()
-    pubsub.psubscribe('queue:*:updates')
-    for message in pubsub.listen():
-        if message['type'] == 'pmessage':
-            queue_id = message['channel'].decode().split(':')[1]
-            data = json.loads(message['data'].decode())
-            socketio.emit('queue_update', data, namespace='/queue', room=f'queue_{queue_id}')
+    try:
+        pubsub = redis_client.pubsub()
+        pubsub.psubscribe('queue:*:updates')
+        logging.info("Listener Redis iniciado")
+        for message in pubsub.listen():
+            if message['type'] == 'pmessage':
+                queue_id = message['channel'].decode().split(':')[1]
+                data = json.loads(message['data'].decode())
+                socketio.emit('queue_update', data, room=f'queue_{queue_id}')  # Namespace padrão
+                logging.debug(f"Mensagem propagada para queue_id={queue_id}: {data}")
+    except Exception as e:
+        logging.error(f"Erro no listener Redis: {str(e)}")
 
 def create_app():
     app = Flask(__name__)
@@ -75,42 +91,29 @@ def create_app():
     app.config['SOCKETIO_LOGGER'] = os.getenv('FLASK_ENV') != 'production'
     app.config['SOCKETIO_ENGINEIO_LOGGER'] = os.getenv('FLASK_ENV') != 'production'
 
-    # Configurar CORS com Totem-Token
+    # Configurar CORS para todas as origens
     CORS(app, resources={r"/api/*": {
-        "origins": [
-            "http://127.0.0.1:5500",
-            "https://frontfa.netlify.app",
-            "https://fila-facilita2-0-juqg.onrender.com",
-            "https://totemfacilita.netlify.app",
-            "https://fila-facilita2-0-4uzw.onrender.com",
-            "null"
-        ],
+        "origins": "*",
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization", "Totem-Token"],
-        "supports_credentials": True
+        "supports_credentials": False
     }})
 
     db.init_app(app)
     socketio.init_app(
         app,
-        cors_allowed_origins=[
-            "http://127.0.0.1:5500",
-            "https://frontfa.netlify.app",
-            "https://fila-facilita2-0-juqg.onrender.com",
-            "https://totemfacilita.netlify.app",
-            "https://fila-facilita2-0-4uzw.onrender.com",
-            "null"
-        ],
+        cors_allowed_origins="*",
         async_mode='eventlet',
         logger=os.getenv('FLASK_ENV') != 'production',
         engineio_logger=os.getenv('FLASK_ENV') != 'production',
-        message_queue=os.getenv('REDIS_URL', 'rediss://red-d053vpre5dus738stejg:yUiGYAY9yrGzyXvw2LyUPzoRqkdwY3Og@oregon-keyvalue.render.com:6379/0'),
-        manage_session=False,
-        namespace='/queue'
+        message_queue=os.getenv('REDIS_URL', 'rediss://red-d0lltobe5dus73cn7du0:9ryeCMKr8tMRoUJgmdKQqzM7OHExeugd@oregon-keyvalue.render.com:6379'),
+        manage_session=False
+        # Removido namespace='/queue' e path='/queue' para usar padrão /socket.io
     )
     limiter.init_app(app)
 
-    limiter.storage_uri = os.getenv('REDIS_URL', 'rediss://red-d053vpre5dus738stejg:yUiGYAY9yrGzyXvw2LyUPzoRqkdwY3Og@oregon-keyvalue.render.com:6379/0')
+    # Usar memória para Flask-Limiter
+    limiter.storage_uri = 'memory://'
 
     # Iniciar listener Redis
     socketio.start_background_task(start_background_listener)
@@ -139,8 +142,12 @@ def create_app():
     def require_fixed_totem_token(f):
         def decorated(*args, **kwargs):
             token = request.headers.get('Totem-Token')
-            if not token or not redis_client.get(f'totem_token:{token}'):
-                return jsonify({"status": "error", "message": "Token inválido"}), 401
+            try:
+                if not token or not redis_client.get(f'totem_token:{token}'):
+                    return jsonify({"status": "error", "message": "Token inválido"}), 401
+            except Exception as e:
+                app.logger.error(f"Erro ao validar Totem-Token: {str(e)}")
+                return jsonify({"status": "error", "message": "Erro ao validar token"}), 500
             return f(*args, **kwargs)
         return decorated
 
@@ -148,12 +155,16 @@ def create_app():
     @app.route('/api/totem/branches/<branch_id>/display', methods=['GET'])
     @require_fixed_totem_token
     def display_queues(branch_id):
-        queues = Queue.query.filter_by(branch_id=branch_id).all()
-        return jsonify([{
-            'id': q.id,
-            'name': q.name,
-            'current_number': q.current_number
-        } for q in queues])
+        try:
+            queues = Queue.query.filter_by(branch_id=branch_id).all()
+            return jsonify([{
+                'id': q.id,
+                'name': q.name,
+                'current_number': q.current_number
+            } for q in queues])
+        except Exception as e:
+            app.logger.error(f"Erro ao buscar filas para branch_id={branch_id}: {str(e)}")
+            return jsonify({"status": "error", "message": "Erro ao buscar filas"}), 500
 
     # Rota para adicionar coluna de notificação
     @app.route('/add-notification-type', methods=['POST'])
@@ -172,7 +183,8 @@ def create_app():
                     conn.commit()
             return jsonify({"status": "success", "message": "Coluna 'type' adicionada à tabela notification_log"})
         except Exception as e:
-            return jsonify({"status": "error", "message": str(e)})
+            app.logger.error(f"Erro ao adicionar coluna de notificação: {str(e)}")
+            return jsonify({"status": "error", "message": str(e)}), 500
 
     # Rota para inicializar o banco de dados
     @app.route('/init-db', methods=['POST'])
@@ -235,6 +247,16 @@ def create_app():
                     "message": f"Erro ao inicializar banco de dados: {str(e)}"
                 }), 500
 
+    # Rota de teste para atualizações WebSocket
+    @app.route('/test-queue-update')
+    def test_queue_update():
+        try:
+            publish_queue_update(1, {"id": 1, "name": "Fila 1", "current_number": "A001"})
+            return jsonify({"status": "success"})
+        except Exception as e:
+            app.logger.error(f"Erro ao testar atualização de fila: {str(e)}")
+            return jsonify({"status": "error", "message": str(e)}), 500
+
     if os.getenv('FLASK_ENV') == 'production':
         app.config['DEBUG'] = False
         app.logger.info("Aplicação configurada para modo de produção")
@@ -243,3 +265,11 @@ def create_app():
         app.logger.info("Aplicação configurada para modo de desenvolvimento")
 
     return app
+
+if __name__ == "__main__":
+    app = create_app()
+    host = os.getenv('HOST', '0.0.0.0')
+    port = int(os.getenv('PORT', 10000))
+    debug = os.getenv('FLASK_ENV') != 'production'
+    logging.info(f"Iniciando servidor Flask-SocketIO em {host}:{port} (debug={debug})")
+    socketio.run(app, host=host, port=port, debug=debug)

@@ -256,7 +256,7 @@ def init_totem_routes(app):
         if redis_client.get(cache_key):
             logger.warning(f"Limite de emissão atingido para IP {client_ip}")
             return jsonify({'error': 'Limite de emissão atingido. Tente novamente em 30 segundos'}), 429
-        redis_client.setex(cache_key, 30, "1")
+        redis_client.setex(cache_key, 10, "1")
 
         try:
             result = QueueService.generate_physical_ticket_for_totem(
