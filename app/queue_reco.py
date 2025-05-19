@@ -939,6 +939,7 @@ def init_queue_reco(app):
             logger.error(f"Erro ao obter logs de auditoria para queue_id={queue_id}: {str(e)}")
             return jsonify({'error': 'Erro ao obter logs de auditoria'}), 500
 
+
     @app.route('/api/queues/<queue_id>/ticket', methods=['POST'])
     @require_auth
     def generate_ticket(queue_id):
@@ -993,11 +994,10 @@ def init_queue_reco(app):
         schedules = BranchSchedule.query.filter_by(branch_id=branch.id).all()
         local_tz = pytz.timezone('Africa/Luanda')
         current_time = datetime.now(local_tz).time()
-        current_weekday = datetime.now(local_tz).strftime('%A').upper()  # Ex.: 'TUESDAY'
+        current_weekday = datetime.now(local_tz).strftime('%A').upper()
         is_open = False
         for schedule in schedules:
             try:
-                # Comparar o Enum Weekday com o valor mapeado
                 if schedule.weekday == Weekday[current_weekday] and not schedule.is_closed:
                     if schedule.open_time <= current_time <= schedule.end_time:
                         is_open = True
@@ -1010,8 +1010,11 @@ def init_queue_reco(app):
             return jsonify({'error': 'Fila não disponível fora do horário de funcionamento'}), 400
 
         try:
+            # Instanciar QueueService
+            queue_service = QueueService()
+
             # Chamar add_to_queue com queue_id
-            ticket, _ = QueueService.add_to_queue(
+            ticket, _ = queue_service.add_to_queue(
                 queue_id=queue_id,
                 user_id=user_id,
                 priority=priority,
@@ -1022,7 +1025,10 @@ def init_queue_reco(app):
                 user_lon=user_lon
             )
             db.session.commit()
-            emit_ticket_update(ticket)
+
+            # Chamar emit_ticket_update com todos os argumentos necessários
+            emit_ticket_update(socketio, redis_client, ticket, queue_service)
+
             emit_dashboard_update(
                 institution_id=queue.department.branch.institution_id,
                 queue_id=queue_id,
@@ -1062,7 +1068,6 @@ def init_queue_reco(app):
             db.session.rollback()
             logger.error(f"Erro inesperado ao gerar ticket para queue_id={queue_id}, user_id={user_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao gerar ticket'}), 500
-
 
     @app.route('/api/update_fcm_token', methods=['POST'])
     @require_auth
