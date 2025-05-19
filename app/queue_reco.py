@@ -2,8 +2,8 @@ from flask import jsonify, request, send_file
 from flask_socketio import join_room, leave_room, ConnectionRefusedError
 
 from app.utils.websocket_utils import emit_dashboard_update, emit_ticket_update
-from . import db, socketio, redis_client
-from .models import AuditLog, Institution,Branch, Queue, Ticket, User, Department, UserRole, InstitutionType, InstitutionService, ServiceCategory, ServiceTag, UserPreference, BranchSchedule, UserBehavior, NotificationLog, Weekday
+from . import db, publish_queue_update, socketio, redis_client
+from .models import AuditLog, Institution,Branch, Queue, Ticket, User, Department, UserLocationFallback, UserRole, InstitutionType, InstitutionService, ServiceCategory, ServiceTag, UserPreference, BranchSchedule, UserBehavior, NotificationLog, Weekday
 from .services import QueueService
 from .ml_models import wait_time_predictor, service_recommendation_predictor, collaborative_model, demand_model, clustering_model
 import uuid
@@ -1324,6 +1324,243 @@ def init_queue_reco(app):
             return jsonify({'error': 'Erro ao gerar autocompletar'}), 500
         
 
+
+    @app.route('/api/tickets/<ticket_id>/swap/<new_queue_id>', methods=['POST'])
+    def swap_queue(ticket_id, new_queue_id):
+        """Troca o ticket atual por um novo em uma fila de serviço semelhante na mesma instituição."""
+        try:
+            # Validar ticket atual
+            current_ticket = Ticket.query.get(ticket_id)
+            if not current_ticket or current_ticket.status != 'Pendente':
+                logger.warning(f"Ticket inválido ou não pendente: ticket_id={ticket_id}")
+                return jsonify({'error': 'Ticket inválido ou não pendente'}), 404
+
+            current_queue = current_ticket.queue
+            if not current_queue or not current_queue.department or not current_queue.department.branch:
+                logger.warning(f"Dados incompletos para ticket_id={ticket_id}")
+                return jsonify({'error': 'Dados da fila atual incompletos'}), 400
+
+            # Validar nova fila
+            new_queue = Queue.query.get(new_queue_id)
+            if not new_queue or not new_queue.service or not new_queue.department or not new_queue.department.branch:
+                logger.warning(f"Fila inválida: new_queue_id={new_queue_id}")
+                return jsonify({'error': 'Fila sugerida inválida'}), 400
+
+            # Verificar mesma instituição
+            current_institution_id = current_queue.department.branch.institution_id
+            new_institution_id = new_queue.department.branch.institution_id
+            if current_institution_id != new_institution_id:
+                logger.warning(f"Serviço não pertence à mesma instituição: current={current_institution_id}, new={new_institution_id}")
+                return jsonify({'error': 'Serviço deve ser da mesma instituição'}), 400
+
+            # Validar capacidade da nova fila
+            if new_queue.active_tickets >= new_queue.daily_limit:
+                logger.warning(f"Nova fila cheia: new_queue_id={new_queue_id}")
+                return jsonify({'error': 'Nova fila atingiu o limite diário'}), 400
+
+            # Verificar se a fila está aberta
+            if not QueueService.is_queue_open(new_queue):
+                logger.warning(f"Nova fila fechada: new_queue_id={new_queue_id}")
+                return jsonify({'error': 'Nova fila está fechada'}), 400
+
+            # Cancelar ticket atual
+            current_ticket.status = 'Cancelado'
+            current_ticket.cancelled_at = datetime.utcnow()
+            current_queue.active_tickets = max(0, current_queue.active_tickets - 1)
+            QueueService.update_queue_metrics(current_queue.id)
+
+            # Gerar novo ticket
+            new_ticket_number = new_queue.current_ticket + 1
+            new_ticket = Ticket(
+                id=str(uuid.uuid4()),
+                queue_id=new_queue_id,
+                user_id=current_ticket.user_id,
+                ticket_number=new_ticket_number,
+                qr_code=QueueService.generate_qr_code(),
+                priority=current_ticket.priority,
+                is_physical=False,
+                status='Pendente',
+                issued_at=datetime.utcnow(),
+                expires_at=datetime.utcnow() + timedelta(hours=2)
+            )
+            new_queue.active_tickets += 1
+            new_queue.current_ticket += 1
+            QueueService.update_queue_metrics(new_queue.id)
+
+            # Registrar auditoria
+            audit_log = AuditLog(
+                user_id=current_ticket.user_id,
+                action='ticket_swap',
+                resource_type='ticket',
+                resource_id=ticket_id,
+                details=f"Trocou ticket {ticket_id} por {new_ticket.id} (queue {new_queue_id})",
+                created_at=datetime.utcnow()
+            )
+
+            # Registrar comportamento
+            user_behavior = UserBehavior(
+                user_id=current_ticket.user_id,
+                institution_id=new_institution_id,
+                service_id=new_queue.service_id,
+                branch_id=new_queue.department.branch_id,
+                action='ticket_swap',
+                timestamp=datetime.utcnow()
+            )
+
+            db.session.add(new_ticket)
+            db.session.add(audit_log)
+            db.session.add(user_behavior)
+            db.session.commit()
+
+            # Publicar atualização
+            try:
+                publish_queue_update(new_queue.id, {
+                    'id': new_queue.id,
+                    'name': new_queue.name,
+                    'current_number': new_queue.current_ticket,
+                    'active_tickets': new_queue.active_tickets
+                })
+                logger.info(f"Atualização publicada para queue_id={new_queue.id}")
+            except Exception as e:
+                logger.warning(f"Erro ao publicar atualização no Redis: {e}")
+
+            return jsonify({
+                'message': 'Ticket trocado com sucesso',
+                'new_ticket': {
+                    'id': new_ticket.id,
+                    'queue_id': new_ticket.queue_id,
+                    'ticket_number': new_ticket.ticket_number,
+                    'qr_code': new_ticket.qr_code,
+                    'service': new_queue.service.name,
+                    'branch': new_queue.department.branch.name,
+                    'wait_time': QueueService.calculate_wait_time(new_queue.id, new_ticket.ticket_number, new_ticket.priority)
+                }
+            }), 200
+
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Erro ao trocar ticket {ticket_id} para queue {new_queue_id}: {e}")
+            return jsonify({'error': str(e)}), 500
+        
+
+    @app.route('/api/tickets/<ticket_id>/similar-services-notify', methods=['POST'])
+    def similar_services_notify(ticket_id):
+        """Envia notificação sobre serviços semelhantes com filas menores após gerar ticket."""
+        try:
+            # Validar ticket
+            ticket = Ticket.query.get(ticket_id)
+            if not ticket:
+                logger.warning(f"Ticket não encontrado: ticket_id={ticket_id}")
+                return jsonify({'error': 'Ticket não encontrado'}), 404
+
+            queue = ticket.queue
+            if not queue or not queue.service or not queue.department or not queue.department.branch:
+                logger.warning(f"Dados incompletos para ticket_id={ticket_id}")
+                return jsonify({'error': 'Dados da fila incompletos'}), 400
+
+            user = User.query.get(ticket.user_id)
+            if not user or not user.notification_enabled or not user.fcm_token:
+                logger.info(f"Notificações desativadas ou usuário inválido para user_id={ticket.user_id}")
+                return jsonify({'message': 'Notificações não enviadas'}), 200
+
+            # Verificar frequência de notificações
+            recent_notification = NotificationLog.query.filter(
+                NotificationLog.user_id == ticket.user_id,
+                NotificationLog.type == 'similar_service',
+                NotificationLog.sent_at >= datetime.utcnow() - timedelta(minutes=10)
+            ).first()
+            if recent_notification:
+                logger.info(f"Notificação recente encontrada para user_id={ticket.user_id}, pulando")
+                return jsonify({'message': 'Notificação recente, pulada'}), 200
+
+            # Obter localização do usuário
+            user_lat = user.last_known_lat
+            user_lon = user.last_known_lon
+            if not user_lat or not user_lon:
+                fallback = UserLocationFallback.query.filter_by(user_id=user.id).first()
+                if fallback and fallback.latitude and fallback.longitude:
+                    user_lat, user_lon = fallback.latitude, fallback.longitude
+                else:
+                    user_lat, user_lon = None, None
+
+            # Buscar serviços semelhantes na mesma instituição
+            current_wait_time = QueueService.calculate_wait_time(queue.id, ticket.ticket_number, ticket.priority)
+            if current_wait_time == 'N/A':
+                current_wait_time = queue.avg_wait_time or 30
+
+            suggestions = QueueService.suggest_alternative_queues(
+                queue_id=queue.id,
+                user_id=user.id,
+                user_lat=user_lat,
+                user_lon=user_lon,
+                max_distance_km=10.0,
+                n=3
+            )
+
+            # Filtrar sugestões com economia significativa
+            valid_suggestions = [
+                s for s in suggestions
+                if s['wait_time'] != 'Aguardando início' and
+                float(s['wait_time'].split()[0]) < current_wait_time - 10 and
+                s['service_similarity'] >= 0.8
+            ]
+
+            if not valid_suggestions:
+                logger.info(f"Nenhuma sugestão válida para ticket_id={ticket_id}")
+                return jsonify({'message': 'Nenhuma sugestão encontrada'}), 200
+
+            # Enviar notificação para a melhor sugestão
+            best_suggestion = valid_suggestions[0]
+            suggested_queue = Queue.query.get(best_suggestion['queue_id'])
+            message = (
+                f"Fila menor encontrada! {best_suggestion['service']} em {best_suggestion['branch']}: "
+                f"{best_suggestion['wait_time']}"
+            )
+            if best_suggestion['distance'] != 'Desconhecida':
+                message += f", a {best_suggestion['distance']:.2f} km"
+
+            QueueService.send_notification(
+                fcm_token=user.fcm_token,
+                message=message,
+                ticket_id=ticket_id,
+                via_websocket=True,
+                user_id=user.id
+            )
+
+            # Registrar notificação
+            notification = NotificationLog(
+                user_id=user.id,
+                branch_id=suggested_queue.department.branch_id,
+                queue_id=best_suggestion['queue_id'],
+                message=message,
+                type='similar_service',
+                status='Sent',
+                sent_at=datetime.utcnow()
+            )
+            db.session.add(notification)
+            db.session.commit()
+
+            # Cachear resultado
+            cache_key = f"similar_services_notify:{ticket_id}:{user.id}"
+            try:
+                redis_client.setex(cache_key, 600, json.dumps({'message': message}))
+                logger.info(f"Cache armazenado para {cache_key}")
+            except Exception as e:
+                logger.warning(f"Erro ao salvar cache Redis: {e}")
+
+            return jsonify({
+                'message': 'Notificação enviada',
+                'suggestion': {
+                    'queue_id': best_suggestion['queue_id'],
+                    'service': best_suggestion['service'],
+                    'branch': best_suggestion['branch'],
+                    'wait_time': best_suggestion['wait_time']
+                }
+            }), 200
+
+        except Exception as e:
+            logger.error(f"Erro ao processar notificação para ticket_id={ticket_id}: {e}")
+            return jsonify({'error': str(e)}), 500
 
     @app.route('/api/ticket/<ticket_id>', methods=['GET'])
     @require_auth
