@@ -1315,7 +1315,6 @@ def init_branch_admin_routes(app):
             logger.error(f"Erro ao remover fila da tela: {str(e)}")
             return jsonify({'error': 'Erro ao remover fila da tela'}), 500
 
-
     @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/call', methods=['POST'])
     @require_auth
     def call_next_ticket(branch_id, queue_id):
