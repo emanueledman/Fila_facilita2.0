@@ -28,6 +28,29 @@ logger = logging.getLogger(__name__)
 def init_queue_reco(app):
     
 
+    @app.route('/api/ticket/<ticket_id>/offer_trade', methods=['POST'])
+    def offer_trade(ticket_id):
+        """Oferece um ticket para troca (mantida sem alterações)."""
+        user_id = request.args.get('user_id')
+        try:
+            ticket = QueueService.offer_trade(ticket_id, user_id)
+            emit_ticket_update(ticket)
+            logger.info(f"Senha oferecida para troca: {ticket_id}")
+            QueueService.send_notification(
+                fcm_token=None,
+                message=f"Ticket {ticket.queue.prefix}{ticket.ticket_number} oferecido para troca",
+                ticket_id=ticket.id,
+                via_websocket=True,
+                user_id=ticket.user_id
+            )
+            return jsonify({'message': 'Senha oferecida para troca', 'ticket_id': ticket.id}), 200
+        except ValueError as e:
+            logger.error(f"Erro ao oferecer troca para ticket {ticket_id}: {str(e)}")
+            return jsonify({'error': str(e)}), 400
+        except Exception as e:
+            logger.error(f"Erro inesperado ao oferecer troca para ticket {ticket_id}: {str(e)}")
+            return jsonify({'error': 'Erro interno ao oferecer troca'}), 500
+
     
     @app.route('/api/tickets/<ticket_id>/trade', methods=['POST'])
     @require_auth
