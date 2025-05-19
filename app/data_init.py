@@ -3486,7 +3486,7 @@ def populate_initial_data(app):
                                 branch_id=branch.id,
                                 weekday=day,
                                 open_time=time(7, 0),
-                                end_time=time(23, 0),
+                                end_time=time(3, 0),
                                 is_closed=False
                             )
                             db.session.add(schedule)
