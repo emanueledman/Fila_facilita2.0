@@ -28,10 +28,11 @@ logger = logging.getLogger(__name__)
 def init_queue_reco(app):
     
 
+
     @app.route('/api/ticket/<ticket_id>/offer_trade', methods=['POST'])
+    @require_auth
     def offer_trade(ticket_id):
-        """Oferece um ticket para troca (mantida sem alterações)."""
-        user_id = request.args.get('user_id')
+        user_id = request.user_id  # Usa o user_id do token Firebase
         try:
             ticket = QueueService.offer_trade(ticket_id, user_id)
             emit_ticket_update(ticket)
@@ -50,7 +51,6 @@ def init_queue_reco(app):
         except Exception as e:
             logger.error(f"Erro inesperado ao oferecer troca para ticket {ticket_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao oferecer troca'}), 500
-
     
     @app.route('/api/tickets/<ticket_id>/trade', methods=['POST'])
     @require_auth

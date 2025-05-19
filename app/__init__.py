@@ -247,29 +247,6 @@ def create_app():
                     "message": f"Erro ao inicializar banco de dados: {str(e)}"
                 }), 500
 
-    # Rota de teste para atualizações WebSocket
-    @app.route('/test-queue-update')
-    def test_queue_update():
-        try:
-            publish_queue_update(1, {"id": 1, "name": "Fila 1", "current_number": "A001"})
-            return jsonify({"status": "success"})
-        except Exception as e:
-            app.logger.error(f"Erro ao testar atualização de fila: {str(e)}")
-            return jsonify({"status": "error", "message": str(e)}), 500
-
-    if os.getenv('FLASK_ENV') == 'production':
-        app.config['DEBUG'] = False
-        app.logger.info("Aplicação configurada para modo de produção")
-    else:
-        app.config['DEBUG'] = True
-        app.logger.info("Aplicação configurada para modo de desenvolvimento")
 
     return app
 
-if __name__ == "__main__":
-    app = create_app()
-    host = os.getenv('HOST', '0.0.0.0')
-    port = int(os.getenv('PORT', 10000))
-    debug = os.getenv('FLASK_ENV') != 'production'
-    logging.info(f"Iniciando servidor Flask-SocketIO em {host}:{port} (debug={debug})")
-    socketio.run(app, host=host, port=port, debug=debug)
