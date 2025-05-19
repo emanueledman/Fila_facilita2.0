@@ -1439,7 +1439,6 @@ def init_branch_admin_routes(app):
             logger.error(f"Erro inesperado ao chamar próximo ticket na fila {queue_id}: {str(e)}")
             return jsonify({'error': 'Erro interno ao chamar ticket'}), 500
 
-
     @app.route('/api/branch_admin/branches/<branch_id>/queues/<queue_id>/tickets/<ticket_id>/complete', methods=['POST'])
     @require_auth
     def complete_ticket(branch_id, queue_id, ticket_id):
@@ -1471,16 +1470,18 @@ def init_branch_admin_routes(app):
             return jsonify({'error': 'Ticket não está no status Chamado'}), 400
 
         try:
-            ticket.status = 'Concluído'
+            # Instanciar QueueService
+            queue_service = QueueService()
+
+            ticket.status = 'Atendido'
             ticket.completed_at = datetime.utcnow()
             queue.active_tickets -= 1
             queue.update_estimated_wait_time()
             db.session.commit()
 
             redis_client.delete(f"cache:queues:{branch_id}")
-            # [ALTERAÇÃO] Corrigir chamada a emit_ticket_update
-            emit_ticket_update(socketio, redis_client, ticket)
-            # [ALTERAÇÃO] Substituir QueueService.emit_dashboard_update por emit_dashboard_update
+            # Corrigir chamada a emit_ticket_update
+            emit_ticket_update(socketio, redis_client, ticket, queue_service)
             dashboard_data = {
                 'ticket_number': f"{ticket.queue.prefix}{ticket.ticket_number}",
                 'ticket_id': ticket.id,
@@ -1491,7 +1492,6 @@ def init_branch_admin_routes(app):
                 'timestamp': datetime.utcnow().isoformat()
             }
             emit_dashboard_update(socketio, branch_id=branch_id, queue_id=queue_id, event_type='ticket_completed', data=dashboard_data)
-            # [ALTERAÇÃO] Publicar atualização via Redis
             publish_queue_update(queue_id, dashboard_data)
 
             AuditLog.create(
