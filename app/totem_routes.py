@@ -351,7 +351,7 @@ def init_totem_routes(app):
         if redis_client.get(cache_key):
             logger.warning(f"Limite de requisições atingido para IP {client_ip}")
             return jsonify({'error': 'Limite de requisições atingido. Tente novamente em 30 segundos'}), 429
-        redis_client.setex(cache_key, 30, "1")
+        redis_client.setex(cache_key, 5, "1")
 
         branch = Branch.query.get(branch_id)
         if not branch:
