@@ -1054,411 +1054,6 @@ def populate_initial_data(app):
                         ]
                     },
                 
-                    # Conservatória dos Registos (do código original)
-                    {
-                        "id": str(uuid.uuid4()),
-                        "name": "Conservatória",
-                        "description": "Serviços de registo civil e comercial em Luanda",
-                        "institution_type_id": institution_type_map["Administrativo"],
-                        "logo_url": "https://rna.ao/rna.ao/wp-content/uploads/2022/09/Registo-Civil.jpg",
-                        "services": [
-                            {"name": "Registo Comercial", "category_id": category_map["Registros"], "description": "Registo de empresas"},
-                            {"name": "Registo Civil", "category_id": category_map["Registros"], "description": "Registo de nascimento, casamento e óbito"},
-                            {"name": "Autenticação de Documentos", "category_id": category_map["Documentos"], "description": "Autenticação de documentos oficiais"}
-                        ],
-                        "branches": [
-                            {
-                                "name": "Conservatória Ingombota",
-                                "location": "Rua Rainha Ginga, Ingombota, Luanda",
-                                "neighborhood": "Ingombota",
-                                "latitude": -8.8167,
-                                "longitude": 13.2332,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento Administrativo",
-                                        "sector": "Administrativo",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Comercial",
-                                                "prefix": "RC",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
-                                                "tags": ["Administrativo", "Registros"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 120,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Autenticação de Documentos",
-                                                "prefix": "AD",
-                                                "daily_limit": 80,
-                                                "num_counters": 3,
-                                                "tags": ["Administrativo", "Documentos"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "Conservatória Talatona",
-                                "location": "Via Expressa, Talatona, Luanda",
-                                "neighborhood": "Talatona",
-                                "latitude": -8.9180,
-                                "longitude": 13.1840,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento Administrativo",
-                                        "sector": "Administrativo",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Comercial",
-                                                "prefix": "RC",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
-                                                "tags": ["Administrativo", "Registros"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 120,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Autenticação de Documentos",
-                                                "prefix": "AD",
-                                                "daily_limit": 80,
-                                                "num_counters": 3,
-                                                "tags": ["Administrativo", "Documentos"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "Conservatória Viana",
-                                "location": "Rua Principal, Viana, Luanda",
-                                "neighborhood": "Viana",
-                                "latitude": -8.9040,
-                                "longitude": 13.3750,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento Administrativo",
-                                        "sector": "Administrativo",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Comercial",
-                                                "prefix": "RC",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
-                                                "tags": ["Administrativo", "Registros"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 120,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Autenticação de Documentos",
-                                                "prefix": "AD",
-                                                "daily_limit": 80,
-                                                "num_counters": 3,
-                                                "tags": ["Administrativo", "Documentos"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "Conservatória Kilamba",
-                                "location": "Avenida do Kilamba, Kilamba, Luanda",
-                                "neighborhood": "Kilamba",
-                                "latitude": -8.9340,
-                                "longitude": 13.2670,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento Administrativo",
-                                        "sector": "Administrativo",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Comercial",
-                                                "prefix": "RC",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
-                                                "tags": ["Administrativo", "Registros"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 120,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Autenticação de Documentos",
-                                                "prefix": "AD",
-                                                "daily_limit": 80,
-                                                "num_counters": 3,
-                                                "tags": ["Administrativo", "Documentos"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "Conservatória Cazenga",
-                                "location": "Avenida dos Combatentes, Cazenga, Luanda",
-                                "neighborhood": "Cazenga",
-                                "latitude": -8.8510,
-                                "longitude": 13.2840,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento Administrativo",
-                                        "sector": "Administrativo",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Comercial",
-                                                "prefix": "RC",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
-                                                "tags": ["Administrativo", "Registros"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 120,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Autenticação de Documentos",
-                                                "prefix": "AD",
-                                                "daily_limit": 80,
-                                                "num_counters": 3,
-                                                "tags": ["Administrativo", "Documentos"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "Conservatória Maianga",
-                                "location": "Rua Joaquim Kapango, Maianga, Luanda",
-                                "neighborhood": "Maianga",
-                                "latitude": -8.8150,
-                                "longitude": 13.2310,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento Administrativo",
-                                        "sector": "Administrativo",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Comercial",
-                                                "prefix": "RC",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
-                                                "tags": ["Administrativo", "Registros"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 120,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Autenticação de Documentos",
-                                                "prefix": "AD",
-                                                "daily_limit": 80,
-                                                "num_counters": 3,
-                                                "tags": ["Administrativo", "Documentos"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "Conservatória Rangel",
-                                "location": "Rua do Rangel, Rangel, Luanda",
-                                "neighborhood": "Rangel",
-                                "latitude": -8.8300,
-                                "longitude": 13.2500,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento Administrativo",
-                                        "sector": "Administrativo",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Comercial",
-                                                "prefix": "RC",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
-                                                "tags": ["Administrativo", "Registros"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 120,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Autenticação de Documentos",
-                                                "prefix": "AD",
-                                                "daily_limit": 80,
-                                                "num_counters": 3,
-                                                "tags": ["Administrativo", "Documentos"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "Conservatória Samba",
-                                "location": "Rua Principal, Samba, Luanda",
-                                "neighborhood": "Samba",
-                                "latitude": -8.8200,
-                                "longitude": 13.2400,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento Administrativo",
-                                        "sector": "Administrativo",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Comercial",
-                                                "prefix": "RC",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
-                                                "tags": ["Administrativo", "Registros"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 120,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Autenticação de Documentos",
-                                                "prefix": "AD",
-                                                "daily_limit": 80,
-                                                "num_counters": 3,
-                                                "tags": ["Administrativo", "Documentos"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "Conservatória Cacuaco",
-                                "location": "Rua Principal, Cacuaco, Luanda",
-                                "neighborhood": "Cacuaco",
-                                "latitude": -8.7767,
-                                "longitude": 13.3667,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento Administrativo",
-                                        "sector": "Administrativo",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Comercial",
-                                                "prefix": "RC",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
-                                                "tags": ["Administrativo", "Registros"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 120,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Autenticação de Documentos",
-                                                "prefix": "AD",
-                                                "daily_limit": 80,
-                                                "num_counters": 3,
-                                                "tags": ["Administrativo", "Documentos"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            },
-                            {
-                                "name": "Conservatória Benfica",
-                                "location": "Rua Principal, Benfica, Luanda",
-                                "neighborhood": "Benfica",
-                                "latitude": -8.9500,
-                                "longitude": 13.1500,
-                                "departments": [
-                                    {
-                                        "name": "Atendimento Administrativo",
-                                        "sector": "Administrativo",
-                                        "queues": [
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Comercial",
-                                                "prefix": "RC",
-                                                "daily_limit": 100,
-                                                "num_counters": 4,
-                                                "tags": ["Administrativo", "Registros"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Registo Civil",
-                                                "prefix": "RV",
-                                                "daily_limit": 120,
-                                                "num_counters": 5,
-                                                "tags": ["Administrativo", "Registros", "24h"]
-                                            },
-                                            {
-                                                "id": str(uuid.uuid4()),
-                                                "service_name": "Autenticação de Documentos",
-                                                "prefix": "AD",
-                                                "daily_limit": 80,
-                                                "num_counters": 3,
-                                                "tags": ["Administrativo", "Documentos"]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    },
                     # Hospital Josina Machel (novo)
                     {
                         "id": str(uuid.uuid4()),
@@ -2754,6 +2349,1383 @@ def populate_initial_data(app):
                         ]
                     },
                     # Banco Sol
+                    
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Conservatória dos Registos de Angola",
+                        "description": "Serviços de registo civil, comercial e identificação em Luanda",
+                        "institution_type_id": institution_type_map["Administrativo"],
+                        "logo_url": "https://rna.ao/rna.ao/wp-content/uploads/2022/09/Registo-Civil.jpg",
+                        "services": [
+                            {"name": "Registo Comercial", "category_id": category_map["Registros"], "description": "Registo de empresas e atividades comerciais"},
+                            {"name": "Registo Civil", "category_id": category_map["Registros"], "description": "Registo de nascimento, casamento e óbito"},
+                            {"name": "Autenticação de Documentos", "category_id": category_map["Documentos"], "description": "Autenticação de documentos oficiais"},
+                            {"name": "Emissão de Bilhete de Identidade", "category_id": category_map["Identificação"], "description": "Emissão de bilhete de identidade angolano"},
+                            {"name": "Renovação de Bilhete de Identidade", "category_id": category_map["Renovações"], "description": "Renovação de bilhete de identidade expirado"},
+                            {"name": "Emissão de Cédula Pessoal", "category_id": category_map["Identificação"], "description": "Emissão de cédula pessoal para cidadãos"},
+                            {"name": "Certidão de Nascimento", "category_id": category_map["Certidões"], "description": "Emissão de certidão de nascimento"},
+                            {"name": "Certidão de Casamento", "category_id": category_map["Certidões"], "description": "Emissão de certidão de casamento"},
+                            {"name": "Certidão de Óbito", "category_id": category_map["Certidões"], "description": "Emissão de certidão de óbito"},
+                            {"name": "Registo de Propriedade", "category_id": category_map["Registros"], "description": "Registo de bens imóveis"},
+                            {"name": "Emissão de Passaporte", "category_id": category_map["Identificação"], "description": "Emissão de passaporte angolano"},
+                            {"name": "Renovação de Passaporte", "category_id": category_map["Renovações"], "description": "Renovação de passaporte expirado"},
+                            {"name": "Reconhecimento de Assinatura", "category_id": category_map["Documentos"], "description": "Reconhecimento de assinaturas em documentos"},
+                            {"name": "Registo de Testamento", "category_id": category_map["Registros"], "description": "Registo de testamentos e últimas vontades"},
+                            {"name": "Emissão de Certificado de Habilitações", "category_id": category_map["Documentos"], "description": "Certificação de habilitações académicas"}
+                        ],
+                        "branches": [
+                            {
+                                "name": "Conservatória Ingombota",
+                                "location": "Rua Rainha Ginga, Ingombota, Luanda",
+                                "neighborhood": "Ingombota",
+                                "latitude": -8.8167,
+                                "longitude": 13.2332,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Bilhete de Identidade",
+                                                "prefix": "BI",
+                                                "daily_limit": 150,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Bilhete de Identidade",
+                                                "prefix": "RBI",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Cédula Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Nascimento",
+                                                "prefix": "CN",
+                                                "daily_limit": 110,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Casamento",
+                                                "prefix": "CC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Óbito",
+                                                "prefix": "CO",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Propriedade",
+                                                "prefix": "RP",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Passaporte",
+                                                "prefix": "EP",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Passaporte",
+                                                "prefix": "RPP",
+                                                "daily_limit": 40,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Reconhecimento de Assinatura",
+                                                "prefix": "RA",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Testamento",
+                                                "prefix": "RT",
+                                                "daily_limit": 30,
+                                                "num_counters": 1,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Certificado de Habilitações",
+                                                "prefix": "CH",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Talatona",
+                                "location": "Via Expressa, Talatona, Luanda",
+                                "neighborhood": "Talatona",
+                                "latitude": -8.9180,
+                                "longitude": 13.1840,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Bilhete de Identidade",
+                                                "prefix": "BI",
+                                                "daily_limit": 150,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Bilhete de Identidade",
+                                                "prefix": "RBI",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Cédula Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Nascimento",
+                                                "prefix": "CN",
+                                                "daily_limit": 110,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Casamento",
+                                                "prefix": "CC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Óbito",
+                                                "prefix": "CO",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Propriedade",
+                                                "prefix": "RP",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Passaporte",
+                                                "prefix": "EP",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Passaporte",
+                                                "prefix": "RPP",
+                                                "daily_limit": 40,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Reconhecimento de Assinatura",
+                                                "prefix": "RA",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Testamento",
+                                                "prefix": "RT",
+                                                "daily_limit": 30,
+                                                "num_counters": 1,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Certificado de Habilitações",
+                                                "prefix": "CH",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Viana",
+                                "location": "Rua Principal, Viana, Luanda",
+                                "neighborhood": "Viana",
+                                "latitude": -8.9040,
+                                "longitude": 13.3750,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Bilhete de Identidade",
+                                                "prefix": "BI",
+                                                "daily_limit": 150,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Bilhete de Identidade",
+                                                "prefix": "RBI",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Cédula Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Nascimento",
+                                                "prefix": "CN",
+                                                "daily_limit": 110,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Casamento",
+                                                "prefix": "CC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Óbito",
+                                                "prefix": "CO",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Propriedade",
+                                                "prefix": "RP",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Passaporte",
+                                                "prefix": "EP",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Passaporte",
+                                                "prefix": "RPP",
+                                                "daily_limit": 40,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Reconhecimento de Assinatura",
+                                                "prefix": "RA",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Testamento",
+                                                "prefix": "RT",
+                                                "daily_limit": 30,
+                                                "num_counters": 1,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Certificado de Habilitações",
+                                                "prefix": "CH",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Kilamba",
+                                "location": "Avenida do Kilamba, Kilamba, Luanda",
+                                "neighborhood": "Kilamba",
+                                "latitude": -8.9340,
+                                "longitude": 13.2670,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Bilhete de Identidade",
+                                                "prefix": "BI",
+                                                "daily_limit": 150,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Bilhete de Identidade",
+                                                "prefix": "RBI",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Cédula Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Nascimento",
+                                                "prefix": "CN",
+                                                "daily_limit": 110,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Casamento",
+                                                "prefix": "CC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Óbito",
+                                                "prefix": "CO",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Propriedade",
+                                                "prefix": "RP",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Passaporte",
+                                                "prefix": "EP",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Passaporte",
+                                                "prefix": "RPP",
+                                                "daily_limit": 40,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Reconhecimento de Assinatura",
+                                                "prefix": "RA",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Testamento",
+                                                "prefix": "RT",
+                                                "daily_limit": 30,
+                                                "num_counters": 1,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Certificado de Habilitações",
+                                                "prefix": "CH",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Cazenga",
+                                "location": "Avenida dos Combatentes, Cazenga, Luanda",
+                                "neighborhood": "Cazenga",
+                                "latitude": -8.8510,
+                                "longitude": 13.2840,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Bilhete de Identidade",
+                                                "prefix": "BI",
+                                                "daily_limit": 150,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Bilhete de Identidade",
+                                                "prefix": "RBI",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Cédula Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Nascimento",
+                                                "prefix": "CN",
+                                                "daily_limit": 110,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Casamento",
+                                                "prefix": "CC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Óbito",
+                                                "prefix": "CO",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Propriedade",
+                                                "prefix": "RP",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Passaporte",
+                                                "prefix": "EP",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Passaporte",
+                                                "prefix": "RPP",
+                                                "daily_limit": 40,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Reconhecimento de Assinatura",
+                                                "prefix": "RA",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Testamento",
+                                                "prefix": "RT",
+                                                "daily_limit": 30,
+                                                "num_counters": 1,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Certificado de Habilitações",
+                                                "prefix": "CH",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Maianga",
+                                "location": "Rua Joaquim Kapango, Maianga, Luanda",
+                                "neighborhood": "Maianga",
+                                "latitude": -8.8150,
+                                "longitude": 13.2310,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Bilhete de Identidade",
+                                                "prefix": "BI",
+                                                "daily_limit": 150,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Bilhete de Identidade",
+                                                "prefix": "RBI",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Cédula Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Nascimento",
+                                                "prefix": "CN",
+                                                "daily_limit": 110,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Casamento",
+                                                "prefix": "CC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Óbito",
+                                                "prefix": "CO",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Propriedade",
+                                                "prefix": "RP",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Passaporte",
+                                                "prefix": "EP",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Passaporte",
+                                                "prefix": "RPP",
+                                                "daily_limit": 40,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Reconhecimento de Assinatura",
+                                                "prefix": "RA",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Testamento",
+                                                "prefix": "RT",
+                                                "daily_limit": 30,
+                                                "num_counters": 1,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Certificado de Habilitações",
+                                                "prefix": "CH",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Rangel",
+                                "location": "Rua do Rangel, Rangel, Luanda",
+                                "neighborhood": "Rangel",
+                                "latitude": -8.8300,
+                                "longitude": 13.2500,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Bilhete de Identidade",
+                                                "prefix": "BI",
+                                                "daily_limit": 150,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Bilhete de Identidade",
+                                                "prefix": "RBI",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Cédula Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Nascimento",
+                                                "prefix": "CN",
+                                                "daily_limit": 110,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Casamento",
+                                                "prefix": "CC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Óbito",
+                                                "prefix": "CO",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Propriedade",
+                                                "prefix": "RP",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Passaporte",
+                                                "prefix": "EP",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Passaporte",
+                                                "prefix": "RPP",
+                                                "daily_limit": 40,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Reconhecimento de Assinatura",
+                                                "prefix": "RA",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Testamento",
+                                                "prefix": "RT",
+                                                "daily_limit": 30,
+                                                "num_counters": 1,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Certificado de Habilitações",
+                                                "prefix": "CH",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Samba",
+                                "location": "Rua Principal, Samba, Luanda",
+                                "neighborhood": "Samba",
+                                "latitude": -8.8200,
+                                "longitude": 13.2400,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "with": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Bilhete de Identidade",
+                                                "prefix": "BI",
+                                                "daily_limit": 150,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Bilhete de Identidade",
+                                                "prefix": "RBI",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Cédula Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Nascimento",
+                                                "prefix": "CN",
+                                                "daily_limit": 110,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Casamento",
+                                                "prefix": "CC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Óbito",
+                                                "prefix": "CO",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Propriedade",
+                                                "prefix": "RP",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Passaporte",
+                                                "prefix": "EP",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Passaporte",
+                                                "prefix": "RPP",
+                                                "daily_limit": 40,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Reconhecimento de Assinatura",
+                                                "prefix": "RA",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Testamento",
+                                                "prefix": "RT",
+                                                "daily_limit": 30,
+                                                "num_counters": 1,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Certificado de Habilitações",
+                                                "prefix": "CH",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Cacuaco",
+                                "location": "Rua Principal, Cacuaco, Luanda",
+                                "neighborhood": "Cacuaco",
+                                "latitude": -8.7767,
+                                "longitude": 13.3667,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Bilhete de Identidade",
+                                                "prefix": "BI",
+                                                "daily_limit": 150,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Bilhete de Identidade",
+                                                "prefix": "RBI",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Cédula Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Nascimento",
+                                                "prefix": "CN",
+                                                "daily_limit": 110,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Casamento",
+                                                "prefix": "CC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Óbito",
+                                                "prefix": "CO",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Propriedade",
+                                                "prefix": "RP",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Passaporte",
+                                                "prefix": "EP",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Passaporte",
+                                                "prefix": "RPP",
+                                                "daily_limit": 40,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Reconhecimento de Assinatura",
+                                                "prefix": "RA",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Testamento",
+                                                "prefix": "RT",
+                                                "daily_limit": 30,
+                                                "num_counters": 1,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Certificado de Habilitações",
+                                                "prefix": "CH",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "Conservatória Benfica",
+                                "location": "Rua Principal, Benfica, Luanda",
+                                "neighborhood": "Benfica",
+                                "latitude": -8.9500,
+                                "longitude": 13.1500,
+                                "departments": [
+                                    {
+                                        "name": "Atendimento Administrativo",
+                                        "sector": "Administrativo",
+                                        "queues": [
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Comercial",
+                                                "prefix": "RC",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo Civil",
+                                                "prefix": "RV",
+                                                "daily_limit": 120,
+                                                "num_counters": 5,
+                                                "tags": ["Administrativo", "Registros", "24h"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Autenticação de Documentos",
+                                                "prefix": "AD",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Bilhete de Identidade",
+                                                "prefix": "BI",
+                                                "daily_limit": 150,
+                                                "num_counters": 6,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Bilhete de Identidade",
+                                                "prefix": "RBI",
+                                                "daily_limit": 100,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Cédula Pessoal",
+                                                "prefix": "CP",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Nascimento",
+                                                "prefix": "CN",
+                                                "daily_limit": 110,
+                                                "num_counters": 4,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Casamento",
+                                                "prefix": "CC",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Certidão de Óbito",
+                                                "prefix": "CO",
+                                                "daily_limit": 60,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Certidões"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Propriedade",
+                                                "prefix": "RP",
+                                                "daily_limit": 80,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Passaporte",
+                                                "prefix": "EP",
+                                                "daily_limit": 50,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Identificação"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Renovação de Passaporte",
+                                                "prefix": "RPP",
+                                                "daily_limit": 40,
+                                                "num_counters": 2,
+                                                "tags": ["Administrativo", "Renovações"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Reconhecimento de Assinatura",
+                                                "prefix": "RA",
+                                                "daily_limit": 90,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Registo de Testamento",
+                                                "prefix": "RT",
+                                                "daily_limit": 30,
+                                                "num_counters": 1,
+                                                "tags": ["Administrativo", "Registros"]
+                                            },
+                                            {
+                                                "id": str(uuid.uuid4()),
+                                                "service_name": "Emissão de Certificado de Habilitações",
+                                                "prefix": "CH",
+                                                "daily_limit": 70,
+                                                "num_counters": 3,
+                                                "tags": ["Administrativo", "Documentos"]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
                     {
                         "id": str(uuid.uuid4()),
                         "name": "Banco Sol",
