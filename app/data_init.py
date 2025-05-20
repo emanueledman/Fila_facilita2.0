@@ -3725,7 +3725,7 @@ def populate_initial_data(app):
                                 ]
                             }
                         ]
-                    }
+                    },
                     {
                         "id": str(uuid.uuid4()),
                         "name": "Banco Sol",
