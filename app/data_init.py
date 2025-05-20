@@ -2008,7 +2008,7 @@ def populate_initial_data(app):
                         "logo_url": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ5M0tHA7JdqCgeFgFF5OzTC3Rus8PQM3wlRQ&s",
                         "services": [
                             {"name": "Abertura de Conta", "category_id": category_map["Conta"], "description": "Abertura de contas correntes e poupança"},
-                            {"name": "Crédito Pessoal", "category_id": category_map["Crédito"], "description": "Empréstim0os pessoais e financiamentos"},
+                            {"name": "Crédito Pessoal", "category_id": category_map["Crédito"], "description": "Empréstimos pessoais e financiamentos"},
                             {"name": "Atendimento ao Cliente", "category_id": category_map["Atendimento"], "description": "Suporte e esclarecimentos gerais"}
                         ],
                         "branches": [
@@ -3366,12 +3366,13 @@ def populate_initial_data(app):
                                     }
                                 ]
                             },
+                            
                             {
-                                "name": "Conservatória Samba",
-                                "location": "Rua Principal, Samba, Luanda",
-                                "neighborhood": "Samba",
-                                "latitude": -8.8200,
-                                "longitude": 13.2400,
+                                "name": "Conservatória Cacuaco",
+                                "location": "Rua Principal, Cacuaco, Luanda",
+                                "neighborhood": "Cacuaco",
+                                "latitude": -8.7767,
+                                "longitude": 13.3667,
                                 "departments": [
                                     {
                                         "name": "Atendimento Administrativo",
@@ -3399,7 +3400,7 @@ def populate_initial_data(app):
                                                 "prefix": "AD",
                                                 "daily_limit": 80,
                                                 "num_counters": 3,
-                                                "with": ["Administrativo", "Documentos"]
+                                                "tags": ["Administrativo", "Documentos"]
                                             },
                                             {
                                                 "id": str(uuid.uuid4()),
@@ -3501,7 +3502,6 @@ def populate_initial_data(app):
                                     }
                                 ]
                             },
-                            
                             {
                                 "name": "Conservatória Benfica",
                                 "location": "Rua Principal, Benfica, Luanda",
