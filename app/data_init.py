@@ -4504,8 +4504,8 @@ def populate_initial_data(app):
                                 id=str(uuid.uuid4()),
                                 branch_id=branch.id,
                                 weekday=day,
-                                open_time=time(7, 0),
-                                end_time=time(3, 0),
+                                open_time=time(0, 0),
+                                end_time=time(23, 0),
                                 is_closed=False
                             )
                             db.session.add(schedule)
