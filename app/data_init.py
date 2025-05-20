@@ -74,6 +74,7 @@ def populate_initial_data(app):
                 # --------------------------------------
                 # Criar Categorias de Serviço
                 # --------------------------------------
+
                 def create_service_categories():
                     categories = [
                         {"name": "Bancário", "description": "Serviços financeiros e bancários", "parent_id": None},
@@ -91,6 +92,25 @@ def populate_initial_data(app):
                         {"name": "Administrativo", "description": "Serviços administrativos e atendimento ao cidadão", "parent_id": None},
                         {"name": "Documentos", "description": "Emissão e renovação de documentos", "parent_id": None},
                         {"name": "Registros", "description": "Registros civis e comerciais", "parent_id": None},
+                        {"name": "Identificação", "description": "Emissão e gestão de documentos de identificação", "parent_id": None},
+                        {"name": "Renovações", "description": "Renovação de documentos de identificação", "parent_id": None},
+                        {"name": "Certidões", "description": "Emissão de certidões oficiais", "parent_id": None},
+                        # Novas categorias adicionais
+                        {"name": "Registo Comercial", "description": "Registo de empresas e atividades comerciais", "parent_id": None},
+                        {"name": "Registo Civil", "description": "Registo de nascimento, casamento e óbito", "parent_id": None},
+                        {"name": "Autenticação de Documentos", "description": "Autenticação de documentos oficiais", "parent_id": None},
+                        {"name": "Emissão de Bilhete de Identidade", "description": "Emissão de bilhete de identidade angolano", "parent_id": None},
+                        {"name": "Renovação de Bilhete de Identidade", "description": "Renovação de bilhete de identidade expirado", "parent_id": None},
+                        {"name": "Emissão de Cédula Pessoal", "description": "Emissão de cédula pessoal para cidadãos", "parent_id": None},
+                        {"name": "Certidão de Nascimento", "description": "Emissão de certidão de nascimento", "parent_id": None},
+                        {"name": "Certidão de Casamento", "description": "Emissão de certidão de casamento", "parent_id": None},
+                        {"name": "Certidão de Óbito", "description": "Emissão de certidão de óbito", "parent_id": None},
+                        {"name": "Registo de Propriedade", "description": "Registo de bens imóveis", "parent_id": None},
+                        {"name": "Emissão de Passaporte", "description": "Emissão de passaporte angolano", "parent_id": None},
+                        {"name": "Renovação de Passaporte", "description": "Renovação de passaporte expirado", "parent_id": None},
+                        {"name": "Reconhecimento de Assinatura", "description": "Reconhecimento de assinaturas em documentos", "parent_id": None},
+                        {"name": "Registo de Testamento", "description": "Registo de testamentos e últimas vontades", "parent_id": None},
+                        {"name": "Emissão de Certificado de Habilitações", "description": "Certificação de habilitações académicas", "parent_id": None},
                     ]
                     category_map = {}
                     for cat in categories:
@@ -105,22 +125,49 @@ def populate_initial_data(app):
                             db.session.flush()
                             app.logger.debug(f"Categoria de serviço criada: {cat['name']}")
                         category_map[cat["name"]] = ServiceCategory.query.filter_by(name=cat["name"]).first().id
+
                     # Definir hierarquia
                     for cat_name, parent_name in [
-                        ("Conta", "Bancário"), ("Crédito", "Bancário"), ("Atendimento", "Bancário"),
-                        ("Consulta Médica", "Saúde"), ("Exames", "Saúde"), ("Triagem", "Saúde"),
-                        ("Internamento", "Saúde"), ("Cirurgia", "Saúde"), ("Vacinação", "Saúde"),
-                        ("Documentos", "Administrativo"), ("Registros", "Administrativo"),
+                        ("Conta", "Bancário"),
+                        ("Crédito", "Bancário"),
+                        ("Atendimento", "Bancário"),
+                        ("Consulta Médica", "Saúde"),
+                        ("Exames", "Saúde"),
+                        ("Triagem", "Saúde"),
+                        ("Internamento", "Saúde"),
+                        ("Cirurgia", "Saúde"),
+                        ("Vacinação", "Saúde"),
+                        ("Documentos", "Administrativo"),
+                        ("Registros", "Administrativo"),
+                        ("Identificação", "Administrativo"),
+                        ("Renovações", "Administrativo"),
+                        ("Certidões", "Administrativo"),
+                        # Hierarquias das novas categorias
+                        ("Registo Comercial", "Registros"),
+                        ("Registo Civil", "Registros"),
+                        ("Autenticação de Documentos", "Documentos"),
+                        ("Emissão de Bilhete de Identidade", "Identificação"),
+                        ("Renovação de Bilhete de Identidade", "Renovações"),
+                        ("Emissão de Cédula Pessoal", "Identificação"),
+                        ("Certidão de Nascimento", "Certidões"),
+                        ("Certidão de Casamento", "Certidões"),
+                        ("Certidão de Óbito", "Certidões"),
+                        ("Registo de Propriedade", "Registros"),
+                        ("Emissão de Passaporte", "Identificação"),
+                        ("Renovação de Passaporte", "Renovações"),
+                        ("Reconhecimento de Assinatura", "Documentos"),
+                        ("Registo de Testamento", "Registros"),
+                        ("Emissão de Certificado de Habilitações", "Documentos"),
                     ]:
                         cat = ServiceCategory.query.filter_by(name=cat_name).first()
                         if cat and not cat.parent_id:
                             cat.parent_id = category_map[parent_name]
                             db.session.flush()
+                    
                     app.logger.info("Categorias de serviço criadas ou recuperadas com sucesso.")
                     return category_map
 
                 category_map = create_service_categories()
-
                 # --------------------------------------
                 # Bairros de Luanda
                 # --------------------------------------
